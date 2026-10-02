@@ -1,0 +1,232 @@
+【头歌禁止粘贴-破解（控制台版 v7：粘贴/复制 + 自动下一关）】
+
+用法（4 步）：
+1. 打开头歌的任务页面，按 F12（或 Ctrl+Shift+I）打开开发者工具，切到「控制台 / Console」
+2. 第一次往控制台里粘代码时，会弹警告：在控制台里手动输入
+   allow pasting
+   回车（只需一次）
+3. 把下面整段代码粘进控制台，回车，看到「✅ 已解锁 v7」
+4. 点进代码编辑区 Ctrl+V（多行代码逐字不差）
+   答对评测通过后，会弹出「恭喜您通过本关」的庆祝弹层，脚本会自动点掉「下一关」并提示“已为您自动跳转至下一关”
+
+注意：
+- 每次进入新页面（包括切题后的新页面）都要重新运行一次；
+  想一劳永逸就用「Fuck头歌」扩展（已更新到 v1.3，加载一次全自动）
+- 自动跳转只会点“通过弹层”里的「下一关」；页面上工具栏那个「下一关」永远不会被点
+- 弹层出现 3 秒都没有「下一关」按钮时，会提示“已经是最后一关了”
+
+======== 代码（整段复制） ========
+
+// Fuck 头歌 —— 仅作用于头歌：允许粘贴与复制、防篡改剪贴板、答对后自动下一关
+// 以 MAIN world 在 document_start 注入：页面一打开就生效，切题 / 刷新都无需操作
+(() => {
+  "use strict";
+  try { window.__fuckTouge = "1.3"; } catch (e) {}
+
+  // 0) 防止网页篡改剪贴板：头歌会在编辑器获得焦点时写入一个空格，覆盖你复制的内容
+  try {
+    const ncb = navigator.clipboard;
+    if (ncb) {
+      const ow = ncb.writeText && ncb.writeText.bind(ncb);
+      Object.defineProperty(ncb, "writeText", {
+        configurable: true,
+        writable: true,
+        value(t) {
+          const s = typeof t === "string" ? t : "";
+          if (s.length <= 2 || s.trim() === "") {
+            return Promise.reject(new DOMException("blocked by fuck-touge", "NotAllowedError"));
+          }
+          return ow ? ow(t) : Promise.resolve();
+        },
+      });
+      Object.defineProperty(ncb, "write", {
+        configurable: true,
+        writable: true,
+        value() {
+          return Promise.reject(new DOMException("blocked by fuck-touge", "NotAllowedError"));
+        },
+      });
+    }
+  } catch (e) {}
+
+  // 1) 网页会在粘贴后把内容删掉 —— 检测到删除就自动撤销，把内容拿回来
+  let watchUntil = 0;
+  let undos = 0;
+
+  const editorTextarea = () => {
+    const a = document.activeElement;
+    if (a && a.closest && a.closest(".monaco-editor")) return a;
+    return document.querySelector(".monaco-editor textarea.inputarea");
+  };
+
+  const sendUndo = () => {
+    const ta = editorTextarea();
+    if (!ta) return;
+    ta.focus();
+    const k = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ctrlKey: true, key: "z" });
+    Object.defineProperty(k, "keyCode", { get() { return 90; } });
+    Object.defineProperty(k, "which", { get() { return 90; } });
+    ta.dispatchEvent(k);
+  };
+
+  const onChange = e => {
+    if (Date.now() > watchUntil || undos >= 3) return;
+    if (!e.changes.some(c => c.text === "" && c.rangeLength > 0)) return;
+    undos++;
+    watchUntil = Date.now() + 800;
+    setTimeout(sendUndo, 30);
+  };
+
+  const attachModel = m => {
+    try {
+      if (m.__fuckTougeHooked) return;
+      m.__fuckTougeHooked = true;
+      m.onDidChangeContent(onChange);
+    } catch (e) {}
+  };
+
+  const hookMonaco = M => {
+    try {
+      if (!M || !M.editor) return;
+      if (M.editor.getModels) M.editor.getModels().forEach(attachModel);
+      if (!M.__fuckTougeCreateHooked && M.editor.onDidCreateModel) {
+        M.__fuckTougeCreateHooked = true;
+        M.editor.onDidCreateModel(attachModel);
+      }
+    } catch (e) {}
+  };
+
+  // 页面自己的代码会执行 window.Monaco = ...，用 setter 第一时间接住（免轮询开销）
+  let hooked = false;
+  const tryHook = () => {
+    if (hooked) return true;
+    hookMonaco(window.Monaco);
+    hooked = !!(window.Monaco && window.Monaco.editor);
+    return hooked;
+  };
+  let _m = window.Monaco;   // 兼容“脚本在页面之后运行”的情况（控制台版）
+  try {
+    Object.defineProperty(window, "Monaco", {
+      configurable: true,
+      get() { return _m; },
+      set(v) { _m = v; tryHook(); },
+    });
+  } catch (e) {}
+  tryHook();
+
+  // 兜底轮询：成功挂上且页面加载完成后自动停止（最长 60 秒）
+  const iv = setInterval(() => {
+    if (tryHook() && document.readyState === "complete") clearInterval(iv);
+  }, 1000);
+  setTimeout(() => clearInterval(iv), 60000);
+
+  // 2) keydown：抢下 Ctrl+V（防页面拦截按键），Ctrl+C / Ctrl+X 放行
+  window.addEventListener("keydown", e => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const k = e.key ? e.key.toLowerCase() : "";
+    const code = e.keyCode || e.which || 0;
+    if (k === "v" || code === 86) {
+      e.stopImmediatePropagation();
+      watchUntil = Date.now() + 900;
+      undos = 0;
+    } else if (k === "c" || k === "x" || code === 67 || code === 88) {
+      e.stopImmediatePropagation();
+    }
+  }, true);
+
+  // 3) paste：开观察窗；在 Monaco 里阻止浏览器“默认插入”，避免被当成打字输入触发自动缩进
+  window.addEventListener("paste", e => {
+    watchUntil = Date.now() + 900;
+    const a = document.activeElement;
+    if (a && a.closest && a.closest(".monaco-editor")) e.preventDefault();
+  }, true);
+
+  // 4) 清理属性式拦截（onpaste / oncopy / ...）
+  const strip = el => { el.onpaste = el.oncopy = el.oncut = el.ondrop = el.oncontextmenu = null; };
+  const stripAll = () => {
+    try {
+      strip(document);
+      if (document.body) strip(document.body);
+      document.querySelectorAll("[onpaste],[oncopy],[oncut],[ondrop],[oncontextmenu]")
+        .forEach(el => ["onpaste", "oncopy", "oncut", "ondrop", "oncontextmenu"].forEach(a => el.removeAttribute(a)));
+    } catch (e) {}
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", stripAll);
+  else stripAll();
+
+  // 5) 轻提示（toast）
+  const TOAST_KEY = "fuckTougeAutoJumpAt";
+  const showToast = msg => {
+    try {
+      const el = document.createElement("div");
+      el.textContent = msg;
+      el.style.cssText =
+        "position:fixed;top:26px;left:50%;transform:translateX(-50%);" +
+        "background:rgba(17,17,17,.86);color:#fff;padding:10px 18px;border-radius:10px;" +
+        "font-size:14px;line-height:1;z-index:2147483647;pointer-events:none;" +
+        "box-shadow:0 4px 16px rgba(0,0,0,.35);transition:opacity .5s;";
+      (document.body || document.documentElement).appendChild(el);
+      setTimeout(() => { el.style.opacity = "0"; setTimeout(() => el.remove(), 600); }, 2600);
+    } catch (e) {}
+  };
+
+  // 整页刷新场景：落地后补一条“已自动跳转”提示
+  try {
+    const at = Number(sessionStorage.getItem(TOAST_KEY) || 0);
+    if (at && Date.now() - at < 15000) {
+      sessionStorage.removeItem(TOAST_KEY);
+      const timer = setInterval(() => {
+        if (document.body) { clearInterval(timer); showToast("已为您自动跳转至下一关"); }
+      }, 100);
+      setTimeout(() => clearInterval(timer), 10000);
+    }
+  } catch (e) {}
+
+  // 6) 自动下一关：
+  //    - 只在“恭喜通过”弹层（.evaluate-result-container）里找按钮，页面工具栏上的“下一关”永远不碰；
+  //    - 弹层文案必须包含 恭喜/通过/答对/正确，才认为是“答对了”；
+  //    - 只点文字完全等于“下一关”的可点击元素；每个弹层只点一次；
+  //    - 弹层出现 3 秒仍没有“下一关”按钮 → 提示“已经是最后一关了”（可选，保守判断）。
+  const autoNext = () => {
+    try {
+      const box = document.querySelector(".evaluate-result-container");
+      if (!box || box.__fuckTougeClicked) return;
+      const r = box.getBoundingClientRect();
+      if (!(r.width > 0 && r.height > 0)) return;
+      const text = box.innerText || "";
+      if (!/恭喜|通过|答对|正确/.test(text)) return;
+
+      box.__fuckTougeSeenAt = box.__fuckTougeSeenAt || Date.now();
+      const list = box.querySelectorAll("a, button, [role=button]");
+      let btn = null;
+      for (let i = 0; i < list.length; i++) {
+        if ((list[i].innerText || "").trim() === "下一关") { btn = list[i]; break; }
+      }
+
+      if (!btn) {
+        if (!box.__fuckTougeLastToast && Date.now() - box.__fuckTougeSeenAt > 3000) {
+          box.__fuckTougeLastToast = true;
+          showToast("已经是最后一关了");
+        }
+        return;
+      }
+
+      box.__fuckTougeClicked = true;
+      setTimeout(() => {
+        btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+        showToast("已为您自动跳转至下一关");
+        try {
+          sessionStorage.setItem(TOAST_KEY, String(Date.now()));
+          setTimeout(() => { try { sessionStorage.removeItem(TOAST_KEY); } catch (e) {} }, 5000);
+        } catch (e) {}
+      }, 800);
+    } catch (e) {}
+  };
+  try {
+    new MutationObserver(autoNext).observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) {}
+  setInterval(autoNext, 1000);
+
+  return "✅ 已解锁 v7（粘贴/复制 + 自动下一关）";
+})();
+

@@ -1,0 +1,729 @@
+# 头歌自动答题 · 标准答案档案（通用版）
+# ─────────────────────────────────────────────
+# · 这份档案只记录：章节顺序 + 每关答案，不记录任何人的答题进度。
+#   已通过的关卡由脚本运行时查详情页状态自动跳过，所以同一份档案
+#   可以发给进度不同的人使用。
+# · 代码题：answer 用三个单引号原样包住完整代码（若代码里出现 '''，改用三个双引号）。
+# · 选择题：answer 填选项字母；多题填列表，如 answer = ["B", "A", "D"]。
+# · 不想跑某关/某章：删掉对应条目，或自行加 skip = true（一般不需要）。
+
+version = 1
+
+[[chapters]]
+name = "Java语言基础（五）- 循环结构基础"
+homework_id = "4155347"
+
+[[chapters.levels]]
+name = "Java循环结构之while循环"
+answer = '''
+package step1;
+public class HelloWorld {
+    public static void main(String[] args) {
+        // 使用循环从 1 遍历到 6
+        for (int i = 1; i <= 6; i++) {
+            // 拼接字符串并打印
+            System.out.println("做了" + i + "个俯卧撑");
+        }
+    }
+}
+'''
+
+[[chapters.levels]]
+name = "Java循环结构之while循环练习"
+answer = '''
+package step2;
+
+public class HelloWorld {
+	public static void main(String[] args) {
+		/**********Begin**********/
+        int num = 0;
+        for(int i = 1;i<=100; i++){
+            num += i;
+        }
+        System.out.print("1到100相加的结果为5050");
+
+		/**********End**********/
+		
+		
+		
+	}
+}
+'''
+
+[[chapters.levels]]
+name = "Java循环结构之do...while循环"
+answer = '''
+package step3;
+
+public class HelloWorld {
+	public static void main(String[] args) {
+		int count= 0;	
+        int n = 1;
+        //定义变量存储6的倍数出现的次数
+		/*****start*****/
+                    do
+        {
+            if(n%6 == 0){
+                count++;
+
+            }
+            n++;
+    
+                            }    while(n<= 100);
+		
+
+		
+		/*****end*****/
+		System.out.println("6的倍数出现的次数为：" + count);
+	}
+}
+'''
+
+[[chapters.levels]]
+name = "while，do...while循环测试题"
+answer = [["B"], ["C"], ["B"]]
+
+[[chapters.levels]]
+name = "break和continue关键字"
+answer = '''
+package step4;
+
+public class HelloWorld {
+	public static void main(String[] args) {
+		
+		int i = 1;
+		
+		while(i <= 13){
+		
+			/*****start*****/
+			if(i%2 == 0){
+                System.out.println( i + "是偶数");
+			
+            
+			}
+			else{
+                System.out.println(i + "是奇数");
+			
+            
+            }
+			i++;
+			/*****end*****/
+		}
+		
+	}
+}
+'''
+
+[[chapters.levels]]
+name = "break和continue关键字测试题"
+answer = [["C"]]
+
+[[chapters.levels]]
+name = "Java循环结构之for循环"
+answer = '''
+package step5;
+
+import java.util.Scanner;
+
+public class HelloWorld {
+	public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		System.out.println("请给定一个自然数N：");
+		int N = sc.nextInt();//获取输入的整数N
+		int sum = 1;		
+		/*****start*****/
+		for (int i = 1; i <= N; i++) {
+			sum *= i;
+		}
+		/*****end*****/
+		
+		System.out.println("自然数N的阶乘为" + sum);
+	}
+}
+'''
+
+[[chapters.levels]]
+name = "for循环测试题"
+answer = [["B"]]
+
+[[chapters]]
+name = "Java语言基础（七）- String类"
+homework_id = "4155358"
+
+[[chapters.levels]]
+name = "length()方法与compareTo()方法的使用 - 花名册"
+answer = '''
+package step1;
+
+import java.util.Scanner;
+
+public class Roster {
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        /********** Begin *********/
+        String roster1 = scanner.nextLine();
+        String roster2 = scanner.nextLine();
+
+        System.out.println(roster1.length());
+        System.out.println(roster2.length());
+
+        if (roster1.equals(roster2)) {
+            System.out.println("相同");
+        } else {
+            System.out.println("不相同");
+        }
+        /********** End *********/
+    }
+}
+'''
+
+[[chapters.levels]]
+name = "substring()方法与indexOf()方法的使用 - 姓名查找"
+answer = '''
+package step2;
+
+import java.util.Scanner;
+
+public class NameSearch {
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        /********** Begin *********/
+        String data = scanner.nextLine();
+        String name = scanner.nextLine();
+
+        int index = data.indexOf(name);
+        while (index != -1) {
+            System.out.println(index);
+            index = data.indexOf(name, index + 1);
+        }
+        /********** End *********/
+    }
+}
+'''
+
+[[chapters.levels]]
+name = "String串类操作练习 - 文件名与邮箱验证"
+answer = '''
+package step3;
+
+public class HelloWorld {
+
+    public void judge(String fileName, String email) {
+        // 判断 Java 文件名
+        if (fileName != null && fileName.endsWith(".java") && fileName.length() > ".java".length()) {
+            System.out.println("Java文件名正确");
+        } else {
+            System.out.println("Java文件名无效");
+        }
+
+        // 判断邮箱名
+        boolean emailOk = false;
+        if (email != null) {
+            int at = email.indexOf('@');
+            int lastAt = email.lastIndexOf('@');
+            int dot = email.indexOf('.', at + 1);
+
+            emailOk = at > 0
+                    && at == lastAt
+                    && dot > at + 1
+                    && dot < email.length() - 1;
+        }
+
+        if (emailOk) {
+            System.out.println("邮箱名正确");
+        } else {
+            System.out.println("邮箱名无效");
+        }
+    }
+}
+'''
+
+[[chapters.levels]]
+name = "StringBuffer类的定义和使用 - 字母反转"
+answer = '''
+package step4;
+
+public class Reverse {
+    public static StringBuffer start(String data) {
+        StringBuffer ans = new StringBuffer();
+        /********** Begin *********/
+        String[] words = data.split(" ");
+        for (int i = 0; i < words.length; i++) {
+            ans.append(new StringBuffer(words[i]).reverse());
+            if (i < words.length - 1) {
+                ans.append(" ");
+            }
+        }
+        /********** End *********/
+        return ans;
+    }
+}
+'''
+
+[[chapters]]
+name = "Java语言基础（八）- 数组基础"
+homework_id = "4155345"
+
+[[chapters.levels]]
+name = "初识数组"
+answer = '''
+package step1;
+
+public class HelloWorld {
+	public static void main(String[] args) {
+		/********** Begin **********/
+		int[] scores = {91, 88, 60};
+		System.out.println("数组的第一个值为：" + scores[0]);
+		System.out.println("数组的第二个值为：" + scores[1]);
+		System.out.println("数组的第三个值为：" + scores[2]);
+		/********** End **********/
+	}
+}
+'''
+
+[[chapters.levels]]
+name = "数组的使用"
+answer = '''
+package step2;
+
+import java.util.Scanner;
+
+public class HelloWorld {
+	public static void main(String[] args) {
+		/********** Begin **********/
+		String[] stuNames = {"张三","张无忌","张三丰","张岁山"};
+		System.out.println("数组中的第一个数据为：" + stuNames[0]);
+		System.out.println("数组中的第二个数据为：" + stuNames[1]);
+		System.out.println("数组中的第三个数据为：" + stuNames[2]);
+		System.out.println("数组中的第四个数据为：" + stuNames[3]);
+		
+		int[] scores;
+		Scanner sc = new Scanner(System.in);
+		int length = sc.nextInt();
+		scores = new int[length];
+		/********** End **********/
+		System.out.println("数组scores的长度为：" + scores.length);
+	}
+}
+'''
+
+[[chapters.levels]]
+name = "选择题"
+answer = ["C", "D", ["A", "B", "C", "D"]]
+
+[[chapters.levels]]
+name = "数组练习-平均值和最大值"
+answer = '''
+package step3;
+
+import java.util.Scanner;
+
+public class HelloWorld {
+	public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		
+		int[] scores = new int[sc.nextInt()];
+		
+		//循环给数组赋值
+		for(int i = 0 ; i< scores.length;i++){
+			scores[i] = sc.nextInt();
+		}
+		/********** Begin **********/
+		int sum = 0;
+		int max = scores[0];
+		for (int i = 0; i < scores.length; i++) {
+			sum += scores[i];
+			if (scores[i] > max) {
+				max = scores[i];
+			}
+		}
+		double avg = (double) sum / scores.length;
+		System.out.println("平均值：" + avg);
+		System.out.println("最大值：" + max);
+		/********** End **********/
+	}
+}
+'''
+
+[[chapters.levels]]
+name = "二维数组"
+answer = '''
+package step4;
+
+public class HelloWorld {
+	public static void main(String[] args) {
+		/********** Begin **********/
+		int[][] scores = {{92,85},{91,65},{90,33}};
+		for (int i = 0; i < scores.length; i++) {
+			for (int j = 0; j < scores[i].length; j++) {
+				System.out.println(scores[i][j]);
+			}
+		}
+		for (int i = 0; i < scores.length; i++) {
+			for (int j = 0; j < scores[i].length; j++) {
+				scores[i][j] = j + 1;
+			}
+		}
+		for (int i = 0; i < scores.length; i++) {
+			for (int j = 0; j < scores[i].length; j++) {
+				System.out.println(scores[i][j]);
+			}
+		}
+		/********** End **********/
+	}
+}
+'''
+
+[[chapters.levels]]
+name = "选择题"
+answer = ["C", "B"]
+[[chapters]]
+name = "Java语言基础（九）- 数组进阶"
+homework_id = "4155348"
+
+[[chapters.levels]]
+name = "数组的复制"
+answer = '''
+package step1;
+
+import java.util.Scanner;
+
+public class HelloWorld {
+	public static void main(String[] args) {
+		//动态构建arr1
+		int[] arr1 = new int[3];
+		Scanner sc = new Scanner(System.in);
+		for(int i = 0 ; i< arr1.length ; i++){
+			arr1[i] = sc.nextInt();
+		}
+		/********** Begin **********/
+		//创建数组arr2
+		int[] arr2 = new int[arr1.length];
+		//使用for循环将arr1的数据复制给arr2
+		for (int i = 0; i < arr1.length; i++) {
+			arr2[i] = arr1[i];
+		}
+		//输出arr2
+		for (int i = 0; i < arr2.length; i++) {
+			System.out.println(arr2[i]);
+		}
+		/********** End **********/
+	}
+}
+'''
+
+[[chapters.levels]]
+name = "数组中元素的查找"
+answer = '''
+package step2;
+
+import java.util.Scanner;
+
+public class HelloWorld {
+	public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		String str = sc.next();
+		String[] arr = {"张三","张三丰","张无忌","王二麻子","张富贵"};
+		for (int i = 0; i < arr.length; i++) {
+			if (arr[i].equals(str)) {
+				System.out.println(str + "在数组的第" + (i + 1) + "个位置");
+				break;
+			}
+		}
+	}
+}
+'''
+
+[[chapters.levels]]
+name = "交换算法"
+answer = '''
+package step3;
+
+import java.util.Scanner;
+
+public class HelloWorld {
+
+	public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		int a = sc.nextInt();
+		int b = sc.nextInt();
+		/********** Begin **********/
+		int temp = a;
+		a = b;
+		b = temp;
+		/********** End **********/
+		System.out.println(a);
+		System.out.println(b);
+	}
+	
+}
+'''
+
+[[chapters.levels]]
+name = "选择排序"
+answer = '''
+package step4;
+
+import java.util.Arrays;
+import java.util.Scanner;
+
+public class HelloWorld {
+	
+	
+	public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		//动态创建数组
+		int[] arr = new int[sc.nextInt()];
+		for(int i = 0 ; i< arr.length ; i++){
+			arr[i] = sc.nextInt();
+		}
+		/********** Begin **********/
+		for (int i = 0; i < arr.length - 1; i++) {
+			int maxIndex = i;
+			for (int j = i + 1; j < arr.length; j++) {
+				if (arr[j] > arr[maxIndex]) {
+					maxIndex = j;
+				}
+			}
+			int temp = arr[i];
+			arr[i] = arr[maxIndex];
+			arr[maxIndex] = temp;
+		}
+		System.out.println(Arrays.toString(arr));
+		/********** End **********/
+	}
+}
+'''
+
+[[chapters.levels]]
+name = "冒泡排序"
+answer = '''
+package step5;
+
+import java.util.Arrays;
+import java.util.Scanner;
+
+public class HelloWorld {
+	
+	public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		//动态创建数组
+		int[] arr = new int[sc.nextInt()];
+		for(int i = 0 ; i< arr.length ; i++){
+			arr[i] = sc.nextInt();
+		}
+		/********** Begin **********/
+		for (int i = 0; i < arr.length - 1; i++) {
+			for (int j = 0; j < arr.length - 1 - i; j++) {
+				if (arr[j] > arr[j + 1]) {
+					int temp = arr[j];
+					arr[j] = arr[j + 1];
+					arr[j + 1] = temp;
+				}
+			}
+		}
+		System.out.println(Arrays.toString(arr));
+		/********** End **********/
+	}
+}	
+'''
+
+[[chapters]]
+name = "Java语言基础（十）- 方法的使用"
+homework_id = "4155346"
+
+[[chapters.levels]]
+name = "如何定义方法"
+answer = '''
+package step1;
+
+public class HelloWorld {
+	/********** Begin **********/
+    public static void hello() {
+        System.out.println("hello teacher!");
+    }
+	/********** End **********/	
+    public static void main(String[] args) {
+
+		/********** Begin **********/	
+        hello();
+		/********** End **********/
+    }
+}
+'''
+
+[[chapters.levels]]
+name = "掌握无参有返回值方法的调用"
+answer = '''
+package setp7;
+public class HelloWorld {
+
+    public static void main(String[] args) {
+		/********** Begin **********/
+        double avg = calcAvg();
+		/********** End **********/
+    	System.out.println("平均成绩为：" + avg);
+    }
+
+    public static double calcAvg() {
+        double java = 92.5;
+        double php = 83.0;
+        double avg = (java + php) / 2;
+        return avg;
+    }
+}
+'''
+
+[[chapters.levels]]
+name = "掌握有参数无返回值方法的调用"
+answer = '''
+package setp9;
+
+import java.util.Scanner;
+
+public class HelloWorld {
+    public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		int score1 = sc.nextInt();
+		int score2 = sc.nextInt();
+		/********** Begin **********/
+        calcAvg(score1, score2);
+		/********** End **********/
+    }
+
+    public static void calcAvg(int score1, int score2) {
+        System.out.println("平均分：" + (score1 + score2) / 2);
+    }
+}
+'''
+
+[[chapters.levels]]
+name = "掌握有参数有返回值方法的调用"
+answer = '''
+package step3;
+
+import java.util.Scanner;
+
+public class HelloWorld {
+    public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		int i = sc.nextInt();
+        int j = sc.nextInt();
+		
+		/********** Begin **********/
+        int max = getMax(i, j);
+        System.out.println( i+"和"+j+"比较，最大值是："  +  max  );
+		/********** End **********/
+    }
+
+    public static int getMax(int a, int b) {
+        return a > b ? a : b;
+    }
+}
+'''
+
+[[chapters.levels]]
+name = "掌握数组作为参数的使用"
+answer = '''
+package setp10;
+import java.util.Arrays;
+
+public class HelloWorld {
+    public static void main(String[] args) {
+     
+        int[] scores={79,52,98,81};
+		/********** Begin **********/
+        int count = sort(scores);
+		/********** End **********/
+        System.out.println("共有"+count+"个成绩信息！");
+    }
+
+    public static int sort(int[] scores){
+       Arrays.sort(scores);
+       System.out.println(Arrays.toString(scores));
+       return scores.length;
+    }
+}
+'''
+
+[[chapters.levels]]
+name = "方法的重载"
+answer = '''
+package setp15;
+
+public class HelloWorld {
+    public static void main(String[] args) {
+
+		/********** Begin **********/
+        print();
+        print("educoder");
+        print(666);
+        /********** End **********/
+    }
+
+    public static void print() {
+        System.out.println("无参的print方法");
+    }
+
+    public static void print(String name) {
+        System.out.println("带有一个字符串参数的print方法，参数值为：" + name);
+    }
+
+    public static void print(int id) {
+        System.out.println("带有一个整型参数的print方法，参数值为：" + id);
+    }
+}
+'''
+
+[[chapters.levels]]
+name = "选择题"
+answer = [["B", "D", "E"]]
+
+[[chapters.levels]]
+name = "方法通关挑战"
+answer = '''
+package setp17;
+
+import java.util.Arrays;
+import java.util.Scanner;
+
+public class HelloWorld {
+	
+    /********** Begin **********/
+    public static int getSum(int a, int b) {
+        return a + b;
+    }
+
+    public static double getAvg(double a, double b, double c) {
+        return (a + b + c) / 3;
+    }
+
+    public static void printRect(int a, int b) {
+        for (int i = 0; i < a; i++) {
+            for (int j = 0; j < b; j++) {
+                System.out.print("*");
+            }
+            System.out.println();
+        }
+    }
+
+    public static void sortArr(int[] arr) {
+        Arrays.sort(arr);
+        for (int x : arr) {
+            System.out.println(x);
+        }
+    }
+
+    public static void Print99() {
+        for (int i = 1; i <= 9; i++) {
+            for (int j = 1; j <= i; j++) {
+                System.out.print(j + " * " + i + " = " + i * j + "\t");
+            }
+            System.out.println();
+        }
+    }
+
+    /********** End **********/
+}	
+'''
+

@@ -1,0 +1,31 @@
+# 头歌自动答题脚本 · 配置
+# ─────────────────────────────────────────────
+# 这个文件可以不改：所有键都有内置默认值，这里只是把你可能想调的东西暴露出来。
+
+[edge]
+# 浏览器可执行文件（Edge / Chromium 均可）
+binary = "/usr/bin/microsoft-edge-stable"
+
+# 专用副本档案（给「browser 1」当 1 号槽的初始档案；脚本会自动记住槽位）
+# 说明：browser 1~99 会自动把各槽的档案路径记在 state.json；
+#       这里的 profile 只是 1 号槽没被记住时的初始值，一般不用改。
+profile = "~/.config/microsoft-edge-debug"
+
+# 调试端口（一般不用改；若被占用可换成 9333 等）
+port = 9222
+
+# Fuck头歌 扩展目录：脚本会自动把它加载进副本浏览器（复用其自动跳关与提示语）
+extension = "/home/wu/opencode-test/Fuck头歌"
+
+# 课堂-实训作业列表页（脚本的起点/入口）
+classroom = "https://www.educoder.net/classrooms/JODEM6CH/shixun_homework"
+
+[run]
+# 答案档案文件
+answers = "answers.toml"
+
+# 单次评测最长等待（秒）
+eval_timeout = 180
+
+# 关卡加载/跳转最长等待（秒）
+level_timeout = 60

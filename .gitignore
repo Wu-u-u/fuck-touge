@@ -1,0 +1,18 @@
+# 隐私与运行时文件：不进仓库
+edge-shot.png
+
+# 分享包与重复备份（可由文件夹重新打包/已有一份）
+Fuck头歌.zip
+Fuck头歌 (2)/
+
+# 与本项目无关的系统脚本
+install-zen-edge.sh
+
+# 脚本运行时产物
+头歌答题脚本/state.json
+**/__pycache__/
+*.pyc
+
+# 常见杂物
+.DS_Store
+Thumbs.db
