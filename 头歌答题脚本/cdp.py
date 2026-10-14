@@ -194,6 +194,10 @@ class WS:
                 "type": typ, "x": x, "y": y, "button": "left", "clickCount": 1,
             })
 
+    def mouse_move(self, x: float, y: float) -> None:
+        """把鼠标移到坐标（用于触发 hover 类控件，如头歌的「代码文件」下拉）。"""
+        self.call("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+
 
 def http_json(path: str, port: int = DEFAULT_PORT, timeout: float = 5.0):
     url = f"http://127.0.0.1:{port}{path}"

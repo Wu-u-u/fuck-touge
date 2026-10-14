@@ -4,12 +4,14 @@
 
 配套文档：脚本详细.md
 用法：
-    python3 答题.py browser                          # 启动/检查专用副本浏览器
-    python3 答题.py scan --all                       # 扫描所有"开始学习"章节，生成答案档案骨架
-    python3 答题.py scan --chapter "Java语言基础（八）- 数组基础"
-    python3 答题.py walk --chapter "Java语言基础（八）- 数组基础"
-    python3 答题.py run [--chapter X] [--yes]        # 按答案档案自动答题（整章自动 + 自动换章）
-    python3 答题.py check                            # 校验答案档案
+    python3 答题.py browser                    # 启动/检查专用副本浏览器（可加槽位：browser 1）
+    python3 答题.py scan -a                    # 扫描所有"开始学习"章节，生成答案档案骨架（-a = 全部）
+    python3 答题.py scan "Java语言基础（八）- 数组基础"
+    python3 答题.py run -y [章节...]           # 按答案档案自动答题（开跑前会列出每关答案状态）
+    python3 答题.py harvest [章节...]          # 采集已满分关卡的答案，写回档案（-f 覆盖）
+
+章节参数是位置参数，可写多个、可以是名称片段（省略=全部章节），例如：
+    python3 答题.py run -y 五 七        python3 答题.py harvest 八 -f
 
 设计原则：
     · 复用 Fuck头歌 扩展：脚本自动把它装进副本浏览器；通过扩展的
@@ -73,6 +75,12 @@ def log(msg: str) -> None:
 def die(msg: str, code: int = 2) -> None:
     log(f"\n✗ {msg}")
     sys.exit(code)
+
+
+def fmt_secs(s: float) -> str:
+    """秒数格式化成易读短串（用于日志里的用时统计）。"""
+    s = float(s)
+    return f"{s:.0f} 秒" if s < 90 else f"{s / 60:.1f} 分钟"
 
 
 def norm(s: str) -> str:
@@ -739,6 +747,336 @@ def advance_level(page: Page, old_index: int, timeout: float = 60) -> dict:
     return _click_toolbar_and_wait(page, "下一关", old_index)
 
 
+# ─────────────────── 多代码文件关卡支持 ───────────────────
+#
+# 平台行为（2026-10 实测，见 脚本详细.md「多代码文件关卡」一节）：
+# · 编辑器顶部有「代码文件」下拉；出现过的菜单项常驻 DOM，隐藏时宽高为 0；
+# · 下拉是 hover 触发：mouseMoved 悬停展开（点击也能兜底）；后台标签页（visibilityState=hidden）
+#   既不响应 hover 也展不开下拉 → ensure_file_menu 会先把标签页切到前台；
+# · 点击某个文件项：若它不是当前文件 → 新建一个 Monaco model（内容 = 平台里该文件当前代码），
+#   若是当前文件 → 什么都不做；
+# · 新建的 model 编号最大，因此"最新 model"就是刚点开文件的内容；
+# · 切换文件时平台会把上一个文件的内容存进自己的状态（评测/刷新后仍在）；
+# · 当前文件由菜单项内层 span 的 class 含 pathActive 标记；
+# · 必须用真实鼠标点击文件项，DOM click 不会走平台的切换逻辑。
+
+MODEL_NUM_RE = re.compile(r"model/(\d+)")
+
+FILE_ITEMS_JS = r"""
+JSON.stringify([...document.querySelectorAll('.ant-dropdown-menu-item')].map(e => {
+  const r = e.getBoundingClientRect();
+  return {path: (e.innerText||'').trim(), visible: r.width > 2 && r.height > 2,
+          x: r.x + r.width/2, y: r.y + r.height/2};
+}).filter(x => x.path))
+"""
+
+FILE_TRIGGER_JS = r"""
+JSON.stringify((function(){
+  const s = [...document.querySelectorAll('span')]
+      .find(x => (x.textContent||'').trim() === '代码文件');
+  const t = s && s.parentElement.querySelector('.ant-dropdown-trigger');
+  if (!t) return null;
+  const r = t.getBoundingClientRect();
+  if (!(r.width > 0 && r.height > 0)) return null;
+  return {x: r.x + r.width/2, y: r.y + r.height/2};
+})())
+"""
+
+FILE_ACTIVE_JS = r"""
+JSON.stringify((function(){
+  const el = document.querySelector('[class*="pathActive"]');
+  return el ? (el.innerText||'').trim() : null;
+})())
+"""
+
+FILE_HIT_JS = r"""
+JSON.stringify((function(){
+  const e = document.elementFromPoint(%s, %s);
+  if (!e) return null;
+  const it = e.closest('.ant-dropdown-menu-item');
+  return it ? (it.innerText||'').trim() : null;
+})())
+"""
+
+
+def _file_items(page: Page) -> list[dict]:
+    return page.ws.eval_json(FILE_ITEMS_JS) or []
+
+
+def ensure_file_menu(page: Page, timeout: float = 5) -> list[dict]:
+    """确保「代码文件」下拉已展开，返回菜单项（含 visible 标记与坐标）。
+
+    下拉是懒渲染（没打开过时 DOM 里没有菜单项）且 **hover 触发**：
+    实测后台标签页（visibilityState=hidden）既不响应 hover 也不展开下拉，
+    所以这里先把隐藏标签页切到前台，再用 mouseMoved 悬停展开；悬停没反应才补一次点击。
+    撑不开或没有该下拉则返回现有项（可能为空）。
+    """
+    items = _file_items(page)
+    if any(it.get("visible") for it in items):
+        return items
+    try:
+        if page.ws.eval("document.visibilityState") != "visible":
+            page.ws.call("Page.bringToFront")
+            time.sleep(0.3)
+    except cdp.CDPError:
+        pass
+    deadline = time.time() + timeout
+    clicked = False
+    while time.time() < deadline:
+        pos = page.ws.eval_json(FILE_TRIGGER_JS)
+        if not pos:
+            time.sleep(0.25)
+            continue
+        # 虚拟鼠标若已停在触发器上，再发 mouseMoved 不会产生 mouseenter
+        # （Chrome 对同坐标去重），下拉不会展开 —— 先移到中性点再悬停。
+        page.ws.mouse_move(20, 400)
+        time.sleep(0.1)
+        page.ws.mouse_move(pos["x"], pos["y"])       # hover 展开
+        for _ in range(4):
+            time.sleep(0.15)
+            items = _file_items(page)
+            if any(it.get("visible") for it in items):
+                return items
+        if not clicked:                              # 悬停无效时补一次点击
+            page.ws.mouse_click(pos["x"], pos["y"])
+            clicked = True
+    return items
+
+
+def close_file_menu(page: Page) -> None:
+    """把「代码文件」下拉收起来（hover 触发，鼠标移开就会收）。"""
+    for _ in range(3):
+        items = _file_items(page)
+        if not any(it.get("visible") for it in items):
+            return
+        page.ws.mouse_move(20, 400)                  # 移开鼠标
+        time.sleep(0.3)
+        items = _file_items(page)
+        if not any(it.get("visible") for it in items):
+            return
+        pos = page.ws.eval_json(FILE_TRIGGER_JS)     # 兜底：点一下触发器
+        if not pos:
+            return
+        page.ws.mouse_click(pos["x"], pos["y"])
+        time.sleep(0.3)
+
+
+def list_code_files(page: Page) -> tuple[list[str], str]:
+    """返回（本关代码文件路径列表, 当前显示的文件）。没有「代码文件」下拉则 ([], "")。
+
+    单文件关卡也有这个下拉（只有 1 项），所以可以用它判断是否多文件关卡。
+    """
+    items = ensure_file_menu(page)
+    vis = [it for it in items if it.get("visible")]
+    if not items and page.ws.eval_json(FILE_TRIGGER_JS):
+        log("    ！「代码文件」下拉没能展开，暂按单文件处理"
+            "（页面不在前台时可能发生）")
+    paths = [it["path"] for it in (vis or items)]
+    active = page.ws.eval_json(FILE_ACTIVE_JS) or ""
+    return paths, active
+
+
+def _same_path(a: str, b: str) -> bool:
+    a = (a or "").strip().replace("\\", "/")
+    b = (b or "").strip().replace("\\", "/")
+    if not a or not b:
+        return False
+    return a == b or a.rsplit("/", 1)[-1] == b.rsplit("/", 1)[-1]
+
+
+def _find_item(items: list[dict], want: str) -> dict | None:
+    want = (want or "").strip().replace("\\", "/")
+    if not want:
+        return None
+    for it in items:
+        if it["path"].replace("\\", "/") == want:
+            return it
+    base = want.rsplit("/", 1)[-1]
+    cands = [it for it in items
+             if it["path"].replace("\\", "/").rsplit("/", 1)[-1] == base]
+    return cands[0] if len(cands) == 1 else None
+
+
+def _model_uris(page: Page) -> list[str]:
+    return page.ws.eval_json(
+        "JSON.stringify(window.Monaco.editor.getModels().map(m => m.uri.toString()))"
+    ) or []
+
+
+def _newest_uri(uris: list[str]) -> str | None:
+    if not uris:
+        return None
+
+    def num(u: str) -> int:
+        m = MODEL_NUM_RE.search(u)
+        return int(m.group(1)) if m else -1
+    return max(uris, key=num)
+
+
+def click_code_file(page: Page, path: str, timeout: float = 5) -> str | None:
+    """展开下拉、真实点击某个文件项，返回该文件对应的 model uri。
+
+    点已激活的文件不会新建 model（正常），此时返回最新的 model；
+    点不动（既没新 model、激活标记也没变）会重试，最终失败返回 None。
+    """
+    for _ in range(3):
+        before = set(_model_uris(page))
+        items = ensure_file_menu(page)
+        vis = [it for it in items if it.get("visible")]
+        it = _find_item(vis, path)
+        if it is None:
+            if vis and _find_item(items, path) is None:
+                return None                 # 下拉里确实没有这个文件
+            time.sleep(0.5)                 # 菜单没撑开或目标还藏着，重试
+            continue
+        # 下拉有展开动画：等目标项坐标连续两次一致再点，防止点到滑动中的位置。
+        # 注意 menu 可能中途自己收起（平台 re-render），一旦目标消失就重来，
+        # 绝不使用上一次抓到的陈旧坐标去点（会点穿到编辑器上）。
+        fresh = None
+        pos_prev = None
+        for _ in range(8):
+            cur = _find_item([x for x in _file_items(page) if x.get("visible")], path)
+            if cur is None:
+                break
+            if pos_prev is not None and abs(cur["x"] - pos_prev[0]) < 1.5 \
+                    and abs(cur["y"] - pos_prev[1]) < 1.5:
+                fresh = cur
+                break
+            pos_prev = (cur["x"], cur["y"])
+            fresh = cur
+            time.sleep(0.12)
+        if fresh is None:
+            time.sleep(0.3)                 # 菜单收了，下一轮重新 ensure
+            continue
+        # 点击前最后确认：该坐标下确实还是这个菜单项
+        hit = page.ws.eval_json(FILE_HIT_JS % (fresh["x"], fresh["y"]))
+        if hit is None or not _same_path(hit, path):
+            time.sleep(0.3)
+            continue
+        page.ws.mouse_click(fresh["x"], fresh["y"])      # 必须真实点击
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            new = [u for u in _model_uris(page) if u not in before]
+            if new:
+                return _newest_uri(new)
+            time.sleep(0.25)
+        active = page.ws.eval_json(FILE_ACTIVE_JS) or ""
+        if _same_path(active, path):
+            return _newest_uri(_model_uris(page))
+        time.sleep(0.5)
+    return None
+
+
+def wait_uri_settled(page: Page, uri: str, timeout: float = 8,
+                     need_stable: int = 2) -> str | None:
+    """等某个 model 的内容稳定（刚点开的文件可能还在从平台状态载入）。"""
+    last, stable = None, 0
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            cur = page.ws.eval_json(
+                "JSON.stringify((function(){const ms=window.Monaco.editor.getModels()"
+                f".filter(m=>m.uri.toString()==={json.dumps(uri)});"
+                "return ms.length ? ms[0].getValue() : null;})())"
+            )
+        except cdp.CDPError:
+            cur = None
+        if isinstance(cur, str) and cur == last:
+            stable += 1
+            if stable >= need_stable:
+                return cur
+        else:
+            stable = 0
+        last = cur
+        time.sleep(0.4)
+    return last
+
+
+def write_uri_code(page: Page, uri: str, code: str) -> int:
+    """对指定 model 做整文件覆盖写入，写完回读校验（不一致重试一次）。"""
+    def write_and_read() -> tuple[bool, int]:
+        expr = (
+            "(function(){const ms=window.Monaco.editor.getModels()"
+            f".filter(m=>m.uri.toString()==={json.dumps(uri)});"
+            "if(!ms.length) return JSON.stringify({ok:false});"
+            f"ms[0].setValue({json.dumps(code)});"
+            "const got=ms[0].getValue();"
+            "return JSON.stringify({ok: got === " + json.dumps(code) + ", len: got.length});})()"
+        )
+        r = page.ws.eval_json(expr) or {}
+        return bool(r.get("ok")), int(r.get("len") or 0)
+
+    ok, n = write_and_read()
+    if not ok:
+        time.sleep(0.5)
+        ok, n = write_and_read()
+    if not ok:
+        raise RuntimeError("代码写入后回读校验不一致，已停止（防止只写进去一部分）")
+    return n
+
+
+def read_saved_files(page: Page, paths: list[str]) -> tuple[str | None, object, str]:
+    """多文件关卡：逐个点开文件，从新 model 读代码。"""
+    out, notes = [], []
+    for path in paths:
+        uri = click_code_file(page, path)
+        if not uri:
+            return None, None, f"点开文件「{path}」失败（下拉菜单里没反应）"
+        code = wait_uri_settled(page, uri)
+        if not isinstance(code, str) or not code.strip():
+            return None, None, f"文件「{path}」读不到内容"
+        out.append((path, code))
+        notes.append(f"{path}（{len(code)} 字符）")
+    return "files", out, "；".join(notes)
+
+
+def write_files(page: Page, live_paths: list[str], entries: list[dict]) -> None:
+    """多文件关卡：逐文件真实点击切换 + 整文件覆盖，最后同步并核对。
+
+    entries 来自答案档案：[{"path": ..., "answer": ...}, ...]。
+    写入后把每个文件再点一遍：既让平台把自己的状态同步完整，也顺便核对
+    新点开的 model 内容确实等于档案答案（不等就补写一次）。
+    """
+    plan = []
+    for live in live_paths:
+        ent = next((e for e in entries if _same_path(str(e.get("path") or ""), live)), None)
+        if ent is None:
+            raise RuntimeError(f"档案里没有文件「{live}」的条目，请先 harvest 或手动补全")
+        code = str(ent.get("answer") or "")
+        if not code.strip():
+            raise RuntimeError(f"档案里文件「{ent.get('path') or live}」的答案是空的")
+        plan.append((live, code))
+    extra = [str(e.get("path")) for e in entries
+             if not any(_same_path(str(e.get("path") or ""), p) for p in live_paths)]
+    if extra:
+        raise RuntimeError("档案里的这些文件在本关不存在：" + "；".join(extra)
+                           + "（可用 harvest 重新采集）")
+
+    for path, code in plan:
+        uri = click_code_file(page, path)
+        if not uri:
+            raise RuntimeError(f"点开文件「{path}」失败（下拉菜单里没反应）")
+        wait_uri_settled(page, uri, timeout=6)    # 先等平台内容载入，防止写后被覆盖
+        n = write_uri_code(page, uri, code)
+        log(f"    已写入 {path}（{n} 字符）")
+        time.sleep(0.3)                           # 让平台先消化这次修改再切文件
+
+    for path, code in plan:
+        uri = click_code_file(page, path)
+        if not uri:
+            raise RuntimeError(f"同步核对时点开文件「{path}」失败")
+        got = wait_uri_settled(page, uri, timeout=6)
+        if (got or "").strip("\n") != code.strip("\n"):
+            uri = click_code_file(page, path)     # 补救一次
+            if not uri:
+                raise RuntimeError(f"文件「{path}」回读不一致后重写失败")
+            write_uri_code(page, uri, code)
+            got = wait_uri_settled(page, uri, timeout=6) or ""
+            if got.strip("\n") != code.strip("\n"):
+                raise RuntimeError(f"文件「{path}」写入后回读不一致，已停止")
+        log(f"    ✓ 核对 {path}：平台状态与档案一致（{len(got)} 字符）")
+
+
 def wait_model_settled(page: Page, timeout: float = 10, need_stable: int = 3) -> str | None:
     """等 Monaco 编辑器内容稳定下来再读写。
 
@@ -877,14 +1215,16 @@ def status_of(page: Page, text: str) -> str | None:
 
 
 def card_progress_js(name: str) -> str:
+    """按名字片段找课堂卡片，返回 {done, total, name}（name 为卡片完整标题）。"""
     return r"""
 JSON.stringify((function(){
   const norm = s => (s||'').replace(/[\s\u3000]+/g,'');
   const card = [...document.querySelectorAll('[class*="listItem"]')]
       .find(c => norm(c.innerText).includes(norm(__NAME__)));
-  if (!card) return {done: 0, total: 0};
+  if (!card) return {done: 0, total: 0, name: ''};
   const m = (card.innerText||'').match(/(\d+)\s*\/\s*(\d+)/);
-  return {done: m ? +m[1] : 0, total: m ? +m[2] : 0};
+  const t = (card.innerText||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  return {done: m ? +m[1] : 0, total: m ? +m[2] : 0, name: t[1] || ''};
 })())
 """.replace("__NAME__", json.dumps(name, ensure_ascii=False))
 
@@ -1049,9 +1389,16 @@ class Level:
         self.skip = bool(raw.get("skip", False))
         self.type = str(raw.get("type", "")).strip()
         self.answer = raw.get("answer", "")
-        self.files = raw.get("files") or []
+        files = []
+        for f in raw.get("files") or []:
+            if isinstance(f, dict):
+                files.append({"path": str(f.get("path", "")).strip(),
+                              "answer": f.get("answer", "")})
+        self.files = files          # 多代码文件关卡的答案：[{path, answer}]
 
     def answer_empty(self) -> bool:
+        if self.files:
+            return all(not str(f.get("answer") or "").strip() for f in self.files)
         if isinstance(self.answer, list):
             return not self.answer or all(not str(x).strip() for x in self.answer)
         return not str(self.answer or "").strip()
@@ -1066,7 +1413,7 @@ class Chapter:
 
 def load_answers(path: Path) -> list[Chapter]:
     if not path.exists():
-        die(f"答案档案不存在：{path}\n  先运行：python3 答题.py scan --all")
+        die(f"答案档案不存在：{path}\n  先运行：python3 答题.py scan -a")
     try:
         with open(path, "rb") as f:
             data = tomllib.load(f)
@@ -1200,10 +1547,11 @@ def scan_chapters(browser: cdp.Browser, classroom: Page, cfg: dict,
     """扫描指定章节，返回 (扫描结果, 最新的课堂页对象)。"""
     scanned = []
     for name in names:
-        log(f"\n→ 扫描章节：{name}")
         classroom = classroom_page(browser, cfg, old=classroom)   # 每章都用干净的课堂页
         prog = classroom.ws.eval_json(card_progress_js(name)) or {}
-        target, _ = enter_chapter(browser, classroom, name)
+        full = (prog.get("name") or "").strip() or name   # 用卡片完整标题，避免档案里出现片段名
+        log(f"\n→ 扫描章节：{full}")
+        target, _ = enter_chapter(browser, classroom, full)
         url = target["url"]
         m = re.search(r"/tasks/[^/]+/(\d+)/", url) or \
             re.search(r"/shixun_homework/(\d+)/detail", url)
@@ -1219,7 +1567,7 @@ def scan_chapters(browser: cdp.Browser, classroom: Page, cfg: dict,
         log(f"  读到 {len(levels)} 关：" + "，".join(
             f"{i+1}.{r['name']}{'(已满分，运行时会自动跳过)' if is_passed_row(r) else ''}"
             for i, r in enumerate(rows)))
-        scanned.append({"name": name, "homework_id": hid, "levels": levels})
+        scanned.append({"name": full, "homework_id": hid, "levels": levels})
     return scanned, classroom
 
 
@@ -1242,57 +1590,12 @@ JSON.stringify([...document.querySelectorAll('[class*="listItem"]')].map(c => {
     else:
         names = args.chapter or []
     if not names:
-        die("没有指定章节。用法：scan --chapter 名称；或 scan --all")
+        die("没有指定章节。用法：scan 章节名…（可多个）；或 scan -a 扫描全部")
 
     scanned, _ = scan_chapters(browser, classroom, cfg, names)
     write_scan_skeleton(Path(cfg["run"]["answers"]), scanned)
     log(f"\n✓ 已更新答案档案：{cfg['run']['answers']}")
     log("  请打开它，把各关的 answer 填成标准答案；选择题填选项字母（多题用列表）。")
-
-
-# ─────────────────────────── 子命令：walk ───────────────────────────
-
-def cmd_walk(args, cfg: dict) -> None:
-    chapters = load_answers(Path(cfg["run"]["answers"]))
-    browser = ensure_browser(cfg)
-    classroom = classroom_page(browser, cfg)
-    ensure_login(classroom.ws)
-
-    todo = [c for c in chapters if not args.chapter or args.chapter in c.name]
-    if not todo:
-        die("答案档案里找不到指定章节。")
-    for ch in todo:
-        if not ch.homework_id:
-            die(f"章节「{ch.name}」缺少 homework_id，请先 scan。")
-        log(f"\n→ 走进章节：{ch.name}（{len(ch.levels)} 关，不评测）")
-        classroom = classroom_page(browser, cfg, old=classroom)
-        prog = classroom.ws.eval_json(card_progress_js(ch.name)) or {}
-        rows = scrape_status(browser, classroom,
-                             cfg["edge"]["classroom"] + f"/{ch.homework_id}/detail?tabs=1",
-                             expect=prog.get("total"))
-        for i, r in enumerate(rows, 1):
-            lv = find_level(ch, i, r["name"])
-            answer = ""
-            if lv:
-                answer = "有答案" if not lv.answer_empty() else "缺答案"
-                if lv.skip:
-                    answer += "·skip"
-            log(f"    {r['name']:<28} 状态={r['status']:<6} {answer}")
-        classroom = classroom_page(browser, cfg, old=classroom)
-        target, ws = enter_chapter(browser, classroom, ch.name)
-        page = Page(ws, target)
-        st = rewind_to_first(page)
-        log(f"  起点：第{st.get('index')}关 {st.get('name')}")
-        for _ in range(30):
-            if st.get("index", 0) == 0:
-                log("  ! 页面状态读取失败"); break
-            log(f"    第{st.get('index')}关 {st.get('name')} "
-                f"(编辑器={st.get('hasEditor')} 选择题={st.get('choiceCount')})")
-            if not st.get("hasNext"):
-                log("  → 已是最后一关，结束")
-                break
-            st = advance_level(page, st.get("index"))
-        browser.close_target(target["id"])
 
 
 # ─────────────────────────── 子命令：harvest ───────────────────────────
@@ -1359,6 +1662,10 @@ def read_saved_answer(page: Page, st: dict) -> tuple[str | None, str | None, str
     读不到则 kind=None。
     """
     if st.get("hasEditor"):
+        paths, _ = list_code_files(page)          # 单文件关卡也会有 1 项
+        if len(paths) > 1:
+            return read_saved_files(page, paths)  # 多文件：逐个点开读
+        close_file_menu(page)
         if st.get("models", 0) != 1:
             return None, None, f"有 {st.get('models')} 个文件，暂不支持采集"
         code = read_submitted_code(page)          # 首选：评测记录里的提交代码
@@ -1388,7 +1695,20 @@ JSON.stringify([...document.querySelectorAll('.option')].map(g => {
 
 
 def answer_to_toml(kind: str, value) -> str:
-    """把采集到的答案转成 TOML 里的 answer 行。"""
+    """把采集到的答案转成 TOML 里的 answer 行（多文件则是 files 子块）。"""
+    if kind == "files":
+        blocks = []
+        for path, code in value:
+            text = str(code).strip("\n")
+            if "'''" in text:
+                raise RuntimeError(
+                    f"文件 {path} 的代码里含有三个单引号，无法用字面量字符串写入，请手动粘贴")
+            blocks.append(
+                "[[chapters.levels.files]]\n"
+                f"path = {json.dumps(path, ensure_ascii=False)}\n"
+                "answer = '''\n" + text + "\n'''"
+            )
+        return "\n".join(blocks)
     if kind == "choice":
         return "answer = " + json.dumps(value, ensure_ascii=False)
     text = str(value).strip("\n")
@@ -1514,8 +1834,9 @@ def cmd_harvest(args, cfg: dict) -> None:
 
     # 显式指定的章节如果还不在档案里，先自动扫描一遍骨架，省得两步操作
     if args.chapter:
-        existing = {c.name for c in load_answers(answers_path)}
-        missing = [n for n in args.chapter if n not in existing]
+        names = [c.name for c in load_answers(answers_path)]
+        missing = [n for n in args.chapter
+                   if not any(n in nm or nm in n for nm in names)]
         if missing:
             log("→ 以下章节不在档案里，先自动扫描骨架：")
             for n in missing:
@@ -1641,6 +1962,7 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
         guard = 0
         while guard < 50:
             guard += 1
+            t_level = time.time()
             cur = st.get("index") or None
             st = page.wait_level(want_index=cur, timeout=30)
             idx, lname = st.get("index"), st.get("name")
@@ -1666,20 +1988,52 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
                 continue
 
             # 作答
-            if lv.answer_empty():
-                stats["failed"] += 1
-                die(f"第{idx}关「{lname}」的 answer 是空的，已暂停。\n"
-                    f"  请填写：{cfg['run']['answers']}")
             if st.get("hasEditor"):
-                if st.get("models", 0) > 1 and not lv.files:
-                    stats["failed"] += 1
-                    die(f"第{idx}关有多个代码文件，当前脚本暂不支持自动多文件写入，已暂停。")
-                try:
-                    set_code(page, str(lv.answer))
-                except RuntimeError as e:
-                    stats["failed"] += 1
-                    die(f"第{idx}关「{lname}」写入代码失败，已暂停：{e}")
+                paths, _ = list_code_files(page)
+                if len(paths) > 1:
+                    log(f"    检测到 {len(paths)} 个代码文件：" + "、".join(paths))
+                    if not lv.files:
+                        close_file_menu(page)
+                        snippet = "\n".join(
+                            "    [[chapters.levels.files]]\n"
+                            f"    path = {json.dumps(p, ensure_ascii=False)}\n"
+                            "    answer = '''…'''"
+                            for p in paths)
+                        stats["failed"] += 1
+                        die(f"第{idx}关「{lname}」有多个代码文件，档案里还没有对应的 files 条目。\n"
+                            f"  可运行 harvest 采集（已满分时），或参照下面的格式补全：\n{snippet}\n"
+                            f"  档案：{cfg['run']['answers']}")
+                    missing = [f.get("path") for f in lv.files
+                               if not str(f.get("answer") or "").strip()]
+                    if missing:
+                        close_file_menu(page)
+                        stats["failed"] += 1
+                        die(f"第{idx}关「{lname}」还有代码文件没填答案："
+                            + "、".join(missing) + f"\n  请填写：{cfg['run']['answers']}")
+                    try:
+                        write_files(page, paths, lv.files)
+                    except RuntimeError as e:
+                        stats["failed"] += 1
+                        die(f"第{idx}关「{lname}」写入代码失败，已暂停：{e}")
+                else:
+                    close_file_menu(page)
+                    code = str(lv.answer or "")
+                    if not code.strip() and len(lv.files) == 1:
+                        code = str(lv.files[0].get("answer") or "")
+                    if not code.strip():
+                        stats["failed"] += 1
+                        die(f"第{idx}关「{lname}」的 answer 是空的，已暂停。\n"
+                            f"  请填写：{cfg['run']['answers']}")
+                    try:
+                        set_code(page, code)
+                    except RuntimeError as e:
+                        stats["failed"] += 1
+                        die(f"第{idx}关「{lname}」写入代码失败，已暂停：{e}")
             elif st.get("choiceCount", 0) > 0:
+                if lv.answer_empty():
+                    stats["failed"] += 1
+                    die(f"第{idx}关「{lname}」的 answer 是空的，已暂停。\n"
+                        f"  请填写：{cfg['run']['answers']}")
                 try:
                     answer_choice(page, choice_letters(lv.answer))
                 except RuntimeError as e:
@@ -1705,7 +2059,8 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
                 die(f"第{idx}关「{lname}」等待评测结果超时，已暂停。")
             stats["done"] += 1
             if outcome["kind"] == "last":
-                log("  → 本章最后一关已通过，本章结束")
+                log("  → 本章最后一关已通过，本章结束"
+                    f"（本关用时 {time.time() - t_level:.1f} 秒）")
                 break
             # next：等待进入下一关
             nxt = wait_index_change(page, idx, timeout=float(cfg["run"]["level_timeout"]))
@@ -1715,6 +2070,7 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
             if nxt.get("index") == idx:
                 die(f"第{idx}关评测已通过，但页面无法进入下一关，已暂停。")
             st = nxt
+            log(f"    （本关用时 {time.time() - t_level:.1f} 秒）")
         ok = True
         return stats
     finally:
@@ -1729,25 +2085,17 @@ def cmd_run(args, cfg: dict) -> None:
     if not todo:
         die("答案档案里找不到指定章节。")
 
+    t0 = time.time()
+
+    # 计划预览（原 check 命令并入：先看每关答案状态，再决定是否开跑）
+    log("\n将按档案顺序处理：")
+    print_archive_status(todo)
+    if not args.yes:
+        input("\n回车开始（Ctrl+C 取消）…")
+
     browser = ensure_browser(cfg)
     classroom = classroom_page(browser, cfg)
     ensure_login(classroom.ws)
-
-    # 计划预览
-    plan_lines = []
-    for ch in todo:
-        actionable = [lv for lv in ch.levels if not lv.skip]
-        done_levels = [lv for lv in actionable if not lv.answer_empty()]
-        missing = [lv.name for lv in actionable if lv.answer_empty()]
-        mark = "✓" if actionable and not missing else ("…" if actionable else "跳过")
-        plan_lines.append(
-            f"  [{mark}] {ch.name}：{len(done_levels)}/{len(actionable)} 关有答案"
-            + (f"，缺：{'、'.join(missing)}" if missing else "")
-        )
-    log("\n将按档案顺序处理：")
-    log("\n".join(plan_lines))
-    if not args.yes:
-        input("\n回车开始（Ctrl+C 取消）…")
 
     results = {}
     status_page = classroom     # 复用登录用的课堂页做状态检查标签，全程不重复开
@@ -1770,28 +2118,34 @@ def cmd_run(args, cfg: dict) -> None:
                 f"  请填写后重新运行：{cfg['run']['answers']}")
         # 只有真的要跑时，才开一个干净的课堂页去点「开始学习」
         entry_classroom = classroom_page(browser, cfg)
+        t_ch = time.time()
         try:
             results[ch.name] = process_chapter(browser, entry_classroom, cfg, ch, rows)
+            results[ch.name]["secs"] = time.time() - t_ch
         finally:
             if entry_classroom.target.get("id"):
                 browser.close_target(entry_classroom.target["id"])
 
     log("\n══════ 汇总 ══════")
     for name, s in results.items():
-        log(f"  {name}：作答 {s['done']} 关，跳过 {s['skipped']} 关，失败 {s['failed']} 关")
-    log("\n完成。浏览器保持打开，可自行检查。")
+        extra = f"（用时 {fmt_secs(s['secs'])}）" if s.get("secs") else ""
+        log(f"  {name}：作答 {s['done']} 关，跳过 {s['skipped']} 关，失败 {s['failed']} 关{extra}")
+    log(f"\n完成（总用时 {fmt_secs(time.time() - t0)}）。浏览器保持打开，可自行检查。")
 
 
-# ─────────────────────────── 子命令：check ───────────────────────────
-
-def cmd_check(args, cfg: dict) -> None:
-    chapters = load_answers(Path(cfg["run"]["answers"]))
+def print_archive_status(chapters: list) -> None:
+    """打印每章的关卡与答案状态（run 开跑前预览用；原 check 命令并入）。"""
     for ch in chapters:
         log(f"\n【{ch.name}】homework_id={ch.homework_id or '(缺)'}")
         for i, lv in enumerate(ch.levels, 1):
             kind = lv.type or "auto"
             if lv.skip:
                 desc = "skip"
+            elif lv.files:
+                parts = [f"{f.get('path', '?').rsplit('/', 1)[-1]}"
+                         f"{'✓' if str(f.get('answer') or '').strip() else ' 缺'}"
+                         for f in lv.files]
+                desc = f"{len(lv.files)} 个文件（{'，'.join(parts)}）"
             elif lv.answer_empty():
                 desc = "缺答案"
             elif isinstance(lv.answer, list):
@@ -1806,9 +2160,19 @@ def cmd_check(args, cfg: dict) -> None:
 # ─────────────────────────── CLI ───────────────────────────
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="头歌自动答题脚本（半自动）")
-    ap.add_argument("--config", default=str(HERE / "config.toml"), help="配置文件路径")
+    ap = argparse.ArgumentParser(
+        description="头歌自动答题脚本（半自动）",
+        epilog="示例：python3 答题.py run -y 五 七 ｜ harvest 五 -f ｜ scan -a",
+    )
+    ap.add_argument("-c", "--config", default=str(HERE / "config.toml"), help="配置文件路径")
     sub = ap.add_subparsers(dest="cmd", required=True)
+
+    def add_chapter_args(p):
+        """章节参数：位置参数为主（可多个、可用片段），--chapter 保留为旧写法。"""
+        p.add_argument("chapters", nargs="*", metavar="章节名",
+                       help="要处理的章节，可写多个、支持名称片段；省略=全部")
+        p.add_argument("--chapter", action="append", default=[], dest="chapter_opt",
+                       help="兼容旧写法，等价于位置参数（可多次）")
 
     p_browser = sub.add_parser("browser", help="启动/检查专用副本浏览器（可带档案槽参数）")
     p_browser.add_argument(
@@ -1816,19 +2180,18 @@ def main() -> None:
         help="1-99 记住并切换对应档案；new 每次全新；1new~99new 清除该槽记忆换全新",
     )
     p_scan = sub.add_parser("scan", help="扫描章节生成答案档案骨架")
-    p_scan.add_argument("--chapter", action="append", default=[], help="章节名（可多次）")
-    p_scan.add_argument("--all", action="store_true", help="扫描所有“开始学习”的章节")
-    p_walk = sub.add_parser("walk", help="走一遍章节（不答题，诊断用）")
-    p_walk.add_argument("--chapter", default=None, help="章节名（省略=全部）")
+    add_chapter_args(p_scan)
+    p_scan.add_argument("-a", "--all", action="store_true", help="扫描所有“开始学习”的章节")
     p_harvest = sub.add_parser("harvest", help="采集已满分关卡在服务器上保存的答案，写回档案")
-    p_harvest.add_argument("--chapter", action="append", default=[], help="章节名（可多次；省略=全部）")
-    p_harvest.add_argument("--force", action="store_true", help="覆盖档案里已有答案")
-    p_run = sub.add_parser("run", help="按答案档案自动答题")
-    p_run.add_argument("--chapter", action="append", default=[], help="只跑指定章节（可多次）")
-    p_run.add_argument("--yes", action="store_true", help="不询问直接开始")
-    sub.add_parser("check", help="校验答案档案")
+    add_chapter_args(p_harvest)
+    p_harvest.add_argument("-f", "--force", action="store_true", help="覆盖档案里已有答案")
+    p_run = sub.add_parser("run", help="按答案档案自动答题（开跑前会列出每关答案状态）")
+    add_chapter_args(p_run)
+    p_run.add_argument("-y", "--yes", action="store_true", help="不询问直接开始")
 
     args = ap.parse_args()
+    if hasattr(args, "chapters"):
+        args.chapter = list(args.chapters) + list(args.chapter_opt)   # 位置参数 + 旧写法合并
     cfg = load_config(Path(args.config).expanduser())
     apply_current_profile(cfg)      # 记住的档案槽优先于 config 里的 profile
 
@@ -1845,14 +2208,10 @@ def main() -> None:
         log(f"✓ 副本浏览器就绪，已记住档案槽「{slot}」，之后 scan/run 都会用它。")
     elif args.cmd == "scan":
         cmd_scan(args, cfg)
-    elif args.cmd == "walk":
-        cmd_walk(args, cfg)
     elif args.cmd == "harvest":
         cmd_harvest(args, cfg)
     elif args.cmd == "run":
         cmd_run(args, cfg)
-    elif args.cmd == "check":
-        cmd_check(args, cfg)
 
 
 if __name__ == "__main__":

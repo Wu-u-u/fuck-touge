@@ -10,6 +10,228 @@
 version = 1
 
 [[chapters]]
+name = "Java面向对象（一） - 类与对象"
+homework_id = "4155352"
+
+[[chapters.levels]]
+name = "什么是类，如何创建类"
+answer = '''
+package step1;
+
+public class Test {
+	public static void main(String[] args) {
+		//创建Dog对象
+        Dog wuhuarou=new Dog();
+		//设置Dog对象的属性
+        wuhuarou.name="五花肉";
+        wuhuarou.color="棕色";
+        wuhuarou.variety="阿拉斯加";
+		
+		
+		//输出小狗的属性
+		System.out.println("名字：" +wuhuarou.name     + "，毛色：" + wuhuarou.color   + "，品种：" +wuhuarou.variety  );
+		
+		//调用方法
+        wuhuarou.eat();
+        wuhuarou.run();
+		
+	}
+}
+
+//在这里定义Dog类
+class Dog{
+    String name;
+    String color;
+    String variety;
+    void eat(){
+        System.out.println("啃骨头");
+    }
+    void run(){
+        System.out.println("叼着骨头跑");
+    }
+}
+'''
+
+[[chapters.levels]]
+name = "构造方法"
+answer = '''
+package step2;
+
+import java.util.Scanner;
+
+public class Test {
+	public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		String name = sc.next();
+		String sex = sc.next();
+		
+		//分别使用两种构造器来创建Person对象  
+        Person p1=new Person();
+        Person p2=new Person(name,sex);
+		
+		
+		
+	}
+}
+
+//创建Person对象，并创建两种构造方法
+class Person{
+    public Person(){
+        System.out.println("一个人被创建了");
+    }
+    public Person(String name ,String sex){
+        System.out.println("姓名："+name+"，性别："+sex+"，被创建了");
+    }
+}
+'''
+
+[[chapters.levels]]
+name = "选择题"
+answer = [["C"], ["C", "D"]]
+
+[[chapters.levels]]
+name = "This关键字"
+answer = '''
+package step3;
+
+import java.util.Scanner;
+
+public class Test {
+	public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		String name = sc.next();
+		int age = sc.nextInt();
+		String sex = sc.next();
+		Person p = new Person(name,age,sex);
+		p.display();
+	}
+}
+
+class Person{
+	String name = "张三";
+	int age = 18; 
+	String sex = "男";
+// 请在此编写代码
+/********** Begin **********/	
+	public Person(String name,int age,String sex){
+		this.age=age;
+		this.name = name;
+		this.sex = sex;
+	}
+	
+	public Person(int age){
+		this.age = age;
+	}
+/********** End **********/	
+	
+	public void display(){
+		System.out.println("name：" + name);
+		System.out.println("age：" + age);
+		System.out.println("sex：" + sex);
+	}
+}
+'''
+
+[[chapters.levels]]
+name = "类与对象练习"
+[[chapters.levels.files]]
+path = "src/step4/Test.java"
+answer = '''
+package step4;
+
+import java.util.Scanner;
+
+public class Test {
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        String theMa = sc.next();
+        int quantity = sc.nextInt();
+        boolean likeSoup = sc.nextBoolean();
+
+        WuMingFen f1 = new WuMingFen(theMa, quantity, likeSoup);
+        WuMingFen f2 = new WuMingFen(theMa, quantity);
+        WuMingFen f3 = new WuMingFen();
+
+        f1.check();
+        f2.check();
+        f3.check();
+    }
+}
+'''
+[[chapters.levels.files]]
+path = "src/step4/WuMingFen.java"
+answer = '''
+		//在这里添加包名  step4
+
+		//创建类 添加属性和方法
+	package step4;
+
+public class WuMingFen {
+    String theMa;
+    int quantity;
+    boolean likeSoup;
+
+    // 三个参数的构造方法
+    public WuMingFen(String theMa, int quantity, boolean likeSoup) {
+        this.theMa = theMa;
+        this.quantity = quantity;
+        this.likeSoup = likeSoup;
+    }
+
+    // 两个参数的构造方法（默认不带汤）
+    public WuMingFen(String theMa, int quantity) {
+        this.theMa = theMa;
+        this.quantity = quantity;
+        this.likeSoup = false;
+    }
+
+    // 无参构造方法（默认：酸辣、2两、带汤）
+    public WuMingFen() {
+        this.theMa = "酸辣";
+        this.quantity = 2;
+        this.likeSoup = true;
+    }
+
+    // 查看粉信息
+    public void check() {
+        System.out.println("面码：" + theMa + "，粉的份量：" + quantity + "两，是否带汤：" + likeSoup);
+    }
+}
+'''
+
+[[chapters.levels]]
+name = "static关键字"
+answer = '''
+package step5;
+
+public class Test {
+	
+	String name = "楚留香";
+	
+	{
+		System.out.println("hello educoder");
+	}
+	public static void main(String[] args) {
+		// 创建 Test 对象，触发非静态代码块，输出 hello educoder
+		Test t = new Test();
+		// 通过对象访问非静态成员变量 name
+		System.out.println("我叫" + t.name);
+		// 通过对象调用非静态方法 study()
+		t.study();
+	}
+	
+	public void study(){
+		System.out.println("我喜欢在educoder上学习java");
+	}
+	
+}
+'''
+
+[[chapters.levels]]
+name = "选择题"
+answer = [["D"], ["E", "G"], ["B"]]
+
+[[chapters]]
 name = "Java语言基础（五）- 循环结构基础"
 homework_id = "4155347"
 
