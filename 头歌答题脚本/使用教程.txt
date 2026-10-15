@@ -46,7 +46,7 @@ run         正式自动答题                  开始刷题（最常用；开�
 旧的 --chapter 写法仍可用（等价于位置参数）。
 
 先进入脚本目录（每次开终端都要）：
-    cd /home/wu/头歌系列开发/fuck-touge/头歌答题脚本
+    cd /home/wu/头歌系列开发-我的第一个项目/fuck-touge/头歌答题脚本
 
 
 【三、命令详解】
@@ -263,14 +263,14 @@ run         正式自动答题                  开始刷题（最常用；开�
 【七、典型场景剧本】
 
 ◆ 场景 1：第一次使用
-     cd /home/wu/头歌系列开发/fuck-touge/头歌答题脚本
+     cd /home/wu/头歌系列开发-我的第一个项目/fuck-touge/头歌答题脚本
      python3 答题.py browser          # 弹窗，没登录就登录一次
      python3 答题.py scan -a          # 生成档案骨架
      编辑 answers.toml 填答案
      python3 答题.py run              # 先列出每关答案状态，回车开跑
 
 ◆ 场景 2：日常（答案早填好了）
-     cd /home/wu/头歌系列开发/fuck-touge/头歌答题脚本
+     cd /home/wu/头歌系列开发-我的第一个项目/fuck-touge/头歌答题脚本
      python3 答题.py run -y
 
 ◆ 场景 3：跑到一半停了（未通过/超时/缺答案）

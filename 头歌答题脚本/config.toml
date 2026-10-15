@@ -15,7 +15,7 @@ profile = "~/.config/microsoft-edge-debug"
 port = 9222
 
 # Fuck头歌 扩展目录：脚本会自动把它加载进副本浏览器（复用其自动跳关与提示语）
-extension = "/home/wu/头歌系列开发/fuck-touge/Fuck头歌"
+extension = "/home/wu/头歌系列开发-我的第一个项目/fuck-touge/Fuck头歌"
 
 # 课堂-实训作业列表页（脚本的起点/入口）
 classroom = "https://www.educoder.net/classrooms/JODEM6CH/shixun_homework"
