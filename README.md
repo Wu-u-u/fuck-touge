@@ -36,7 +36,7 @@
 
 ### 一、浏览器扩展（Fuck头歌）
 
-1. 下载本仓库（或到 **Releases** 下载最新的 `FuckTouge-v2.3.1.zip`，含扩展与脚本，并解压）；
+1. 下载本仓库（或到 **Releases** 下载最新的 `FuckTouge-v2.4.2.zip`，含扩展与脚本，并解压）；
 2. Edge → 扩展 → 管理扩展 → 打开「开发人员选项」→「加载解压缩的扩展」→ 选择 `Fuck头歌` 文件夹；
 3. 打开头歌页面刷新即生效。
 
@@ -62,6 +62,19 @@ python3 答题.py run -y             # 开跑：自动跳过已满分关卡，�
 - 脚本实现档案：[头歌答题脚本/脚本详细.md](头歌答题脚本/脚本详细.md)
 - 脚本使用教程：[头歌答题脚本/使用教程.txt](头歌答题脚本/使用教程.txt)
 - 更新记录：[项目详细/更新记录.md](项目详细/更新记录.md)、[头歌答题脚本/更新记录.md](头歌答题脚本/更新记录.md)
+
+## 贡献者
+
+<table>
+  <tr>
+    <td align="center" width="140">
+      <a href="https://github.com/Wu-u-u"><img src="https://avatars.githubusercontent.com/u/245545308?v=4" width="64" alt="Wu-u-u" /><br /><b>Wu-u-u</b></a><br /><sub>项目作者 / 需求与测试</sub>
+    </td>
+    <td align="center" width="140">
+      <a href="https://github.com/deepseek-ai"><img src="https://avatars.githubusercontent.com/u/148330874?v=4" width="64" alt="DeepSeek" /><br /><b>DeepSeek</b></a><br /><sub>AI 结对开发 / 编码与文档</sub>
+    </td>
+  </tr>
+</table>
 
 ## 免责声明
 
