@@ -1,10 +1,11 @@
-// Fuck 头歌 v2.3 —— 仅作用于头歌：
+// Fuck 头歌 v2.4.2 —— 仅作用于头歌：
 //   ① 允许粘贴/复制，并阻止网页篡改剪贴板
 //   ② 答对后自动点掉“恭喜通过”弹层里的「下一关」/「最后一关」/「完成」
 //   ③ 编辑器增强：主题（Catppuccin / GitHub 高对比）+ Maple Mono 字体 + 光标动画（默认关）
+//   ④ 页面皮肤：选择题等无编辑器页面也换成主题深色（主题开启时）
 (() => {
   "use strict";
-  try { window.__fuckTouge = "2.3"; } catch (e) {}
+  try { window.__fuckTouge = "2.4.2"; } catch (e) {}
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -481,10 +482,129 @@
     } catch (e) {}
   };
 
+  /* ── 页面皮肤：把平台的浅色骨架（含左侧任务区）换成主题深色 ──
+     无编辑器的页面（选择题等）同样生效；随 主题/主题名/字体 开关即时切换 */
+  const SKIN_CSS = `
+html[data-ft-skin] { color-scheme: dark; background: var(--ft-bg) !important; }
+html[data-ft-skin="catppuccin"] {
+  --ft-bg: #1e1e2e; --ft-panel: #181825; --ft-panel2: #11111b; --ft-border: #313244;
+  --ft-text: #cdd6f4; --ft-dim: #a6adc8; --ft-link: #89b4fa; --ft-accent: #89b4fa; --ft-accent-fg: #1e1e2e;
+  --ft-sel: rgba(137, 180, 250, .35); --ft-hover: rgba(255, 255, 255, .05);
+  --ft-code-bg: #11111b; --ft-code-border: #313244; --ft-code-text: #cdd6f4;
+  --ft-kw: #cba6f7; --ft-typ: #f9e2af; --ft-str: #a6e3a1; --ft-com: #6c7086; --ft-num: #fab387; --ft-fun: #89b4fa; --ft-pun: #9399b2;
+}
+html[data-ft-skin="github"] {
+  --ft-bg: #0a0c10; --ft-panel: #0f1216; --ft-panel2: #0a0c10; --ft-border: #2b323b;
+  --ft-text: #f0f3f6; --ft-dim: #bdc4cc; --ft-link: #71b7ff; --ft-accent: #71b7ff; --ft-accent-fg: #0a0c10;
+  --ft-sel: rgba(113, 183, 255, .35); --ft-hover: rgba(255, 255, 255, .06);
+  --ft-code-bg: #12151b; --ft-code-border: #2b323b; --ft-code-text: #f0f3f6;
+  --ft-kw: #ff9492; --ft-typ: #ffb757; --ft-str: #addcff; --ft-com: #bdc4cc; --ft-num: #91cbff; --ft-fun: #dbb7ff; --ft-pun: #bdc4cc;
+}
+html[data-ft-skin] ::selection { background: var(--ft-sel); }
+html[data-ft-skin] body { background: var(--ft-bg) !important; color: var(--ft-text); }
+html[data-ft-skin] .task-header-container { background: var(--ft-panel2) !important; }
+html[data-ft-skin] .task-header { background: var(--ft-panel) !important; color: var(--ft-text); }
+html[data-ft-skin] .task-header :is(h1, h2, h3) { color: var(--ft-text); }
+html[data-ft-skin] [class*="tab-nav"] { background: var(--ft-panel) !important; border-color: var(--ft-border); }
+html[data-ft-skin] [class*="tab-nav"] a { color: var(--ft-dim); }
+html[data-ft-skin] [class*="tab-nav"] a:hover, html[data-ft-skin] [class*="tab-nav"] a[class*="active"] { color: var(--ft-text); }
+html[data-ft-skin] .left-panel { background: var(--ft-panel) !important; color: var(--ft-text); }
+html[data-ft-skin] .left-panel :is(h1, h2, h3, h4, h5, h6) { color: var(--ft-text); }
+html[data-ft-skin] .left-panel :is(p, li, td, th, dl, dd) { color: var(--ft-text); }
+html[data-ft-skin] .left-panel a { color: var(--ft-link); }
+html[data-ft-skin] .left-panel hr { border-color: var(--ft-border); background: var(--ft-border); }
+html[data-ft-skin] .left-panel :is(table, th, td) { border-color: var(--ft-border); }
+html[data-ft-skin] .left-panel th { background: var(--ft-code-bg); }
+html[data-ft-skin] .left-panel blockquote { color: var(--ft-dim); border-left-color: var(--ft-border); }
+html[data-ft-skin] :is(.right-panel, [class*="code-area-container"]) { background: var(--ft-bg) !important; color: var(--ft-text); }
+html[data-ft-skin] :is([class*="test-set-container"], [class*="action-container"]) { background: var(--ft-panel2) !important; color: var(--ft-text); }
+html[data-ft-skin] ul.choose-container { background: transparent !important; }
+html[data-ft-skin] [class*="resize-y-bar"] { background: var(--ft-border) !important; }
+html[data-ft-skin] [class*="scrollbarTrack"] { background: transparent !important; }
+html[data-ft-skin] [class*="scrollbarThumb"] { background: var(--ft-border) !important; }
+html[data-ft-skin] [class*="test-header"] { background: var(--ft-panel2) !important; }
+html[data-ft-skin] [class*="test-case-item"] { background: var(--ft-panel) !important; }
+html[data-ft-skin] [class*="choose-game-item"] { background: var(--ft-panel2) !important; }
+html[data-ft-skin] [class*="ghost-link"] { background: transparent !important; }
+html[data-ft-skin] .right-panel :is(h1, h2, h3, h4, h5, h6, p, li) { color: var(--ft-text); }
+html[data-ft-skin] .right-panel a { color: var(--ft-link); }
+html[data-ft-skin] ul.choose-container :is(p, span, div) { color: var(--ft-text); }
+html[data-ft-skin] ul.choose-container p.order { color: var(--ft-dim); }
+html[data-ft-skin] .ant-radio-wrapper { color: var(--ft-text); }
+html[data-ft-skin] .ant-radio-inner { background: transparent; border-color: var(--ft-border); }
+html[data-ft-skin] .ant-radio-wrapper:hover .ant-radio-inner { border-color: var(--ft-accent); }
+html[data-ft-skin] .ant-radio-wrapper-checked .ant-radio-inner { border-color: var(--ft-accent); }
+html[data-ft-skin] .ant-radio-checked .ant-radio-inner::after { background: var(--ft-accent); }
+html[data-ft-skin] :is([class*="mdBody"], .markdown-body) :is(p, li, td, th, h1, h2, h3, h4, h5, h6) { color: var(--ft-text); }
+html[data-ft-skin] :is([class*="mdBody"], .markdown-body) a { color: var(--ft-link); }
+html[data-ft-skin] :is([class*="mdBody"], .markdown-body) :is(table, th, td) { border-color: var(--ft-border); }
+html[data-ft-skin] :is([class*="mdBody"], .markdown-body) th { background: var(--ft-code-bg); }
+html[data-ft-skin] pre.prettyprint, html[data-ft-skin] :is([class*="mdBody"], .markdown-body) pre {
+  background: var(--ft-code-bg) !important; color: var(--ft-code-text) !important;
+  border: 1px solid var(--ft-code-border) !important; border-radius: 6px;
+}
+html[data-ft-skin] pre.prettyprint code { background: transparent !important; border: 0 !important; padding: 0; color: inherit; }
+html[data-ft-skin] :is(.left-panel, [class*="mdBody"], .markdown-body) code {
+  background: var(--ft-code-bg); color: var(--ft-code-text); border: 1px solid var(--ft-code-border); border-radius: 4px; padding: 1px 5px;
+}
+html[data-ft-skin] .prettyprint :is(.kwd, .tag) { color: var(--ft-kw); }
+html[data-ft-skin] .prettyprint .typ { color: var(--ft-typ); }
+html[data-ft-skin] .prettyprint :is(.str, .atv) { color: var(--ft-str); }
+html[data-ft-skin] .prettyprint .com { color: var(--ft-com); font-style: italic; }
+html[data-ft-skin] .prettyprint :is(.dec, .atn) { color: var(--ft-fun); }
+html[data-ft-skin] .prettyprint .lit { color: var(--ft-num); }
+html[data-ft-skin] .prettyprint .pln { color: var(--ft-code-text); }
+html[data-ft-skin] .prettyprint :is(.pun, .opn, .clo) { color: var(--ft-pun); }
+html[data-ft-skin] [class*="btn-run"] { background: var(--ft-accent) !important; border-color: var(--ft-accent) !important; color: var(--ft-accent-fg) !important; }
+html[data-ft-skin] [class*="btn-run"][disabled] { opacity: .55; }
+html[data-ft-skin] [class*="ghost-link"] { color: var(--ft-link) !important; border-color: var(--ft-link) !important; }
+html[data-ft-skin] pre.prettyprint ol.linenums li { background: transparent; }
+html[data-ft-skin] .ant-btn { background: var(--ft-panel); border-color: var(--ft-border); color: var(--ft-text); }
+html[data-ft-skin] .ant-btn:hover { background: var(--ft-code-bg); border-color: var(--ft-accent); color: var(--ft-accent); }
+html[data-ft-skin] [class*="tabs___"] { background: var(--ft-panel) !important; border-color: var(--ft-border); }
+html[data-ft-skin] [class*="tabs___"] :is(div, span, a, button) { color: var(--ft-text); }
+html[data-ft-skin] .ant-table { background: transparent; color: var(--ft-text); }
+html[data-ft-skin] .ant-table-thead > tr > th { background: var(--ft-panel) !important; color: var(--ft-text) !important; border-color: var(--ft-border) !important; }
+html[data-ft-skin] .ant-table-tbody > tr > td { border-color: var(--ft-border); color: var(--ft-text); }
+html[data-ft-skin] tr.ant-table-placeholder { background: transparent !important; }
+html[data-ft-skin] .ant-table-placeholder > td, html[data-ft-skin] .ant-table-placeholder:hover > td { background: transparent !important; color: var(--ft-dim); }
+html[data-ft-skin] :is(.ant-skeleton-avatar, .ant-skeleton-title, .ant-skeleton-paragraph > li) { background: rgba(255, 255, 255, .08) !important; }
+html[data-ft-skin] [class*="content-wrapper"] div[style*="background: rgb(255, 255, 255)"] { background: transparent !important; }
+html[data-ft-skin] .ant-table-tbody > tr:hover > td { background: var(--ft-hover) !important; }
+html[data-ft-skin] .ant-empty-description { color: var(--ft-dim); }
+html[data-ft-skin] .ant-pagination-item { background: transparent; border-color: var(--ft-border); }
+html[data-ft-skin] .ant-pagination-item > a { color: var(--ft-text); }
+html[data-ft-skin] .ant-pagination-item-active { background: var(--ft-accent); border-color: var(--ft-accent); }
+html[data-ft-skin] .ant-pagination-item-active > a { color: var(--ft-accent-fg); }
+html[data-ft-skin] .ant-pagination-item-link { background: transparent; border-color: var(--ft-border); color: var(--ft-text); }
+html[data-ft-skin] .ant-pagination-disabled .ant-pagination-item-link { color: var(--ft-dim); opacity: .5; }
+html[data-ft-font] :is(pre, code, kbd, samp, ol.linenums),
+html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .markdown-body, [class*="task-header"],
+  [class*="task-header-container"], [class*="tab-nav"], [class*="action-container"], [class*="test-set-container"],
+  [class*="choose-container"], [class*="content-wrapper"]) :is(p, li, dd, dt, td, th, blockquote, h1, h2, h3, h4, h5, h6,
+  a, strong, em, b, label, button, span:not([class*="icon"]):not(.anticon)) { font-family: 'Maple Mono NF CN', 'Maple Mono Web', 'Maple Mono', Consolas, 'Courier New', monospace !important; }
+`;
+
+  const applySkin = () => {
+    const el = document.documentElement;
+    if (!el) { setTimeout(applySkin, 10); return; }   // document_start 早期可能还没有 <html>
+    themeOn ? el.setAttribute("data-ft-skin", themeName === "github" ? "github" : "catppuccin")
+            : el.removeAttribute("data-ft-skin");
+    fontOn ? el.setAttribute("data-ft-font", "") : el.removeAttribute("data-ft-font");
+    if ((themeOn || fontOn) && !$("#ft-skin-style")) {
+      const style = document.createElement("style");
+      style.id = "ft-skin-style";
+      style.textContent = SKIN_CSS;
+      (document.head || el).appendChild(style);
+    }
+  };
+  applySkin();
+
   const setThemeState = on => {
     themeOn = !!on;
     try { localStorage.setItem(UI_THEME_KEY, themeOn ? "on" : "off"); } catch (e) {}
     applyTheme();
+    applySkin();
     if (themeOn) ensureDarkMode();
   };
 
@@ -493,6 +613,7 @@
     themeName = name;
     try { localStorage.setItem(UI_THEME_NAME, name); } catch (e) {}
     if (themeOn) applyTheme();
+    applySkin();
   };
 
   const setFontState = on => {
@@ -503,6 +624,7 @@
       localStorage.setItem(UI_FONT_ASKED, "1");
     } catch (e) {}
     applyFont();
+    applySkin();
   };
 
   const setCursorState = on => {
