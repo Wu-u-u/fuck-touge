@@ -1,11 +1,11 @@
-// Fuck 头歌 v2.4.2 —— 仅作用于头歌：
+// Fuck 头歌 v2.4.3 —— 仅作用于头歌：
 //   ① 允许粘贴/复制，并阻止网页篡改剪贴板
 //   ② 答对后自动点掉“恭喜通过”弹层里的「下一关」/「最后一关」/「完成」
 //   ③ 编辑器增强：主题（Catppuccin / GitHub 高对比）+ Maple Mono 字体 + 光标动画（默认关）
-//   ④ 页面皮肤：选择题等无编辑器页面也换成主题深色（主题开启时）
+//   ④ 页面皮肤：仅答题页面内，选择题等无编辑器页面也换成主题深色（主题开启时）
 (() => {
   "use strict";
-  try { window.__fuckTouge = "2.4.2"; } catch (e) {}
+  try { window.__fuckTouge = "2.4.3"; } catch (e) {}
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -585,13 +585,15 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
   a, strong, em, b, label, button, span:not([class*="icon"]):not(.anticon)) { font-family: 'Maple Mono NF CN', 'Maple Mono Web', 'Maple Mono', Consolas, 'Courier New', monospace !important; }
 `;
 
+  const isAnswerPage = () => /^\/tasks\/[^/]+\/[^/]+\/[^/]+/.test(location.pathname);   // 答题页（…/tasks/课程/关卡组/关卡）
   const applySkin = () => {
     const el = document.documentElement;
     if (!el) { setTimeout(applySkin, 10); return; }   // document_start 早期可能还没有 <html>
-    themeOn ? el.setAttribute("data-ft-skin", themeName === "github" ? "github" : "catppuccin")
-            : el.removeAttribute("data-ft-skin");
-    fontOn ? el.setAttribute("data-ft-font", "") : el.removeAttribute("data-ft-font");
-    if ((themeOn || fontOn) && !$("#ft-skin-style")) {
+    const on = isAnswerPage();                        // 皮肤只作用于答题页，主页/目录保持平台原样
+    themeOn && on ? el.setAttribute("data-ft-skin", themeName === "github" ? "github" : "catppuccin")
+                  : el.removeAttribute("data-ft-skin");
+    fontOn && on ? el.setAttribute("data-ft-font", "") : el.removeAttribute("data-ft-font");
+    if (on && (themeOn || fontOn) && !$("#ft-skin-style")) {
       const style = document.createElement("style");
       style.id = "ft-skin-style";
       style.textContent = SKIN_CSS;
@@ -599,6 +601,17 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     }
   };
   applySkin();
+  // 单页应用内切换界面（主页 ↔ 答题页等）时同步开关
+  const watchLocation = () => {
+    try {
+      ["pushState", "replaceState"].forEach(fn => {
+        const orig = history[fn];
+        history[fn] = function (...args) { const r = orig.apply(this, args); applySkin(); return r; };
+      });
+      addEventListener("popstate", applySkin);
+    } catch (e) {}
+  };
+  watchLocation();
 
   const setThemeState = on => {
     themeOn = !!on;

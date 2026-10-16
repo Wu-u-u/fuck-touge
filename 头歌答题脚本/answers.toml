@@ -232,6 +232,69 @@ name = "选择题"
 answer = [["D"], ["E", "G"], ["B"]]
 
 [[chapters]]
+name = "Java面向对象（二）"
+homework_id = "4155353"
+
+[[chapters.levels]]
+name = "什么是封装，如何使用封装"
+multi = false
+answer = ""
+
+[[chapters.levels]]
+name = "什么是继承，怎样使用继承"
+multi = false
+answer = ""
+
+[[chapters.levels]]
+name = "super关键字的使用"
+multi = false
+answer = ""
+
+[[chapters.levels]]
+name = "方法的重写与重载"
+multi = false
+answer = ""
+
+[[chapters.levels]]
+name = "抽象类"
+multi = false
+answer = ""
+
+[[chapters.levels]]
+name = "final关键字的理解与使用"
+multi = false
+answer = ""
+
+[[chapters.levels]]
+name = "接口"
+multi = false
+answer = ""
+
+[[chapters.levels]]
+name = "什么是多态，怎么使用多态"
+multi = false
+answer = ""
+
+[[chapters]]
+name = "Java面向对象（三）"
+homework_id = "4155364"
+
+[[chapters.levels]]
+name = "通关任务一"
+multi = false
+answer = ""
+
+[[chapters.levels]]
+name = "通关任务二"
+multi = false
+answer = ""
+
+[[chapters.levels]]
+name = "通关任务三"
+multi = false
+answer = ""
+
+[[chapters]]
 name = "Java语言基础（五）- 循环结构基础"
 homework_id = "4155347"
 
@@ -948,4 +1011,3 @@ public class HelloWorld {
     /********** End **********/
 }	
 '''
-

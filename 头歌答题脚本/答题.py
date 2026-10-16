@@ -1395,6 +1395,8 @@ class Level:
                 files.append({"path": str(f.get("path", "")).strip(),
                               "answer": f.get("answer", "")})
         self.files = files          # 多代码文件关卡的答案：[{path, answer}]
+        _m = raw.get("multi")       # 代码关是否多文件：True/False；旧档案没有此字段 → None
+        self.multi = bool(_m) if _m is not None else None
 
     def answer_empty(self) -> bool:
         if self.files:
@@ -1446,16 +1448,31 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
     · 已存在：只追加缺的章节/关卡，绝不改写用户已填内容；
     · 写入前用 tomllib 校验，失败则保留原文件。
     """
+    def level_lines(lv: dict) -> list[str]:
+        """生成一个关卡的档案行：name [+ multi] + answer 或文件块（scan 只写空骨架）。"""
+        lines = ["[[chapters.levels]]",
+                 f'name = {json.dumps(lv["name"], ensure_ascii=False)}']
+        multi = lv.get("multi")
+        paths = lv.get("paths") or []
+        if multi is not None:
+            lines.append(f'multi = {"true" if multi else "false"}')
+        if multi and paths:
+            for p in paths:
+                lines.append("[[chapters.levels.files]]")
+                lines.append(f'path = {json.dumps(p, ensure_ascii=False)}')
+                lines.append('answer = ""')
+        else:
+            lines.append('answer = ""')
+        lines.append("")
+        return lines
+
     def block(ch: dict) -> str:
         lines = ["[[chapters]]", f'name = {json.dumps(ch["name"], ensure_ascii=False)}']
         if ch.get("homework_id"):
             lines.append(f'homework_id = {json.dumps(ch["homework_id"], ensure_ascii=False)}')
         lines.append("")
         for lv in ch["levels"]:
-            lines.append("[[chapters.levels]]")
-            lines.append(f'name = {json.dumps(lv["name"], ensure_ascii=False)}')
-            lines.append('answer = ""')
-            lines.append("")
+            lines.extend(level_lines(lv))
         return "\n".join(lines)
 
     if not path.exists():
@@ -1467,7 +1484,8 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
             "#   可以发给进度不同的人使用。\n"
             "# · 代码题：answer 用三个单引号原样包住完整代码（若代码里出现 '''，改用三个双引号）。\n"
             "# · 选择题：answer 填选项字母；多题填列表，如 answer = [\"B\", \"A\", \"D\"]。\n"
-            "# · 不想跑某关/某章：删掉对应条目，或自行加 skip = true（一般不需要）。\n\n"
+            "# · 不想跑某关/某章：删掉对应条目，或自行加 skip = true（一般不需要）。\n"
+            "# · 代码关是否为多文件：scan/harvest 会自动写入 multi = true/false，不用手改。\n\n"
             "version = 1\n\n"
         )
         text = header + "\n".join(
@@ -1493,10 +1511,7 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
             if missing:
                 lines = []
                 for lv in missing:
-                    lines.append("[[chapters.levels]]")
-                    lines.append(f'name = {json.dumps(lv["name"], ensure_ascii=False)}')
-                    lines.append('answer = ""')
-                    lines.append("")
+                    lines.extend(level_lines(lv))
                 # 插到该章块的末尾（下一个 [[chapters]] 之前）
                 src = text.splitlines(keepends=True)
                 ch_start = None
@@ -1524,7 +1539,7 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
                         if src[k].strip() == "[[chapters]]":
                             end = k
                             break
-                    insert = "".join(lines)
+                    insert = "\n".join(lines)
                     if end > 0 and not src[end - 1].endswith("\n\n"):
                         insert = "\n" + insert
                     src.insert(end, insert)
@@ -1542,6 +1557,32 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
 
 # ─────────────────────────── 子命令：scan ───────────────────────────
 
+def scan_level_files(page: Page) -> dict:
+    """在关卡页里走一遍本章，记录每关是不是多代码文件（写档案 multi 标记用）。
+
+    返回 {关卡序号: {"multi": bool, "paths": [...]}}——只含打开了下拉的代码关。
+    检测失败只中断本次检测，不影响扫描本身（run 会回退到现场检测）。
+    """
+    info: dict = {}
+    try:
+        st = rewind_to_first(page)
+        guard = 0
+        while st.get("index") and guard < 50:
+            guard += 1
+            idx = st["index"]
+            if st.get("hasEditor"):
+                paths, _ = list_code_files(page)
+                if paths:
+                    info[idx] = {"multi": len(paths) > 1, "paths": paths}
+                close_file_menu(page)
+            if not st.get("hasNext"):
+                break
+            st = advance_level(page, idx)
+    except Exception as e:            # noqa: BLE001 —— 检测而已，出错不拖垮扫描
+        log(f"  ！关卡文件检测中断：{e}")
+    return info
+
+
 def scan_chapters(browser: cdp.Browser, classroom: Page, cfg: dict,
                   names: list[str]) -> tuple[list[dict], Page]:
     """扫描指定章节，返回 (扫描结果, 最新的课堂页对象)。"""
@@ -1551,8 +1592,16 @@ def scan_chapters(browser: cdp.Browser, classroom: Page, cfg: dict,
         prog = classroom.ws.eval_json(card_progress_js(name)) or {}
         full = (prog.get("name") or "").strip() or name   # 用卡片完整标题，避免档案里出现片段名
         log(f"\n→ 扫描章节：{full}")
-        target, _ = enter_chapter(browser, classroom, full)
+        target, ws = enter_chapter(browser, classroom, full)
         url = target["url"]
+        # 在关卡页顺便检测每关是否多代码文件，写入档案 multi 标记（v0.9.3）
+        file_info: dict = {}
+        if "/tasks/" in url:
+            file_info = scan_level_files(Page(ws, target))
+            if file_info:
+                n_single = sum(1 for v in file_info.values() if not v["multi"])
+                log(f"  关卡文件检测：{len(file_info)} 个代码关"
+                    f"（{n_single} 个单文件、{len(file_info) - n_single} 个多文件）")
         m = re.search(r"/tasks/[^/]+/(\d+)/", url) or \
             re.search(r"/shixun_homework/(\d+)/detail", url)
         browser.close_target(target["id"])
@@ -1564,6 +1613,12 @@ def scan_chapters(browser: cdp.Browser, classroom: Page, cfg: dict,
         if not rows:
             die(f"章节「{name}」详情页没有读到关卡列表。")
         levels = [{"name": r["name"]} for r in rows]
+        for i, lv in enumerate(levels, 1):        # 贴上文件检测结果（v0.9.3）
+            fi = file_info.get(i)
+            if fi:
+                lv["multi"] = fi["multi"]
+                if fi["multi"]:
+                    lv["paths"] = fi["paths"]
         log(f"  读到 {len(levels)} 关：" + "，".join(
             f"{i+1}.{r['name']}{'(已满分，运行时会自动跳过)' if is_passed_row(r) else ''}"
             for i, r in enumerate(rows)))
@@ -1777,6 +1832,10 @@ def write_back_answers(path: Path, changes: dict[str, dict[int, str]], force: bo
         if not want:
             continue
         for idx, ans in sorted(want.items(), reverse=True):
+            extra_multi = None          # 支持 {"answer":…, "multi": bool} 载荷（顺带写单/多文件标记）
+            if isinstance(ans, dict):
+                extra_multi = ans.get("multi")
+                ans = str(ans.get("answer", ""))
             if not (1 <= idx <= len(ch["levels"])):
                 log(f"  ! 章节「{ch.get('name')}」没有第 {idx} 关，跳过")
                 continue
@@ -1792,13 +1851,16 @@ def write_back_answers(path: Path, changes: dict[str, dict[int, str]], force: bo
             if not is_empty and not force:
                 log(f"  ! 「{level['name']}」已有答案，未覆盖（--force 可强制覆盖）")
                 continue
-            # 重建块：header + name + [skip] + answer
+            # 重建块：header + name + [skip] + [multi] + answer
             name_line = None
             has_skip = False
+            multi_line = None
             for k in range(lstart + 1, lend):
                 s = lines[k].strip()
                 if s.startswith("skip"):
                     has_skip = True
+                if s.startswith("multi") and multi_line is None:
+                    multi_line = s + "\n"
                 if s.startswith("name =") and name_line is None:
                     name_line = k
             new_block = ["[[chapters.levels]]\n"]
@@ -1806,6 +1868,10 @@ def write_back_answers(path: Path, changes: dict[str, dict[int, str]], force: bo
                 new_block.append(lines[name_line])
             if has_skip:
                 new_block.append("skip = true\n")
+            if extra_multi is not None:
+                new_block.append(f"multi = {'true' if extra_multi else 'false'}\n")
+            elif multi_line is not None:
+                new_block.append(multi_line)
             new_block.append(ans if ans.endswith("\n") else ans + "\n")
             new_block.append("\n")
             edits.append((lstart, lend, new_block, level["name"]))
@@ -1850,7 +1916,7 @@ def cmd_harvest(args, cfg: dict) -> None:
     if not todo:
         die("答案档案里找不到指定章节。")
 
-    all_changes: dict[str, dict[int, str]] = {}
+    all_changes: dict[str, dict[int, object]] = {}
     for ch in todo:
         if not ch.homework_id:
             die(f"章节「{ch.name}」缺少 homework_id，请先 scan。")
@@ -1907,7 +1973,7 @@ def cmd_harvest(args, cfg: dict) -> None:
                 browser.close_target(target["id"])
                 log("  ! 详情页上没找到进入关卡的按钮，跳过本章")
                 continue
-        collected: dict[int, str] = {}
+        collected: dict[int, object] = {}
         try:
             st = rewind_to_first(page)
             guard = 0
@@ -1921,7 +1987,8 @@ def cmd_harvest(args, cfg: dict) -> None:
                     kind, value, note = read_saved_answer(page, st)
                     if kind:
                         try:
-                            collected[idx] = answer_to_toml(kind, value)
+                            multi_flag = False if kind == "code" else (True if kind == "files" else None)
+                            collected[idx] = {"answer": answer_to_toml(kind, value), "multi": multi_flag}
                             log(f"  ✓ 第{idx}关「{st.get('name')}」：{note}")
                         except RuntimeError as e:
                             log(f"  ! 第{idx}关采集失败：{e}")
@@ -1988,7 +2055,19 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
                 continue
 
             # 作答
-            if st.get("hasEditor"):
+            if st.get("hasEditor") and lv.multi is False and not lv.files:
+                # 档案已标明单文件：不碰「代码文件」下拉，直接整文件覆盖（快）
+                code = str(lv.answer or "")
+                if not code.strip():
+                    stats["failed"] += 1
+                    die(f"第{idx}关「{lname}」的 answer 是空的，已暂停。\n"
+                        f"  请填写：{cfg['run']['answers']}")
+                try:
+                    set_code(page, code)
+                except RuntimeError as e:
+                    stats["failed"] += 1
+                    die(f"第{idx}关「{lname}」写入代码失败，已暂停：{e}")
+            elif st.get("hasEditor"):
                 paths, _ = list_code_files(page)
                 if len(paths) > 1:
                     log(f"    检测到 {len(paths)} 个代码文件：" + "、".join(paths))
