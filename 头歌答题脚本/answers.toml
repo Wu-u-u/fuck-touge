@@ -134,6 +134,7 @@ class Person{
 
 [[chapters.levels]]
 name = "类与对象练习"
+multi = true
 [[chapters.levels.files]]
 path = "src/step4/Test.java"
 answer = '''
@@ -142,57 +143,57 @@ package step4;
 import java.util.Scanner;
 
 public class Test {
-    public static void main(String[] args) {
-        Scanner sc = new Scanner(System.in);
-        String theMa = sc.next();
-        int quantity = sc.nextInt();
-        boolean likeSoup = sc.nextBoolean();
+	
+	public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		String theMa = sc.next();
+		int quantity = sc.nextInt();
+		boolean likeSoup = sc.nextBoolean();
 
+		//使用三个参数的构造方法创建WuMingFen对象  取名 f1
         WuMingFen f1 = new WuMingFen(theMa, quantity, likeSoup);
+		//使用两个参数的构造方法创建WuMingFen对象  取名 f2
         WuMingFen f2 = new WuMingFen(theMa, quantity);
-        WuMingFen f3 = new WuMingFen();
-
-        f1.check();
+		//使用无参构造方法创建WuMingFen对象  取名 f3
+		WuMingFen f3 = new WuMingFen();
+		//分别调用三个类的 check方法
+		f1.check();
         f2.check();
         f3.check();
-    }
+	}
 }
 '''
 [[chapters.levels.files]]
 path = "src/step4/WuMingFen.java"
 answer = '''
-		//在这里添加包名  step4
-
+ 		//在这里添加包名  step4
+package step4;
 		//创建类 添加属性和方法
-	package step4;
-
 public class WuMingFen {
     String theMa;
     int quantity;
     boolean likeSoup;
 
-    // 三个参数的构造方法
     public WuMingFen(String theMa, int quantity, boolean likeSoup) {
         this.theMa = theMa;
         this.quantity = quantity;
         this.likeSoup = likeSoup;
     }
 
-    // 两个参数的构造方法（默认不带汤）
+   
+
     public WuMingFen(String theMa, int quantity) {
         this.theMa = theMa;
         this.quantity = quantity;
         this.likeSoup = false;
     }
 
-    // 无参构造方法（默认：酸辣、2两、带汤）
     public WuMingFen() {
         this.theMa = "酸辣";
         this.quantity = 2;
         this.likeSoup = true;
     }
 
-    // 查看粉信息
     public void check() {
         System.out.println("面码：" + theMa + "，粉的份量：" + quantity + "两，是否带汤：" + likeSoup);
     }
@@ -238,42 +239,448 @@ homework_id = "4155353"
 [[chapters.levels]]
 name = "什么是封装，如何使用封装"
 multi = false
-answer = ""
+answer = '''
+package case1;
+
+public class TestPersonDemo {
+	public static void main(String[] args) {
+		/********* begin *********/
+		// 声明并实例化一Person对象p
+        Person p = new Person();
+		// 给p中的属性赋值
+        p.setName("张三");
+        p.setAge(18);
+		// 调用Person类中的talk()方法
+        p.talk();
+		/********* end *********/
+
+	}
+}
+
+// 在这里定义Person类
+class Person {
+	/********* begin *********/
+    private String name;
+    private int age;
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public int getAge() {
+        return age;
+    }
+
+    public void setAge(int age) {
+        this.age = age;
+    }
+
+    public void talk() {
+        System.out.println("我是：" + name + "，今年：" + age + "岁");
+    }
+	/********* end *********/
+}
+'''
 
 [[chapters.levels]]
 name = "什么是继承，怎样使用继承"
 multi = false
-answer = ""
+answer = '''
+package case2;
+
+public class extendsTest {
+	public static void main(String args[]) {
+		// 实例化一个Cat对象，设置属性name和age，调用voice()和eat()方法，再打印出名字和年龄信息
+		/********* begin *********/
+        Cat cat = new Cat();
+        cat.setName("大花猫");
+        cat.setAge(6);
+        cat.voice();
+        cat.eat();
+        System.out.println(cat.getName() + cat.getAge() + "岁");
+		/********* end *********/
+
+		// 实例化一个Dog对象，设置属性name和age，调用voice()和eat()方法，再打印出名字和年龄信息
+		/********* begin *********/
+        Dog dog = new Dog();
+        dog.setName("大黑狗");
+        dog.setAge(8);
+        dog.voice();
+        dog.eat();
+        System.out.println(dog.getName() + dog.getAge() + "岁");
+		/********* end *********/
+
+	}
+}
+
+class Animal {
+	/********* begin *********/
+    private String name;
+    private int age;
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public int getAge() {
+        return age; 
+    }
+
+    public void setAge(int age) {
+        this.age = age;
+    }
+	/********* end *********/
+
+}
+
+class Cat extends Animal {
+	// 定义Cat类的voice()和eat()方法
+	/********* begin *********/
+    public void voice() {
+        System.out.println(getName() + "喵喵叫");
+    }
+
+    public void eat() {
+        System.out.println(getName() + "吃鱼");
+    }
+	/********* end *********/
+}
+
+class Dog extends Animal {
+	// 定义Dog类的voice()和eat()方法
+	/********* begin *********/
+    public void voice() {
+        System.out.println(getName() + "汪汪叫");
+    }
+
+    public void eat() {
+        System.out.println(getName() + "吃骨头");
+    }
+	/********* end *********/
+}
+'''
 
 [[chapters.levels]]
 name = "super关键字的使用"
 multi = false
-answer = ""
+answer = '''
+package case3;
+
+public class superTest {
+	public static void main(String[] args) {
+		// 实例化一个Student类的对象s，为Student对象s中的school赋值，打印输出信息
+		/********* begin *********/
+        Student s = new Student("张三", 18);
+        s.school = "哈佛大学";
+        System.out.println("姓名：" + s.name + "，年龄：" + s.age + "，学校：" + s.school);
+		/********* end *********/
+	}
+}
+
+class Person {
+	/********* begin *********/
+    String name;
+    int age;
+
+    public Person(String name, int age) {
+        this.name = name;
+        this.age = age;
+    }
+	/********* end *********/
+}
+
+class Student extends Person {
+	/********* begin *********/
+    String school;
+    
+    public Student(String name, int age) {
+        super(name, age);
+    }
+	/********* end *********/
+}
+'''
 
 [[chapters.levels]]
 name = "方法的重写与重载"
 multi = false
-answer = ""
+answer = '''
+package case4;
+
+public class overridingTest {
+	public static void main(String[] args) {
+		// 实例化子类对象s，调用talk()方法打印信息
+		/********* begin *********/
+        Student s = new Student("张三", 18, "哈佛大学");
+        System.out.println(s.talk());
+		/********* end *********/
+		
+	}
+}
+
+class Person {
+	/********* begin *********/
+    String name;
+    int age;
+    
+    public Person(String name, int age) {
+        this.name = name;
+        this.age = age;
+    }
+    
+    public String talk() {
+        return "我是：" + name + "，今年：" + age + "岁";
+    }
+    
+	/********* end *********/
+}
+
+class Student extends Person {
+	/********* begin *********/
+    String school;
+
+    public Student(String name, int age, String school) {
+        super(name,age);
+        this.school = school;
+    }
+
+    @Override
+    public String talk() {
+        return super.talk() + "，我在" + school + "上学";
+    }
+	/********* end *********/
+}
+'''
 
 [[chapters.levels]]
 name = "抽象类"
 multi = false
-answer = ""
+answer = '''
+package case5;
+
+public class abstractTest {
+	public static void main(String[] args) {
+		/********* begin *********/
+		// 分别实例化Student类与Worker类的对象，并调用各自构造方法初始化类属性。
+		Student s = new Student("张三", 20, "学生");
+        Worker w = new Worker("李四", 30, "工人");
+		// 分别调用各自类中被复写的talk()方法 打印信息。
+		System.out.println(s.talk());
+        System.out.println(w.talk());
+		/********* end *********/
+		
+	}
+}
+
+// 声明一个名为Person的抽象类，在Person中声明了三个属性name age occupation和一个抽象方法——talk()。
+abstract class Person {
+	/********* begin *********/
+    String name;
+    int age;
+    String occupation;
+
+    public Person(String name, int age, String occupation) {
+        this.name = name;
+        this.age = age;
+        this.occupation = occupation;
+    }
+
+    public abstract String talk();
+	/********* end *********/
+}
+
+// Student类继承自Person类，添加带三个参数的构造方法，复写talk()方法 返回姓名、年龄和职业信息
+class Student extends Person {
+	/********* begin *********/
+    public Student(String name, int age, String occupation) {
+        super(name, age, occupation);
+    }
+
+    @Override
+    public String talk() {
+        return "学生——>姓名：" + name + "，年龄：" + age + "，职业：" + occupation + "！";
+    }
+	/********* end *********/
+}
+
+// Worker类继承自Person类，添加带三个参数的构造方法，复写talk()方法 返回姓名、年龄和职业信息
+class Worker extends Person {
+	/********* begin *********/
+    public Worker(String name, int age, String occupation) {
+        super(name, age, occupation);
+    }
+
+    @Override
+    public String talk() {
+        return "工人——>姓名：" + name + "，年龄：" + age + "，职业：" + occupation + "！";
+    }
+	/********* end *********/
+
+}
+'''
 
 [[chapters.levels]]
 name = "final关键字的理解与使用"
 multi = false
-answer = ""
+answer = '''
+package case6;
+
+public class finalTest {
+	public static void main(String args[]) {
+		Bike1 obj = new Bike1();
+		obj.run();
+
+		Honda honda = new Honda();
+		honda.run();
+
+		Yamaha yamaha = new Yamaha();
+		yamaha.run();
+	}
+}
+//不可以修改 final 变量的值
+// final方法,不可以重写
+//// 不可以扩展 final 类
+class Bike1 {
+    int speedlimit = 90;
+
+	void run() {
+		speedlimit = 120; 
+		System.out.println("speedlimit=120");
+	}
+
+}
+
+class Bike2 {
+	void run() {
+		System.out.println("running");
+	}
+}
+
+class Honda extends Bike2 {
+	void run() { 
+		System.out.println("running safely with 100kmph");
+	}
+
+}
+
+class Bike3 {
+}
+
+class Yamaha extends Bike3 { 
+	void run() {
+		System.out.println("running safely with 100kmph");
+	}
+
+}
+'''
 
 [[chapters.levels]]
 name = "接口"
 multi = false
-answer = ""
+answer = '''
+package case7;
+
+public class interfaceTest {
+	public static void main(String[] args) {
+		// 实例化一Student的对象s，并调用talk()方法，打印信息
+		/********* begin *********/
+        Student s = new Student();
+        System.out.println(s.talk());
+		/********* end *********/
+
+	}
+}
+
+// 声明一个Person接口，并在里面声明三个常量：name、age和occupation，并分别赋值，声明一抽象方法talk()
+interface Person {
+	/********* begin *********/
+String name = "张三";
+int age = 18;
+String occupation = "学生";
+
+String talk();
+	/********* end *********/
+}
+
+// Student类继承自Person类 复写talk()方法返回姓名、年龄和职业信息
+class Student implements Person {
+	/********* begin *********/
+    @Override 
+    public String talk() {
+        return "学生——>姓名：" + name + "，年龄：" + age + "，职业：" + occupation + "！";
+    }
+	/********* end *********/
+}
+'''
 
 [[chapters.levels]]
 name = "什么是多态，怎么使用多态"
 multi = false
-answer = ""
+answer = '''
+package case8;
+
+public class TestPolymorphism {
+	public static void main(String[] args) {
+		// 以多态方式分别实例化子类对象并调用eat()方法
+		/********* begin *********/
+        Animal dog = new Dog();
+        dog.eat();
+
+        Animal cat = new Cat();
+        cat.eat();
+
+        Animal lion = new Lion();
+        lion.eat();
+		/********* end *********/
+	}
+}
+
+// Animal类中定义eat()方法
+class Animal {
+	/********* begin *********/
+    public void eat() {
+        System.out.println("eating...");
+    }
+	/********* end *********/
+}
+
+// Dog类继承Animal类 复写eat()方法
+class Dog extends Animal {
+	/********* begin *********/
+    @Override
+    public void eat() {
+        System.out.println("eating bread...");
+    }
+	/********* end *********/
+}
+
+// Cat类继承Animal类 复写eat()方法
+class Cat extends Animal {
+	/********* begin *********/
+    @Override
+    public void eat() {
+        System.out.println("eating rat...");
+    }
+	/********* end *********/
+}
+
+// Lion类继承Animal类 复写eat()方法
+class Lion extends Animal {
+	/********* begin *********/
+    @Override
+    public void eat() {
+        System.out.println("eating meat...");
+    }
+	/********* end *********/
+}
+'''
 
 [[chapters]]
 name = "Java面向对象（三）"
@@ -282,17 +689,485 @@ homework_id = "4155364"
 [[chapters.levels]]
 name = "通关任务一"
 multi = false
-answer = ""
+answer = '''
+package case1;
+
+import java.util.Scanner;
+
+public class Task1 {
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        String dogName = sc.next();
+        String dogSex = sc.next();
+        String dogColor = sc.next();
+        String catName = sc.next();
+        String catSex = sc.next();
+        double catWeight = sc.nextDouble();
+        // 通过有参构造函数实例化Dog类对象dog
+        // dog调用talk()方法
+        // dog调用eat()方法
+        /********* begin *********/
+        Dog dog = new Dog(dogName, dogSex, dogColor);
+        dog.talk();
+        dog.eat();
+        /********* end *********/
+        // 通过有参构造函数实例化Cat类对象cat
+        // cat调用talk()方法
+        // cat调用eat()方法
+        /********* begin *********/
+        Cat cat = new Cat(catName, catSex, catWeight);
+        cat.talk();
+        cat.eat();
+        /********* end *********/
+    }
+}
+
+// 声明抽象类Pet
+/********* begin *********/
+abstract class Pet {
+    protected String name;
+    protected String sex;
+
+    public Pet(String name, String sex) {
+        this.name = name;
+        this.sex = sex;
+    }
+
+    public abstract void talk();
+
+    public abstract void eat();
+}
+/********* end *********/
+
+// 声明Dog类继承自Pet
+/********* begin *********/
+class Dog extends Pet {
+    private String color;
+
+    public Dog(String name, String sex, String color) {
+        super(name, sex);
+        this.color = color;
+    }
+
+    @Override
+    public void talk() {
+        System.out.println("名称：" + name + "，性别：" + sex + "，颜色：" + color + "，汪汪叫");
+    }
+
+    @Override
+    public void eat() {
+        System.out.println(name + "吃骨头！");
+    }
+}
+/********* end *********/
+
+// 声明Cat类继承自Pet
+/********* begin *********/
+class Cat extends Pet {
+    private double weight;
+
+    public Cat(String name, String sex, double weight) {
+        super(name, sex);
+        this.weight = weight;
+    }
+
+    @Override
+    public void talk() {
+        System.out.println("名称：" + name + "，性别：" + sex + "，体重：" + weight + "kg，喵喵叫");
+    }
+
+    @Override
+    public void eat() {
+        System.out.println(name + "吃鱼！");
+    }
+}
+/********* end *********/
+'''
 
 [[chapters.levels]]
 name = "通关任务二"
 multi = false
-answer = ""
+answer = '''
+package case2;
+
+import java.util.Scanner;
+
+public class Task2 {
+	public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		String cName = sc.next();
+		String cSex = sc.next();
+		int cAge = sc.nextInt();
+		String eName = sc.next();
+		String eSex = sc.next();
+		int eAge = sc.nextInt();
+		// 创建测试类对象test
+		// 创建Person类对象person1,引用指向中国人,通过有参构造函数实例化中国人类对象
+		// 通过showEat()方法调用Chinese的eat()方法
+		// 创建Person类对象person2,引用指向英国人,通过有参构造函数实例化英国人类对象
+		// 通过showEat()方法调用English的eat()方法
+		/********* begin *********/
+		Task2 test = new Task2();
+		Person person1 = new Chinese(cName, cSex, cAge);
+		test.showEat(person1);
+		Person person2 = new English(eName, eSex, eAge);
+		test.showEat(person2);
+		/********* end *********/
+		// 强制类型转换(向下转型) 调用Chinese类特有的方法shadowBoxing()
+		// 强制类型转换(向下转型) 调用English类特有的方法horseRiding()
+		/********* begin *********/
+		((Chinese) person1).shadowBoxing();
+		((English) person2).horseRiding();
+		/********* end *********/
+	}
+
+	// 定义showEat方法，使用父类作为方法的形参，实现多态，传入的是哪个具体对象就调用哪个对象的eat()方法
+	/********* begin *********/
+	public void showEat(Person p) {
+		p.eat();
+	}
+	/********* end *********/
+}
+
+// 抽象类Person 封装属性name、sex和age
+// 构造函数初始化name、sex和age
+// 声明抽象方法eat()
+abstract class Person {
+	/********* begin *********/
+	private String name;
+	private String sex;
+	private int age;
+
+	public Person(String name, String sex, int age) {
+		this.name = name;
+		this.sex = sex;
+		this.age = age;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public String getSex() {
+		return sex;
+	}
+
+	public int getAge() {
+		return age;
+	}
+
+	public abstract void eat();
+	/********* end *********/
+}
+
+// Chinese类继承自Person类
+// 构造函数初始化name、sex和age
+// 重写父类方法eat() 输出'姓名：name，性别：sex，年龄：age，我是中国人，我喜欢吃饭！'
+// 定义子类特有方法shadowBoxing(),当父类引用指向子类对象时无法调用该方法 输出'name在练习太极拳！'
+class Chinese extends Person {
+	/********* begin *********/
+	public Chinese(String name, String sex, int age) {
+		super(name, sex, age);
+	}
+
+	@Override
+	public void eat() {
+		System.out.println("姓名：" + getName() + "，性别：" + getSex() + "，年龄：" + getAge() + "，我是中国人，我喜欢吃饭！");
+	}
+
+	public void shadowBoxing() {
+		System.out.println(getName() + "在练习太极拳！");
+	}
+	/********* end *********/
+}
+
+// English类继承自Person类
+// 构造函数初始化name、sex和age
+// 重写父类方法eat() 输出'姓名：name，性别：sex，年龄：age，我是英国人，我喜欢吃三明治！'
+// 定义子类特有方法horseRiding(),当父类引用指向子类对象时无法调用该方法 输出'name在练习骑马！'
+class English extends Person {
+	/********* begin *********/
+	public English(String name, String sex, int age) {
+		super(name, sex, age);
+	}
+
+	@Override
+	public void eat() {
+		System.out.println("姓名：" + getName() + "，性别：" + getSex() + "，年龄：" + getAge() + "，我是英国人，我喜欢吃三明治！");
+	}
+
+	public void horseRiding() {
+		System.out.println(getName() + "在练习骑马！");
+	}
+	/********* end *********/
+}
+'''
 
 [[chapters.levels]]
 name = "通关任务三"
 multi = false
-answer = ""
+answer = '''
+package case3;
+
+import java.util.Scanner;
+
+public class Task3 {
+	public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		String pppName = sc.next();
+		int pppAge = sc.nextInt();
+		String bpName = sc.next();
+		int bpAge = sc.nextInt();
+		String ppcName = sc.next();
+		int ppcAge = sc.nextInt();
+		String bcName = sc.next();
+		int bcAge = sc.nextInt();
+		// 测试运动员(乒乓球运动员和篮球运动员)
+		// 乒乓球运动员
+		// 通过带参构造函数实例化PingPangPlayer对象ppp
+		// 输出'name---age'
+		// 分别调用sleep()、eat()、study()、speak()方法
+		/********* begin *********/
+		PingPangPlayer ppp = new PingPangPlayer(pppName, pppAge);
+		System.out.println(ppp.getName() + "---" + ppp.getAge());
+		ppp.sleep();
+		ppp.eat();
+		ppp.study();
+		ppp.speak();
+		/********* end *********/
+		System.out.println("----------------");
+		// 篮球运动员
+		// 通过带参构造函数实例化BasketballPlayer对象bp
+		// 输出'name---age'
+		// 分别调用sleep()、eat()、study()方法
+		/********* begin *********/
+		BasketballPlayer bp = new BasketballPlayer(bpName, bpAge);
+		System.out.println(bp.getName() + "---" + bp.getAge());
+		bp.sleep();
+		bp.eat();
+		bp.study();
+		/********* end *********/
+		System.out.println("----------------");
+		// 测试教练(乒乓球教练和篮球教练)
+		// 乒乓球教练
+		// 通过带参构造函数实例化PingPangCoach对象ppc
+		// 输出'name---age'
+		// 分别调用sleep()、eat()、teach()、speak()方法
+		/********* begin *********/
+		PingPangCoach ppc = new PingPangCoach(ppcName, ppcAge);
+		System.out.println(ppc.getName() + "---" + ppc.getAge());
+		ppc.sleep();
+		ppc.eat();
+		ppc.teach();
+		ppc.speak();
+		/********* end *********/
+		System.out.println("----------------");
+		// 篮球教练
+		// 通过带参构造函数实例化BasketballCoach对象bc
+		// 输出'name---age'
+		// 分别调用sleep()、eat()、teach()方法
+		/********* begin *********/
+		BasketballCoach bc = new BasketballCoach(bcName, bcAge);
+		System.out.println(bc.getName() + "---" + bc.getAge());
+		bc.sleep();
+		bc.eat();
+		bc.teach();
+		/********* end *********/
+		System.out.println("----------------");
+	}
+}
+
+// 说英语接口 声明抽象方法speak()
+interface SpeakEnglish {
+	/********* begin *********/
+	void speak();
+	/********* end *********/
+}
+
+// 定义人的抽象类Person 封装name和age
+// 无参构造函数
+// 有参构造函数初始化name和age
+// 定义具体方法sleep() 输出'人都是要睡觉的'
+// 抽象方法eat()（吃的不一样）
+abstract class Person {
+	/********* begin *********/
+	private String name;
+	private int age;
+
+	public Person() {
+	}
+
+	public Person(String name, int age) {
+		this.name = name;
+		this.age = age;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public int getAge() {
+		return age;
+	}
+
+	public void sleep() {
+		System.out.println("人都是要睡觉的");
+	}
+
+	public abstract void eat();
+	/********* end *********/
+}
+
+// 定义运动员Player（抽象类）继承自Person类
+// 无参构造函数
+// 有参构造函数初始化name和age
+// 运动员学习内容不一样，抽取为抽象 定义抽象方法study()
+abstract class Player extends Person {
+	/********* begin *********/
+	public Player() {
+	}
+
+	public Player(String name, int age) {
+		super(name, age);
+	}
+
+	public abstract void study();
+	/********* end *********/
+}
+
+// 定义教练Coach（抽象类）继承自Person类
+// 无参构造函数
+// 有参构造函数初始化name和age
+// 教练教的不一样 定义抽象方法teach()
+abstract class Coach extends Person {
+	/********* begin *********/
+	public Coach() {
+	}
+
+	public Coach(String name, int age) {
+		super(name, age);
+	}
+
+	public abstract void teach();
+	/********* end *********/
+}
+
+// 定义乒乓球运动员具体类PingPangPlayer 继承自Player类并实现SpeakEnglish类（兵乓球运动员需要说英语）
+// 无参构造函数
+// 有参构造函数初始化name和age
+// 实现自己的eat()方法 输出'乒乓球运动员吃大白菜，喝小米粥'
+// 实现自己的study()方法 输出'乒乓球运动员学习如何发球和接球'
+// 实现自己的speak()方法 输出'乒乓球运动员说英语'
+class PingPangPlayer extends Player implements SpeakEnglish {
+	/********* begin *********/
+	public PingPangPlayer() {
+	}
+
+	public PingPangPlayer(String name, int age) {
+		super(name, age);
+	}
+
+	@Override
+	public void eat() {
+		System.out.println("乒乓球运动员吃大白菜，喝小米粥");
+	}
+
+	@Override
+	public void study() {
+		System.out.println("乒乓球运动员学习如何发球和接球");
+	}
+
+	@Override
+	public void speak() {
+		System.out.println("乒乓球运动员说英语");
+	}
+	/********* end *********/
+}
+
+// 定义篮球运动员具体类BasketballPlayer 继承自Player类 不需要继承接口，因为他不需要说英语
+// 无参构造函数
+// 有参构造函数初始化name和age
+// 实现自己的eat()方法 输出'篮球运动员吃牛肉，喝牛奶'
+// 实现自己的study()方法 输出'篮球运动员学习如何运球和投篮'
+class BasketballPlayer extends Player {
+	/********* begin *********/
+	public BasketballPlayer() {
+	}
+
+	public BasketballPlayer(String name, int age) {
+		super(name, age);
+	}
+
+	@Override
+	public void eat() {
+		System.out.println("篮球运动员吃牛肉，喝牛奶");
+	}
+
+	@Override
+	public void study() {
+		System.out.println("篮球运动员学习如何运球和投篮");
+	}
+	/********* end *********/
+}
+
+// 定义乒乓球教练具体类 PingPangCoach 继承自Coach类并实现SpeakEnglish类（兵乓球教练需要说英语）
+// 无参构造函数
+// 有参构造函数初始化name和age
+// 实现自己的eat()方法 输出'乒乓球教练吃小白菜，喝大米粥'
+// 实现自己的teach()方法 输出'乒乓球教练教如何发球和接球'
+// 实现自己的speak()方法 输出'乒乓球教练说英语'
+class PingPangCoach extends Coach implements SpeakEnglish {
+	/********* begin *********/
+	public PingPangCoach() {
+	}
+
+	public PingPangCoach(String name, int age) {
+		super(name, age);
+	}
+
+	@Override
+	public void eat() {
+		System.out.println("乒乓球教练吃小白菜，喝大米粥");
+	}
+
+	@Override
+	public void teach() {
+		System.out.println("乒乓球教练教如何发球和接球");
+	}
+
+	@Override
+	public void speak() {
+		System.out.println("乒乓球教练说英语");
+	}
+	/********* end *********/
+}
+
+// 定义篮球教练具体类BasketballCoach 继承自Coach类 不需要继承接口，因为他不需要说英语
+// 无参构造函数
+// 有参构造函数初始化name和age
+// 实现自己的eat()方法 输出'篮球教练吃羊肉，喝羊奶'
+// 实现自己的teach()方法 输出'篮球教练教如何运球和投篮'
+class BasketballCoach extends Coach {
+	/********* begin *********/
+	public BasketballCoach() {
+	}
+
+	public BasketballCoach(String name, int age) {
+		super(name, age);
+	}
+
+	@Override
+	public void eat() {
+		System.out.println("篮球教练吃羊肉，喝羊奶");
+	}
+
+	@Override
+	public void teach() {
+		System.out.println("篮球教练教如何运球和投篮");
+	}
+	/********* end *********/
+}
+'''
 
 [[chapters]]
 name = "Java语言基础（五）- 循环结构基础"
@@ -1011,3 +1886,48 @@ public class HelloWorld {
     /********** End **********/
 }	
 '''
+
+[[chapters]]
+name = "人工智能通识"
+homework_id = "4155365"
+
+[[chapters.levels]]
+name = "AI与机器学习"
+answer = [["A", "B", "D"], ["A", "B", "C"]]
+
+[[chapters.levels]]
+name = "图灵模型"
+answer = [["A"], ["A", "B", "C", "D"]]
+
+[[chapters.levels]]
+name = "数据资产"
+answer = [["A", "B", "C", "D"], ["A", "B", "C", "D"]]
+
+[[chapters.levels]]
+name = "数据科学"
+answer = [["A", "B", "D"], ["A", "B", "C"]]
+
+[[chapters.levels]]
+name = "图灵机"
+answer = [["A"], ["A", "B", "C", "D"]]
+
+[[chapters.levels]]
+name = "采集数据"
+answer = [["A", "B", "C", "D"], ["A", "B", "C"]]
+
+[[chapters.levels]]
+name = "AlphaGo"
+answer = [["A", "B", "C", "D"], ["A"]]
+
+[[chapters.levels]]
+name = "神经元处理"
+answer = [["A", "B", "C", "D"], ["A", "B"]]
+
+[[chapters.levels]]
+name = "实用主义"
+answer = [["A", "B", "C", "D"], ["A", "B", "C", "D"]]
+
+[[chapters.levels]]
+name = "\"人工\"\"智能\""
+answer = [["A", "B", "C", "D"], ["A", "B", "C"]]
+

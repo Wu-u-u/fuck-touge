@@ -5,6 +5,7 @@
 配套文档：脚本详细.md
 用法：
     python3 答题.py browser                    # 启动/检查专用副本浏览器（可加槽位：browser 1）
+    python3 答题.py browser -ls                # 列出各档案槽登录的账号名（浏览器在跑时实时刷新）
     python3 答题.py scan -a                    # 扫描所有"开始学习"章节，生成答案档案骨架（-a = 全部）
     python3 答题.py scan "Java语言基础（八）- 数组基础"
     python3 答题.py run -y [章节...]           # 按答案档案自动答题（开跑前会列出每关答案状态）
@@ -382,27 +383,143 @@ def classroom_page(browser: cdp.Browser, cfg: dict, old: "Page | None" = None) -
     return Page(ws, target)
 
 
-def ensure_login(ws: cdp.WS, timeout: float = 600) -> None:
-    """确认头歌已登录；未登录则提示用户在窗口里登录并等待。"""
-    def logged() -> bool:
+def account_name_js() -> str:
+    """读出当前页面里的登录账号名（任务页/用户页两种来源），找不到返回空串。"""
+    return (
+        "(function(){"
+        "try{const v=JSON.parse(localStorage.getItem('userInfo')||'null');"
+        "if(v){const m=((v.real_name||v.username)||'').trim(); if(m) return m;}}catch(e){}"
+        "const ui=document.querySelector('.task-user-info');"
+        "if(ui){for(const s of ((ui.innerText||'').split('\\n'))){"
+        "const m=s.trim().replace(/\\s*\\d+\\s*$/,'').trim();"
+        "if(m && !/^\\d+$/.test(m)) return m;}}"
+        "const BAD=/个人主页|职业认证|实名认证|经验值|我的|课堂|课程|认证|首页|作业|考试|实验|竞赛|设置|消息|退出|登录|注册|学习|报告|管理|中心|帮助/;"
+        "const el=[...document.querySelectorAll('*')].find(e=>{const t=(e.innerText||'').trim();"
+        "return t.includes('个人主页') && t.length<=40;});"
+        "if(el){let n=el;"
+        "for(let u=0;u<3 && n;u++){"
+        "n=n.parentElement; if(!n) break;"
+        "const ls=(n.innerText||'').split('\\n').map(s=>s.trim()).filter(Boolean);"
+        "const i=ls.findIndex(x=>x.includes('个人主页'));"
+        "if(i<0) continue;"
+        "for(let k=i+1;k<ls.length;k++){const s=ls[k];"
+        "if(s && s.length<=12 && !BAD.test(s) && /[\\u4e00-\\u9fa5]/.test(s)) return s;}}}"
+        "return '';})()"
+    )
+
+
+def read_account_name(browser: "cdp.Browser") -> str:
+    """遍历所有 educoder 标签，尽量读出当前登录账号名；找不到返回空串。"""
+    try:
+        targets = browser.pages()
+    except cdp.CDPError:
+        targets = []
+    for t in targets:
+        if "educoder.net" not in (t.get("url") or ""):
+            continue
+        w = None
         try:
-            return bool(ws.eval(
-                "!!document.querySelector('.task-user-info') || "
-                "(document.body && document.body.innerText.includes('退出课堂'))"
+            w = browser.attach(t)
+            name = (w.eval(account_name_js()) or "").strip()
+            if name:
+                return name
+        except cdp.CDPError:
+            continue
+        finally:
+            if w is not None:
+                try:
+                    w.close()
+                except Exception:
+                    pass
+    return ""
+
+
+def remember_name(slot: str, name: str) -> None:
+    """把账号名记进 state.json 的 names 映射（供 browser -ls 显示）。"""
+    if not slot or not name:
+        return
+    state = load_state()
+    names = state.setdefault("names", {})
+    if names.get(slot) != name:
+        names[slot] = name
+        save_state(state)
+
+
+def ensure_login(browser: "cdp.Browser", ws: cdp.WS, timeout: float = 600) -> None:
+    """确认头歌已登录；未登录则提示用户在窗口里登录并等待。
+
+    关键：登录常常发生在别的标签页，原课堂标签的 DOM 不会自己更新——
+    所以每一轮都会遍历所有 educoder 标签找登录信号；长时间没找到时，
+    如果原标签是课堂页且不在前台，会周期性刷新它。登录成功后顺手记录账号名。
+    """
+    def page_logged(w: cdp.WS) -> bool:
+        try:
+            return bool(w.eval(
+                "(function(){const t=(document.body&&document.body.innerText)||'';"
+                "return !!(document.querySelector('.task-user-info')"
+                "|| t.includes('退出课堂')"
+                "|| (t.includes('个人主页') && t.includes('我的经验值')));})()"
             ))
         except cdp.CDPError:
             return False
 
-    if logged():
+    def any_logged() -> bool:
+        if page_logged(ws):
+            return True
+        try:
+            targets = browser.pages()
+        except cdp.CDPError:
+            targets = []
+        for t in targets:
+            if "educoder.net" not in (t.get("url") or ""):
+                continue
+            w = None
+            try:
+                w = browser.attach(t)
+                if page_logged(w):
+                    return True
+            except cdp.CDPError:
+                continue
+            finally:
+                if w is not None:
+                    try:
+                        w.close()
+                    except Exception:
+                        pass
+        return False
+
+    def success() -> None:
+        name = read_account_name(browser)
+        if name:
+            remember_name(load_state().get("current"), name)
+            log(f"  ✓ 已登录（账号：{name}）")
+        else:
+            log("  ✓ 已登录")
+
+    if any_logged():
+        success()
         return
     log("\n！检测到副本浏览器里还没有登录头歌。")
     log("   请在弹出的浏览器窗口里完成登录（扫码/账号密码均可），脚本会自动等待…")
     deadline = time.time() + timeout
+    tick = 0
     while time.time() < deadline:
         time.sleep(3)
-        if logged():
-            log("  ✓ 已登录")
+        tick += 1
+        if any_logged():
+            success()
             return
+        # 每 9 秒：若原标签是课堂页且不在前台，刷新一次（避免 DOM 停在未登录状态）
+        if tick % 3 == 0:
+            try:
+                if ws.eval(
+                    "(function(){const h=location.href;"
+                    "return (h.includes('shixun_homework')||h.includes('/classrooms/'))"
+                    "&& document.visibilityState==='hidden';})()"
+                ):
+                    ws.eval("location.reload()")
+            except cdp.CDPError:
+                pass
     die("等待登录超时，请登录后重新运行。")
 
 
@@ -416,6 +533,7 @@ JSON.stringify((function(){
   const models = (window.Monaco && window.Monaco.editor) ? window.Monaco.editor.getModels() : [];
   const btns = [...document.querySelectorAll('button,[role=button]')];
   const evalBtn = btns.find(b => (b.innerText||'').trim() === '评测');
+  const evalDisabled = !!(evalBtn && evalBtn.disabled);
   const cd = btns.find(b => /^\d+\s*S$/.test((b.innerText||'').trim()));
   const next = [...document.querySelectorAll('a,button')].find(el =>
     (el.innerText||'').trim() === '下一关' && !el.closest('.evaluate-result-container'));
@@ -440,6 +558,7 @@ JSON.stringify((function(){
     hasEditor: !!document.querySelector('.monaco-editor'),
     models: models.length,
     hasEval: !!evalBtn,
+    evalDisabled: evalDisabled,
     countdown: cd ? (cd.innerText||'').trim() : null,
     hasNext: !!next,
     hasPrev: !!prev,
@@ -579,10 +698,36 @@ class Page:
         )
         return self.click_expr(expr)
 
+    def wait_eval_ready(self, timeout: float = 120) -> bool:
+        """等「评测」按钮变成可点状态（处理跨关卡共享的评测冷却）。
+
+        平台在部分情况下会把上一关评测的冷却带到下一关：按钮是灰的或显示
+        「NN S」。此时点击不会生效，必须先等冷却结束。
+        """
+        logged = False
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                st = self.state()
+            except cdp.CDPError:
+                time.sleep(0.8)
+                continue
+            if st.get("hasEval") and not st.get("evalDisabled"):
+                if logged:
+                    log("  · 评测按钮已就绪，继续。")
+                return True
+            if not logged:
+                what = st.get("countdown") or ("灰色" if st.get("evalDisabled") else "不可点")
+                log(f"  · 评测按钮当前{what}（可能是冷却），等就绪再点…")
+                logged = True
+            time.sleep(0.8)
+        return False
+
     def click_eval(self) -> bool:
-        """点「评测」并确认已开始。先 DOM click（实测最稳），没有反应再补真实鼠标点击。"""
+        """点「评测」并确认已开始：先等冷却结束，再 DOM click，没有反应补真实鼠标点击。"""
         expr = ("[...document.querySelectorAll('button,[role=button]')].find("
                 "b=>(b.innerText||'').trim()==='评测')")
+        self.wait_eval_ready()
         self.ws.eval(PROBE_JS)                    # 重置结果探针
 
         def started(st0: dict) -> bool:
@@ -593,6 +738,8 @@ class Page:
                 return False
             if st.get("countdown") or st.get("popup"):
                 return True
+            if st.get("evalDisabled") and not st0.get("evalDisabled"):
+                return True                       # 按钮被点灰 = 点击已生效（v0.9.6）
             if st.get("failMsgs", 0) > st0.get("failMsgs", 0):
                 return True
             if st.get("index") != st0.get("index") or st.get("url") != st0.get("url"):
@@ -601,20 +748,21 @@ class Page:
             return bool(pr.get("popups") or pr.get("toasts"))
 
         st0 = self.state()
-        fired = bool(self.ws.eval(
+        self.ws.eval(
             "(function(){const b=(" + expr + "); if(!b) return false; b.click(); return true;})()"
-        ))
+        )
         for _ in range(10):
             time.sleep(1)
             if started(st0):
                 return True
-        # 兜底：真实鼠标点击一次
+        # 兜底：等冷却（如果刚进入冷却）结束后，真实鼠标点击一次
+        self.wait_eval_ready(timeout=90)
         self.click_expr(expr)
         for _ in range(10):
             time.sleep(1)
             if started(st0):
                 return True
-        return fired
+        return False
 
 
 # ─────────────────────────── 课堂/关卡操作 ───────────────────────────
@@ -647,8 +795,12 @@ def card_pos_js(name: str) -> str:
 """.replace("__NAME__", json.dumps(name, ensure_ascii=False))
 
 
+class ChapterEnterError(RuntimeError):
+    """进入章节失败（没找到可点的动作按钮，或点击后没有新标签页）。"""
+
+
 def enter_chapter(browser: cdp.Browser, classroom: Page, chapter_name: str,
-                  timeout: float = 20) -> tuple[dict, cdp.WS]:
+                  timeout: float = 20, on_fail: str = "die") -> tuple[dict, cdp.WS]:
     """在课堂页点某章的「开始学习」，返回（新标签页 target, 其会话）。
 
     课堂列表刷新时有 ant-spin 遮罩会挡住点击，这里会等遮罩消失并校验落点，失败自动重试。
@@ -691,6 +843,8 @@ def enter_chapter(browser: cdp.Browser, classroom: Page, chapter_name: str,
                         ws = browser.attach(t)
                         return t, ws
         last_reason = "点击后没有等到新标签页"
+    if on_fail == "raise":
+        raise ChapterEnterError(last_reason)
     die(f"找不到章节「{chapter_name}」的「开始学习」按钮（{last_reason}）。\n"
         "  请确认浏览器停在课堂-实训作业列表页，且该章状态为“提交中”。")
 
@@ -1629,7 +1783,7 @@ def scan_chapters(browser: cdp.Browser, classroom: Page, cfg: dict,
 def cmd_scan(args, cfg: dict) -> None:
     browser = ensure_browser(cfg)
     classroom = classroom_page(browser, cfg)
-    ensure_login(classroom.ws)
+    ensure_login(browser, classroom.ws)
 
     if args.all:
         cards = classroom.ws.eval_json(r"""
@@ -1654,6 +1808,92 @@ JSON.stringify([...document.querySelectorAll('[class*="listItem"]')].map(c => {
 
 
 # ─────────────────────────── 子命令：harvest ───────────────────────────
+
+def read_editor_code(page: Page, timeout: float = 8, need_stable: int = 3) -> str | None:
+    """直接读编辑器里的代码（多 model 时取创建最早的 = 主编辑器）。
+
+    平台会先塞占位/模板代码、稍后才加载真实代码，所以等内容稳定后才返回。
+    """
+    last, stable = None, 0
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            cur = page.ws.eval(
+                "(window.Monaco && window.Monaco.editor.getModels().length)"
+                " ? window.Monaco.editor.getModels()[0].getValue() : null"
+            )
+        except cdp.CDPError:
+            cur = None
+        if isinstance(cur, str) and cur.strip() and cur == last:
+            stable += 1
+            if stable >= need_stable:
+                return cur
+        else:
+            stable = 0
+        last = cur
+        time.sleep(0.5)
+    return last if isinstance(last, str) and last.strip() else None
+
+
+def close_code_modal(page: Page, timeout: float = 6) -> None:
+    """关闭「代码详情」弹窗并确认已关（X → ESC → 按钮，逐级兜底）。
+
+    弹窗遮罩会吞掉后续所有真实鼠标点击；关不掉必须抛错停下，
+    否则会出现"评测读的弹窗挡着 → 无法跳关 → 反复重读"的慢速死循环。
+    """
+    def visible() -> bool:
+        try:
+            return bool(page.ws.eval(
+                "[...document.querySelectorAll('.ant-modal')].some(m=>{const r=m.getBoundingClientRect();"
+                "return r.width>0||r.height>0;})"
+            ))
+        except cdp.CDPError:
+            return False
+
+    def click_visible(expr: str) -> bool:
+        try:
+            pos = page.ws.eval_json(
+                "JSON.stringify((function(){const el=(" + expr + "); if(!el) return null;"
+                "const r=el.getBoundingClientRect(); if(!(r.width>0&&r.height>0)) return null;"
+                "return {x:r.x+r.width/2,y:r.y+r.height/2};})())"
+            )
+            if not pos:
+                return False
+            page.ws.mouse_click(pos["x"], pos["y"])
+            return True
+        except cdp.CDPError:
+            return False
+
+    if not visible():
+        return
+    time.sleep(0.5)                                  # 等开启动画结束，坐标才稳定
+    click_visible("document.querySelector('.ant-modal .ant-modal-close')")
+    for _ in range(5):                               # 1) X 按钮
+        time.sleep(0.4)
+        if not visible():
+            return
+    try:                                             # 2) ESC 兜底
+        for typ in ("keyDown", "keyUp"):
+            page.ws.call("Input.dispatchKeyEvent", {
+                "type": typ, "key": "Escape", "code": "Escape",
+                "windowsVirtualKeyCode": 27, "nativeVirtualKeyCode": 27,
+            })
+    except cdp.CDPError:
+        pass
+    for _ in range(5):
+        time.sleep(0.4)
+        if not visible():
+            return
+    click_visible("(function(){const m=[...document.querySelectorAll('.ant-modal')]"
+                  ".find(m=>{const r=m.getBoundingClientRect(); return r.width>0||r.height>0;});"
+                  "if(!m) return null; return [...m.querySelectorAll('button,[role=button]')]"
+                  ".find(e=>/^(知道了|关闭|确定|OK)$/.test((e.innerText||'').trim()));})()")
+    for _ in range(5):                               # 3) 「知道了」等按钮
+        time.sleep(0.4)
+        if not visible():
+            return
+    raise RuntimeError("「代码详情」弹窗无法关闭，已停止（遮罩会吞掉后续点击）")
+
 
 def read_submitted_code(page: Page, timeout: float = 15) -> str | None:
     """从『记录』里最近一次"评测通过"的提交中读取当时提交的代码。
@@ -1705,9 +1945,8 @@ def read_submitted_code(page: Page, timeout: float = 15) -> str | None:
                 break
         return code or None
     finally:
-        # 4) 关掉弹窗（无论成功失败，别把弹窗留给后续步骤）
-        click_expr("document.querySelector('.ant-modal .ant-modal-close')")
-        time.sleep(0.4)
+        # 4) 关掉弹窗（无论成功失败；关不掉会抛错，避免遮罩悄悄吞掉后续点击）
+        close_code_modal(page)
 
 
 def read_saved_answer(page: Page, st: dict) -> tuple[str | None, str | None, str]:
@@ -1721,15 +1960,16 @@ def read_saved_answer(page: Page, st: dict) -> tuple[str | None, str | None, str
         if len(paths) > 1:
             return read_saved_files(page, paths)  # 多文件：逐个点开读
         close_file_menu(page)
-        if st.get("models", 0) != 1:
-            return None, None, f"有 {st.get('models')} 个文件，暂不支持采集"
-        code = read_submitted_code(page)          # 首选：评测记录里的提交代码
-        src = "评测记录"
-        if not code:
-            code = wait_model_settled(page)       # 兜底：编辑器当前内容
+        code = read_editor_code(page)             # 首选：直接读编辑器（默认就是对的）
+        if not code or not code.strip():
+            if st.get("models", 0) != 1:
+                return None, None, f"编辑器没读到内容，且有 {st.get('models')} 个 model"
+            code = read_submitted_code(page)      # 回退：评测记录里的提交代码
+            src = "评测记录"
+        else:
             src = "编辑器"
         if not code or not code.strip():
-            return None, None, "编辑器是空的"
+            return None, None, "编辑器是空的，记录里也没读到"
         return "code", code, f"{len(code)} 字符（{src}）"
     if st.get("choiceCount", 0) > 0:
         # 等服务器保存的选项回显
@@ -1896,7 +2136,7 @@ def cmd_harvest(args, cfg: dict) -> None:
     answers_path = Path(cfg["run"]["answers"])
     browser = ensure_browser(cfg)
     classroom = classroom_page(browser, cfg)
-    ensure_login(classroom.ws)
+    ensure_login(browser, classroom.ws)
 
     # 显式指定的章节如果还不在档案里，先自动扫描一遍骨架，省得两步操作
     if args.chapter:
@@ -1911,8 +2151,7 @@ def cmd_harvest(args, cfg: dict) -> None:
             write_scan_skeleton(answers_path, scanned)
 
     chapters = load_answers(answers_path)
-    todo = [c for c in chapters
-            if not args.chapter or any(x in c.name for x in args.chapter)]
+    todo = resolve_chapter_args(chapters, args.chapter)
     if not todo:
         die("答案档案里找不到指定章节。")
 
@@ -1932,7 +2171,11 @@ def cmd_harvest(args, cfg: dict) -> None:
             continue
         log(f"  已满分关卡：{sorted(passed)}")
         classroom = classroom_page(browser, cfg, old=classroom)
-        target, ws = enter_chapter(browser, classroom, ch.name)
+        try:
+            target, ws = enter_chapter(browser, classroom, ch.name, on_fail="raise")
+        except ChapterEnterError as e:
+            log(f"  ! 无法进入本章（{e}）——已截止的章节只有「查看作品」，跳过")
+            continue
         page = Page(ws, target)
         # 全部满分的章节点「开始学习」会落到详情页，需要再点「查看实战/继续挑战/进入实训」进关卡
         if "/detail" in target["url"]:
@@ -1997,14 +2240,20 @@ def cmd_harvest(args, cfg: dict) -> None:
                 if not st.get("hasNext"):
                     break
                 st = advance_level(page, idx)
+                if st.get("index") == idx:
+                    die(f"第{idx}关采集后无法进入下一关（可能被弹窗/遮罩挡住），已暂停。")
         finally:
             browser.close_target(target["id"])
         all_changes[ch.name] = collected
+        # 按章即时写回（v0.9.7）：采集是长流程，中途任何意外（已截止章、页面异常等）
+        # 都不该把已经采到的答案一起丢掉（曾踩坑：采完「二」8 关后死在「五」，全部丢失）。
+        if collected:
+            write_back_answers(Path(cfg["run"]["answers"]), {ch.name: collected}, force=args.force)
+            log(f"  ✓ 已写回答案档案：{ch.name} {len(collected)} 关")
 
     total = {n: len(v) for n, v in all_changes.items() if v}
     if total:
-        write_back_answers(Path(cfg["run"]["answers"]), all_changes, force=args.force)
-        log("\n✓ 已写回答案档案：" + "、".join(f"{n} {c} 关" for n, c in total.items()))
+        log("\n✓ 采集完成：" + "、".join(f"{n} {c} 关" for n, c in total.items()) + "（已按章即时写回）")
     else:
         log("\n没有采集到可写回的答案。")
 
@@ -2018,7 +2267,12 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
     注意：正常结束才关掉本章标签页；中途失败（die）保留页面给用户排查。
     """
     stats = {"done": 0, "skipped": 0, "failed": 0}
-    target, ws = enter_chapter(browser, classroom, ch.name)
+    try:
+        target, ws = enter_chapter(browser, classroom, ch.name, on_fail="raise")
+    except ChapterEnterError as e:
+        log(f"  ! 无法进入本章（{e}），跳过")
+        stats["skipped"] += 1
+        return stats
     page = Page(ws)
     ok = False
     try:
@@ -2126,7 +2380,9 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
             ctx = {"index0": idx, "url0": st.get("url"), "fail0": fail0,
                    "is_last": not st.get("hasNext")}
             log("    点「评测」…")
-            page.click_eval()
+            if not page.click_eval():
+                stats["failed"] += 1
+                die(f"第{idx}关「{lname}」点评测后未检测到响应（可能仍在冷却或被遮挡），已暂停。")
             outcome = wait_outcome(page, ctx, float(cfg["run"]["eval_timeout"]))
             log(f"    结果：{outcome['kind']}（{outcome['detail']}）")
             if outcome["kind"] == "fail":
@@ -2157,10 +2413,49 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
             browser.close_target(target["id"])
 
 
+def resolve_chapter_args(chapters: list[Chapter], patterns: list[str]) -> list[Chapter]:
+    """把命令行里的章节名/片段解析成章节列表（方案 B）。
+
+    短名可能一次命中多个章节（如「一」同时命中「Java语言基础（一）」和「Java面向对象（一）」）：
+    这时会把候选都列出来，问你要跑哪个，避免跑错；直接回车 = 全部命中。
+    """
+    if not patterns:
+        return list(chapters)
+    order = {c.name: i for i, c in enumerate(chapters)}
+    picked: dict[str, Chapter] = {}
+    for pat in patterns:
+        hits = [c for c in chapters if pat in c.name]
+        if not hits:
+            continue
+        if len(hits) > 1:
+            log(f"\n！短名「{pat}」一次命中 {len(hits)} 个章节：")
+            for i, h in enumerate(hits, 1):
+                log(f"  {i}. {h.name}")
+            try:
+                ans = input("  选择要跑的编号（逗号分隔；回车=全部命中）：").strip()
+            except EOFError:
+                die("短名命中多个章节且无法询问，请把章节名写得更具体一些。")
+            keep = hits
+            if ans:
+                sel = []
+                for part in ans.replace("，", ",").split(","):
+                    part = part.strip()
+                    if part.isdigit() and 1 <= int(part) <= len(hits):
+                        sel.append(hits[int(part) - 1])
+                if sel:
+                    keep = sel
+            for h in keep:
+                picked[h.name] = h
+        else:
+            picked[hits[0].name] = hits[0]
+    result = list(picked.values())
+    result.sort(key=lambda c: order[c.name])
+    return result
+
+
 def cmd_run(args, cfg: dict) -> None:
     chapters = load_answers(Path(cfg["run"]["answers"]))
-    todo = [c for c in chapters
-            if not args.chapter or any(x in c.name for x in args.chapter)]
+    todo = resolve_chapter_args(chapters, args.chapter)
     if not todo:
         die("答案档案里找不到指定章节。")
 
@@ -2174,7 +2469,7 @@ def cmd_run(args, cfg: dict) -> None:
 
     browser = ensure_browser(cfg)
     classroom = classroom_page(browser, cfg)
-    ensure_login(classroom.ws)
+    ensure_login(browser, classroom.ws)
 
     results = {}
     status_page = classroom     # 复用登录用的课堂页做状态检查标签，全程不重复开
@@ -2238,6 +2533,45 @@ def print_archive_status(chapters: list) -> None:
 
 # ─────────────────────────── CLI ───────────────────────────
 
+def cmd_browser_list(cfg: dict) -> None:
+    """browser -ls：列出各档案槽的路径、登录账号名与当前/运行状态。"""
+    state = load_state()
+    slots: dict = state.get("slots", {})
+    names: dict = state.get("names", {})
+    current = state.get("current")
+    running = state.get("running")
+    port = cfg["edge"]["port"]
+    alive = port_alive(port)
+    live = ""
+    if alive:
+        try:
+            browser = connect_browser(port, attempts=1)
+            live = read_account_name(browser) or ""
+            if live and current:
+                remember_name(current, live)
+                names = load_state().get("names", {})
+        except Exception:
+            live = ""
+    log("档案槽列表（账号名在登录时自动记录；浏览器在跑时会实时刷新）：")
+    if not slots:
+        log("  （还没有任何槽位记录）")
+
+    def sort_key(k: str):
+        return (0, int(k)) if k.isdigit() else (1, k)
+
+    for k in sorted(slots, key=sort_key):
+        nm = names.get(k) or "未知"
+        mark = []
+        if k == current:
+            mark.append("当前")
+        if k == running and alive:
+            mark.append("运行中")
+        tail = f"　[{'、'.join(mark)}]" if mark else ""
+        log(f"  {str(k):>3}. {nm}  — {slots[k]}{tail}")
+    if live:
+        log(f"  运行中的浏览器账号：{live}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="头歌自动答题脚本（半自动）",
@@ -2258,6 +2592,8 @@ def main() -> None:
         "slot", nargs="?", default=None,
         help="1-99 记住并切换对应档案；new 每次全新；1new~99new 清除该槽记忆换全新",
     )
+    p_browser.add_argument("-ls", "--list", action="store_true", dest="list_slots",
+                           help="不启动浏览器，列出各档案槽和登录账号名")
     p_scan = sub.add_parser("scan", help="扫描章节生成答案档案骨架")
     add_chapter_args(p_scan)
     p_scan.add_argument("-a", "--all", action="store_true", help="扫描所有“开始学习”的章节")
@@ -2275,6 +2611,9 @@ def main() -> None:
     apply_current_profile(cfg)      # 记住的档案槽优先于 config 里的 profile
 
     if args.cmd == "browser":
+        if getattr(args, "list_slots", False):
+            cmd_browser_list(cfg)
+            return
         if args.slot and not SLOT_RE.fullmatch(args.slot):
             die("槽位参数只支持：1-99（记住对应档案）、new（每次全新）、1new～99new（清除该槽记忆换全新）")
         slot, profile, note = setup_slot(cfg, args.slot)
@@ -2283,7 +2622,7 @@ def main() -> None:
         cfg["edge"]["profile"] = profile
         browser = ensure_browser(cfg)
         classroom = classroom_page(browser, cfg)
-        ensure_login(classroom.ws)
+        ensure_login(browser, classroom.ws)
         log(f"✓ 副本浏览器就绪，已记住档案槽「{slot}」，之后 scan/run 都会用它。")
     elif args.cmd == "scan":
         cmd_scan(args, cfg)
