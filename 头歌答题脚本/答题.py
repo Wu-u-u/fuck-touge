@@ -2227,16 +2227,20 @@ def cmd_harvest(args, cfg: dict) -> None:
                     log("  ! 页面状态读取失败，停止采集本章")
                     break
                 if idx in passed:
-                    kind, value, note = read_saved_answer(page, st)
-                    if kind:
-                        try:
-                            multi_flag = False if kind == "code" else (True if kind == "files" else None)
-                            collected[idx] = {"answer": answer_to_toml(kind, value), "multi": multi_flag}
-                            log(f"  ✓ 第{idx}关「{st.get('name')}」：{note}")
-                        except RuntimeError as e:
-                            log(f"  ! 第{idx}关采集失败：{e}")
+                    lv = find_level(ch, idx, st.get("name") or "")
+                    if not args.force and lv is not None and not lv.answer_empty():
+                        log(f"  · 第{idx}关「{st.get('name')}」已有答案，跳过采集（-f 可强制重采）")
                     else:
-                        log(f"  ! 第{idx}关没采到答案：{note}")
+                        kind, value, note = read_saved_answer(page, st)
+                        if kind:
+                            try:
+                                multi_flag = False if kind == "code" else (True if kind == "files" else None)
+                                collected[idx] = {"answer": answer_to_toml(kind, value), "multi": multi_flag}
+                                log(f"  ✓ 第{idx}关「{st.get('name')}」：{note}")
+                            except RuntimeError as e:
+                                log(f"  ! 第{idx}关采集失败：{e}")
+                        else:
+                            log(f"  ! 第{idx}关没采到答案：{note}")
                 if not st.get("hasNext"):
                     break
                 st = advance_level(page, idx)
