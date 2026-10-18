@@ -262,12 +262,21 @@ JSON.stringify([...document.querySelectorAll('.option')].map(g => {
     return None, None, "未知题型"
 
 
+def _clean_code(text: str) -> str:
+    """统一换行并拒绝 TOML 字面量不允许的控制字符。"""
+    text = str(text).replace("\r\n", "\n").replace("\r", "\n").strip("\n")
+    bad = sorted({ch for ch in text if ord(ch) < 32 and ch not in "\n\t"})
+    if bad:
+        raise RuntimeError(f"代码里含有 TOML 不允许的控制字符：{bad!r}，请手动清理后重试")
+    return text
+
+
 def answer_to_toml(kind: str, value) -> str:
     """把采集到的答案转成 TOML 里的 answer 行（多文件则是 files 子块）。"""
     if kind == "files":
         blocks = []
         for path, code in value:
-            text = str(code).strip("\n")
+            text = _clean_code(code)
             if "'''" in text:
                 raise RuntimeError(
                     f"文件 {path} 的代码里含有三个单引号，无法用字面量字符串写入，请手动粘贴")
@@ -279,7 +288,7 @@ def answer_to_toml(kind: str, value) -> str:
         return "\n".join(blocks)
     if kind == "choice":
         return "answer = " + json.dumps(value, ensure_ascii=False)
-    text = str(value).strip("\n")
+    text = _clean_code(value)
     if "'''" in text:
         raise RuntimeError("代码里含有三个单引号，无法用字面量字符串写入，请手动粘贴")
     return "answer = '''\n" + text + "\n'''"

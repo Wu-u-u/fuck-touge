@@ -9,7 +9,7 @@ import re
 import time
 import tomllib
 
-from eduauto.util import log
+from eduauto.util import die, log
 
 HERE = Path(__file__).resolve().parent.parent  # 脚本目录（eduauto 的上一级）
 
@@ -41,29 +41,83 @@ DEFAULT_CONFIG = {
 
 def load_config(path: Path) -> dict:
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))     # 深拷贝默认值
-    if path.exists():
-        with open(path, "rb") as f:
-            user = tomllib.load(f)
+    cfg_path = path.expanduser()
+    if cfg_path.exists():
+        try:
+            with open(cfg_path, "rb") as f:
+                user = tomllib.load(f)
+        except tomllib.TOMLDecodeError as e:
+            die(f"配置文件 TOML 语法错误：{cfg_path}\n  {e}")
+        except OSError as e:
+            die(f"配置文件读取失败：{cfg_path}\n  {e}")
         for section, values in user.items():
             if isinstance(values, dict):
                 cfg.setdefault(section, {}).update(values)
             else:
                 cfg[section] = values
+        run = cfg.get("run")
+        if isinstance(run, dict):
+            ans = run.get("answers")
+            if isinstance(ans, str) and ans and not Path(ans).expanduser().is_absolute():
+                run["answers"] = str(cfg_path.resolve().parent / ans)
+    if not isinstance(cfg.get("edge"), dict) or not isinstance(cfg.get("run"), dict):
+        die("配置文件格式错误：edge / run 必须是 TOML 表。")
+    try:
+        cfg["edge"]["port"] = int(cfg["edge"].get("port", 9222))
+    except (TypeError, ValueError):
+        die(f"配置文件格式错误：edge.port 必须是整数（当前 {cfg['edge'].get('port')!r}）。")
+    if not isinstance(cfg["run"].get("answers"), str) or not cfg["run"]["answers"].strip():
+        die("配置文件格式错误：run.answers 必须是非空路径字符串。")
+    for key in ("eval_timeout", "level_timeout"):
+        try:
+            cfg["run"][key] = float(cfg["run"][key])
+        except (TypeError, ValueError, KeyError):
+            die(f"配置文件格式错误：run.{key} 必须是数字。")
     return cfg
 
 
-def load_state() -> dict:
+def _quarantine_state(reason: str) -> dict:
+    bad = STATE_FILE.with_name(STATE_FILE.name + ".bad")
     try:
-        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    except Exception:
+        STATE_FILE.replace(bad)
+        note = f"已备份为 {bad.name}"
+    except OSError:
+        note = "备份失败"
+    log(f"  ! state.json 无法使用（{reason}），{note}，本次使用空状态")
+    return {}
+
+
+def load_state() -> dict:
+    if not STATE_FILE.exists():
         return {}
+    try:
+        data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        return _quarantine_state(f"JSON 语法错误：{e}")
+    except OSError as e:
+        return _quarantine_state(f"读取失败：{e}")
+    if not isinstance(data, dict):
+        return _quarantine_state("顶层不是对象")
+    if not isinstance(data.get("slots"), dict):
+        data["slots"] = {}
+    if not isinstance(data.get("names"), dict):
+        data["names"] = {}
+    return data
 
 
 def save_state(state: dict) -> None:
+    tmp = STATE_FILE.with_name(STATE_FILE.name + ".tmp")
     try:
-        STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, STATE_FILE)
     except OSError as e:
         log(f"  ! 槽位状态写入失败：{e}")
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
 
 
 def apply_current_profile(cfg: dict) -> str:
@@ -71,7 +125,7 @@ def apply_current_profile(cfg: dict) -> str:
     state = load_state()
     cur = state.get("current")
     slots = state.get("slots", {})
-    if cur and slots.get(cur):
+    if isinstance(cur, str) and cur and slots.get(cur):
         cfg["edge"]["profile"] = slots[cur]
         return cur
     return ""
@@ -102,6 +156,8 @@ def setup_slot(cfg: dict, arg: str | None) -> tuple[str, str, str]:
         prof = str(PROFILE_BASE / f"guest-{time.strftime('%Y%m%d-%H%M%S')}")
         slots["new"] = prof
         state["current"] = "new"
+        state.pop("running", None)
+        state.pop("running_profile", None)
         save_state(state)
         return "new", prof, "（全新档案；下次 browser new 又是一个全新的）"
 
@@ -112,6 +168,8 @@ def setup_slot(cfg: dict, arg: str | None) -> tuple[str, str, str]:
         prof = str(PROFILE_BASE / f"slot{n}-{time.strftime('%Y%m%d-%H%M%S')}")
         slots[n] = prof
         state["current"] = n
+        state.pop("running", None)
+        state.pop("running_profile", None)
         save_state(state)
         note = f"（已清除槽 {n} 的记忆，改用全新档案"
         if old:

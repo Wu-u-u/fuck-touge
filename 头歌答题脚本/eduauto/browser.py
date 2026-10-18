@@ -101,8 +101,18 @@ def ensure_browser(cfg: dict) -> cdp.Browser:
     need_launch = False
     if port_alive(port):
         running = state.get("running")
+        running_profile = state.get("running_profile")
+        cur_profile = os.path.expanduser(str(cfg["edge"]["profile"]))
+        same_profile = bool(running_profile) and \
+            os.path.expanduser(str(running_profile)) == cur_profile
         if running and running != cur:
             log(f"→ 当前浏览器是「{running}」号档案，要切换到「{cur}」号，先关掉它…")
+            if not stop_browser(port):
+                die("旧的副本浏览器关不掉，请手动关闭那个 Edge 窗口后重试。")
+            time.sleep(1)
+            need_launch = True
+        elif not same_profile:
+            log(f"→ 运行中的浏览器档案与当前槽「{cur}」不一致，先关掉重开…")
             if not stop_browser(port):
                 die("旧的副本浏览器关不掉，请手动关闭那个 Edge 窗口后重试。")
             time.sleep(1)
@@ -115,6 +125,7 @@ def ensure_browser(cfg: dict) -> cdp.Browser:
         launch_edge(cfg)
     state = load_state()
     state["running"] = cur
+    state["running_profile"] = os.path.expanduser(str(cfg["edge"]["profile"]))
     save_state(state)
     browser = connect_browser(port)
     ensure_window_size(browser)

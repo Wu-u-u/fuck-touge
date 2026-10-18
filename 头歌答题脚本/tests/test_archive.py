@@ -10,7 +10,8 @@ import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from eduauto.archive import Level, write_back_answers, write_scan_skeleton  # noqa: E402
+from eduauto.archive import (Level, load_answers, write_back_answers,  # noqa: E402
+                            write_scan_skeleton)
 
 passed = failed = 0
 
@@ -109,6 +110,107 @@ write_back_answers(archive2, {"测试章2": {1: "answer = '''\ncode2\n'''"}}, fo
 d5 = tomllib.loads(archive2.read_text())
 l5 = d5["chapters"][0]["levels"][0]
 check("str 载荷保留 multi 行", l5.get("multi") is False and "code2" in l5.get("answer", ""))
+
+
+# 5. 卡片名与档案名不一致时也能写回（模糊匹配）
+archive3 = Path(tmp) / "arch3.toml"
+write_scan_skeleton(archive3, [{"name": "章节甲", "homework_id": "1",
+                                "levels": [{"name": "L1"}]}])
+n3 = write_back_answers(archive3, {"章节甲 - 副标题": {1: 'answer = "A"'}}, force=False)
+d6 = tomllib.loads(archive3.read_text())
+check("模糊章节名写回", n3 == 1 and d6["chapters"][0]["levels"][0].get("answer") == "A")
+
+# 6. 多文件关已有答案时不得被单 answer 覆盖
+archive4 = Path(tmp) / "arch4.toml"
+archive4.write_text(
+    '[[chapters]]\n'
+    'name = "多文件章"\n'
+    '\n'
+    '[[chapters.levels]]\n'
+    'name = "L1"\n'
+    'multi = true\n'
+    '[[chapters.levels.files]]\n'
+    'path = "a.java"\n'
+    'answer = \'\'\'\nold\n\'\'\'\n'
+    '[[chapters.levels.files]]\n'
+    'path = "b.java"\n'
+    'answer = ""\n'
+)
+n4 = write_back_answers(archive4, {"多文件章": {1: 'answer = \'\'\'\nnew\n\'\'\''}}, force=False)
+d7 = tomllib.loads(archive4.read_text())
+lv7 = d7["chapters"][0]["levels"][0]
+check("多文件已有答案不被覆盖", n4 == 0 and len(lv7.get("files", [])) == 2
+      and "old" in lv7["files"][0]["answer"] and "answer" not in lv7)
+
+# 7. answer = [] 占位应视为空，可以自动填入
+archive5 = Path(tmp) / "arch5.toml"
+archive5.write_text(
+    '[[chapters]]\n'
+    'name = "占位章"\n'
+    '\n'
+    '[[chapters.levels]]\n'
+    'name = "L1"\n'
+    'answer = []\n'
+)
+n5 = write_back_answers(archive5, {"占位章": {1: 'answer = ["A"]'}}, force=False)
+d8 = tomllib.loads(archive5.read_text())
+check("answer=[] 占位可填入", n5 == 1 and d8["chapters"][0]["levels"][0].get("answer") == ["A"])
+check("answer [[], ['A']] 非空", not Level({"answer": [[], ["A"]]}).answer_empty())
+check("answer [[]] 为空", Level({"answer": [[]]}).answer_empty())
+
+# 8. 骨架不重复建章 + 回填 homework_id + 追加缺失关卡
+archive6 = Path(tmp) / "arch6.toml"
+write_scan_skeleton(archive6, [{"name": "章节乙", "homework_id": "",
+                                "levels": [{"name": "L1"}, {"name": "L2"}]}])
+write_scan_skeleton(archive6, [{"name": "章节乙 - 扩展", "homework_id": "999",
+                                "levels": [{"name": "L1"}, {"name": "L2"}, {"name": "L3"}]}])
+d9 = tomllib.loads(archive6.read_text())
+check("骨架模糊匹配不重复建章", len(d9["chapters"]) == 1, str(d9["chapters"]))
+check("骨架回填 homework_id", d9["chapters"][0].get("homework_id") == "999")
+check("骨架追加缺失关卡", len(d9["chapters"][0]["levels"]) == 3)
+
+# 9. 单引号章节名（合法 TOML）也能匹配写回
+archive7 = Path(tmp) / "arch7.toml"
+archive7.write_text(
+    "[[chapters]]\n"
+    "name = '单引号章'\n"
+    '\n'
+    "[[chapters.levels]]\n"
+    'name = "L1"\n'
+    'answer = ""\n'
+)
+n7 = write_back_answers(archive7, {"单引号章": {1: 'answer = "B"'}}, force=False)
+d10 = tomllib.loads(archive7.read_text())
+check("单引号章节名可写回", n7 == 1 and d10["chapters"][0]["levels"][0].get("answer") == "B")
+
+# 10. 缺失档案 + missing_ok
+check("缺失档案 missing_ok 返回空",
+      load_answers(Path(tmp) / "nope.toml", missing_ok=True) == [])
+check("原子写无 .tmp 残留", not list(Path(tmp).glob("*.tmp")))
+
+
+# 11. 写回只替换答案区，保留 skip/type/注释/multi
+archive8 = Path(tmp) / "arch8.toml"
+archive8.write_text(
+    '[[chapters]]\n'
+    'name = "头部章"\n'
+    '\n'
+    '[[chapters.levels]]\n'
+    'name = "L1"\n'
+    '# 用户注释\n'
+    'type = "code"\n'
+    'skip = false\n'
+    'multi = false\n'
+    'answer = ""\n'
+)
+n8 = write_back_answers(archive8, {"头部章": {1: 'answer = "C"'}}, force=False)
+_txt8 = archive8.read_text()
+d11 = tomllib.loads(_txt8)
+_lv11 = d11["chapters"][0]["levels"][0]
+check("写回保留 skip/type/注释/multi",
+      n8 == 1 and _lv11.get("type") == "code" and _lv11.get("skip") is False
+      and _lv11.get("multi") is False and "# 用户注释" in _txt8
+      and _lv11.get("answer") == "C")
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

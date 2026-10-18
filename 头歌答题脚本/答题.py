@@ -108,7 +108,10 @@ def main() -> None:
     args = ap.parse_args()
     if hasattr(args, "chapters"):
         args.chapter = list(args.chapters) + list(args.chapter_opt)   # 位置参数 + 旧写法合并
-    cfg = load_config(Path(args.config).expanduser())
+    cfg_path = Path(args.config).expanduser()
+    if not cfg_path.exists():
+        die(f"配置文件不存在：{cfg_path}")
+    cfg = load_config(cfg_path)
     apply_current_profile(cfg)      # 记住的档案槽优先于 config 里的 profile
 
     if args.cmd == "browser":

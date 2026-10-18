@@ -291,17 +291,35 @@ def write_files(page: Page, live_paths: list[str], entries: list[dict]) -> None:
     写入后把每个文件再点一遍：既让平台把自己的状态同步完整，也顺便核对
     新点开的 model 内容确实等于档案答案（不等就补写一次）。
     """
+    def _entry_for(live: str) -> dict | None:
+        """优先完整路径；只有 basename 在档案和当前关卡里都唯一时才退回 basename。"""
+        live_n = (live or "").strip().replace("\\", "/")
+        for e in entries:
+            p = str(e.get("path") or "").strip().replace("\\", "/")
+            if p == live_n:
+                return e
+        base = live_n.rsplit("/", 1)[-1]
+        cands = [e for e in entries
+                 if str(e.get("path") or "").strip().replace("\\", "/").rsplit("/", 1)[-1] == base]
+        live_same = [p for p in live_paths
+                     if (p or "").strip().replace("\\", "/").rsplit("/", 1)[-1] == base]
+        if len(cands) == 1 and len(live_same) == 1:
+            return cands[0]
+        return None
+
     plan = []
+    matched: set[int] = set()
     for live in live_paths:
-        ent = next((e for e in entries if _same_path(str(e.get("path") or ""), live)), None)
+        ent = _entry_for(live)
         if ent is None:
-            raise RuntimeError(f"档案里没有文件「{live}」的条目，请先 harvest 或手动补全")
+            raise RuntimeError(f"档案里没有文件「{live}」的条目（或同名文件有歧义），"
+                               "请先 harvest 或手动补全")
         code = str(ent.get("answer") or "")
         if not code.strip():
             raise RuntimeError(f"档案里文件「{ent.get('path') or live}」的答案是空的")
         plan.append((live, code))
-    extra = [str(e.get("path")) for e in entries
-             if not any(_same_path(str(e.get("path") or ""), p) for p in live_paths)]
+        matched.add(id(ent))
+    extra = [str(e.get("path")) for e in entries if id(e) not in matched]
     if extra:
         raise RuntimeError("档案里的这些文件在本关不存在：" + "；".join(extra)
                            + "（可用 harvest 重新采集）")

@@ -46,7 +46,7 @@ JSON.stringify([...document.querySelectorAll('[class*="listItem"]')].map(c => {
   const hasStart = [...c.querySelectorAll('*')].some(el => (el.innerText||'').trim() === '开始学习');
   const prog = (c.innerText||'').match(/(\d+)\s*\/\s*(\d+)/);
   const raw = c.innerText || '';
-  const closed = raw.includes('已截止') || raw.includes('查看作品');
+  const closed = raw.includes('已截止') || (raw.includes('查看作品') && !hasStart);
   return {name: t[1] || '', hasStart, closed,
           done: prog ? +prog[1] : 0, total: prog ? +prog[2] : 0};
 }).filter(c => c.name))
@@ -76,7 +76,9 @@ def harvest_levels(page: Page, passed: set, ch: "Chapter | None", force: bool) -
                 if kind:
                     try:
                         multi_flag = False if kind == "code" else (True if kind == "files" else None)
-                        collected[idx] = {"answer": answer_to_toml(kind, value), "multi": multi_flag}
+                        collected[idx] = {"answer": answer_to_toml(kind, value),
+                                          "multi": multi_flag,
+                                          "name": st.get("name") or ""}
                         log(f"  ✓ 第{idx}关「{st.get('name')}」：{note}")
                     except RuntimeError as e:
                         log(f"  ! 第{idx}关采集失败：{e}")
@@ -102,6 +104,45 @@ def _write_skeleton(answers_path: Path, name: str, hid: str, rows: list[dict],
     write_scan_skeleton(answers_path, [{"name": name, "homework_id": hid, "levels": levels}])
 
 
+
+def _open_levels_from_detail(browser: cdp.Browser, target: dict, page: Page):
+    """进入章节若落在详情页，点「查看实战/继续挑战/进入实训」进关卡。
+
+    返回 (target, page, ok)；成功进入时 target/page 已切换到关卡标签页。
+    按钮可能异步渲染，先等它出现；点击后既接受新标签页，也接受当前页跳转。
+    """
+    if "/detail" not in (target["url"] or ""):
+        return target, page, True
+    before = {p["id"] for p in browser.pages()}
+    clicked = False
+    deadline = time.time() + 15
+    while time.time() < deadline and not clicked:
+        for btn_text in ("查看实战", "继续挑战", "进入实训"):
+            if page.click_expr(
+                "[...document.querySelectorAll('a,button')].find("
+                f"e=>(e.innerText||'').trim()==={json.dumps(btn_text)})"
+            ):
+                clicked = True
+                break
+        if not clicked:
+            time.sleep(0.5)
+    if not clicked:
+        return target, page, False
+    deadline = time.time() + 20
+    while time.time() < deadline:
+        time.sleep(0.4)
+        cur = next((p for p in browser.pages() if p["id"] == target["id"]), None)
+        if cur and "/tasks/" in (cur.get("url") or ""):
+            return cur, Page(browser.attach(cur), cur), True
+        nxt = [p for p in browser.pages()
+               if p["id"] not in before and "/tasks/" in (p.get("url") or "")]
+        if nxt:
+            browser.close_target(target["id"])
+            target = nxt[0]
+            return target, Page(browser.attach(target), target), True
+    return target, page, False
+
+
 def cmd_harvest(args, cfg: dict) -> None:
     """扫描 + 采集（v0.9.12 合并 scan）。
 
@@ -111,22 +152,33 @@ def cmd_harvest(args, cfg: dict) -> None:
     · 档案里已有、且已满分关卡的答案都齐了：整章跳过（-f 强制重采）。
     """
     answers_path = Path(cfg["run"]["answers"])
+    chapters = load_answers(answers_path, missing_ok=True)
+    todo: list[Chapter] | None = None
+    if args.chapter:
+        todo = resolve_chapter_args(chapters, args.chapter, strict=False)
     browser = ensure_browser(cfg)
     classroom = classroom_page(browser, cfg)
     ensure_login(browser, classroom.ws)
 
-    chapters = load_answers(answers_path)
-    
     if args.chapter:
-        todo = resolve_chapter_args(chapters, args.chapter)
-        targets = [{"name": ch.name, "ch": ch, "card": None} for ch in todo]
+        targets = [{"name": ch.name, "ch": ch, "card": None} for ch in (todo or [])]
         covered = {norm(t["name"]) for t in targets}
-        classroom = classroom_page(browser, cfg, old=classroom)
-        for card in list_classroom_cards(classroom):
-            if norm(card["name"]) in covered or _book_lookup(chapters, card["name"]) is not None:
-                continue
-            if any(x in card["name"] or card["name"] in x for x in args.chapter):
-                targets.append({"name": card["name"], "ch": None, "card": card})
+
+        def _in_archive(pat: str) -> bool:
+            pn = norm(pat)
+            return any(pn and (pn in norm(c.name) or norm(c.name) in pn) for c in chapters)
+
+        unmatched = [pat for pat in args.chapter if not _in_archive(pat)]
+        if unmatched:
+            classroom = classroom_page(browser, cfg, old=classroom)
+            for card in list_classroom_cards(classroom):
+                cn = norm(card["name"])
+                if cn in covered or _book_lookup(chapters, card["name"]) is not None:
+                    continue
+                if any(norm(x) in norm(card["name"]) or norm(card["name"]) in norm(x)
+                       for x in unmatched):
+                    targets.append({"name": card["name"], "ch": None, "card": card})
+                    covered.add(cn)
         if not targets:
             die("答案档案和课堂里都找不到指定章节。")
     else:
@@ -137,6 +189,7 @@ def cmd_harvest(args, cfg: dict) -> None:
     all_changes: dict = {}
     for t in targets:
         name, ch, card = t["name"], t["ch"], t["card"]
+        key = ch.name if ch is not None else name
         log(f"\n→ 章节：{name}")
         if card and card.get("closed"):
             log("  ! 已截止（只能查看作品）——跳过，不建骨架、不采集")
@@ -176,17 +229,19 @@ def cmd_harvest(args, cfg: dict) -> None:
             continue
         passed = {i for i, r in enumerate(rows, 1) if is_passed_row(r)}
 
-        # 已有档案但关卡数不一致：先补骨架（否则写回对不上）
-        if ch is not None and len(ch.levels) != len(rows):
-            _write_skeleton(answers_path, name, hid, rows)
+        # 骨架先行：新章节先落盘（采集中途失败也不会丢关卡结构）
+        if ch is None:
+            _write_skeleton(answers_path, key, hid, rows)
+            log("  ✓ 已补骨架")
+        elif len(ch.levels) != len(rows):
+            _write_skeleton(answers_path, key, hid, rows)
             log("  · 档案关卡数与平台不一致，已补骨架")
+        if ch is not None and not ch.homework_id:
+            _write_skeleton(answers_path, key, hid, rows)
+            log("  · 已补写 homework_id")
 
         if not passed:
-            if ch is None:
-                _write_skeleton(answers_path, name, hid, rows)
-                log("  → 没有已满分的关卡，只写骨架")
-            else:
-                log("  → 没有已满分的关卡，跳过")
+            log("  → 没有已满分的关卡，跳过")
             if target:
                 browser.close_target(target["id"])
             continue
@@ -214,31 +269,11 @@ def cmd_harvest(args, cfg: dict) -> None:
                 continue
             page = Page(ws, target)
 
-        # 全通章节的「开始学习」会落到详情页：点进关卡
-        if "/detail" in (target["url"] or ""):
-            entered = False
-            for btn_text in ("查看实战", "继续挑战", "进入实训"):
-                if not page.click_expr(
-                    "[...document.querySelectorAll('a,button')].find("
-                    f"e=>(e.innerText||'').trim()==={json.dumps(btn_text)})"
-                ):
-                    continue
-                for _ in range(30):
-                    time.sleep(0.4)
-                    nxt = [x for x in browser.pages()
-                           if x["id"] != target["id"] and "/tasks/" in (x.get("url") or "")]
-                    if nxt:
-                        browser.close_target(target["id"])
-                        target = nxt[0]
-                        page = Page(browser.attach(target), target)
-                        entered = True
-                        break
-                if entered:
-                    break
-            if not entered:
-                browser.close_target(target["id"])
-                log("  ! 详情页上没找到进入关卡的按钮，跳过本章")
-                continue
+        target, page, entered = _open_levels_from_detail(browser, target, page)
+        if not entered:
+            browser.close_target(target["id"])
+            log("  ! 详情页上没找到进入关卡的按钮，跳过本章")
+            continue
 
         collected: dict = {}
         try:
@@ -249,13 +284,13 @@ def cmd_harvest(args, cfg: dict) -> None:
             except Exception:
                 pass
 
-        if ch is None:
-            _write_skeleton(answers_path, name, hid, rows, collected)
-            log("  ✓ 已补写骨架")
         if collected:
-            write_back_answers(answers_path, {name: collected}, force=args.force)
-            log(f"  ✓ 已写回答案档案：{name} {len(collected)} 关")
-            all_changes[name] = collected
+            written = write_back_answers(answers_path, {key: collected}, force=args.force)
+            if written:
+                log(f"  ✓ 已写回答案档案：{key} {written} 关")
+                all_changes[key] = collected
+            else:
+                log("  ! 采到答案但档案没有可写回的关卡，请检查章节/关卡是否对齐")
 
     total = {n: len(v) for n, v in all_changes.items() if v}
     if total:
@@ -287,6 +322,12 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
     page = Page(ws)
     ok = False
     try:
+        target, page, entered = _open_levels_from_detail(browser, target, page)
+        if not entered:
+            stats["skipped"] += 1
+            log("  ! 详情页上没找到进入关卡的按钮，跳过本章")
+            browser.close_target(target["id"])
+            return stats
         st = rewind_to_first(page)
         if not st.get("index"):
             die(f"章节「{ch.name}」进入后未能读到关卡信息。")
@@ -424,19 +465,23 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
             browser.close_target(target["id"])
 
 
-def resolve_chapter_args(chapters: list[Chapter], patterns: list[str]) -> list[Chapter]:
+def resolve_chapter_args(chapters: list[Chapter], patterns: list[str],
+                         *, strict: bool = True) -> list[Chapter]:
     """把命令行里的章节名/片段解析成章节列表（方案 B）。
 
-    短名可能一次命中多个章节（如「一」同时命中「Java语言基础（一）」和「Java面向对象（一）」）：
-    这时会把候选都列出来，问你要跑哪个，避免跑错；直接回车 = 全部命中。
+    匹配忽略空白；短名命中多个章节时列出候选询问（回车=全部命中）。
+    strict=True 时，档案里找不到的片段直接报错退出；harvest 传 False（可能来自课堂新章节）。
     """
     if not patterns:
         return list(chapters)
     order = {c.name: i for i, c in enumerate(chapters)}
     picked: dict[str, Chapter] = {}
+    missing: list[str] = []
     for pat in patterns:
-        hits = [c for c in chapters if pat in c.name]
+        pn = norm(pat)
+        hits = [c for c in chapters if pn and pn in norm(c.name)]
         if not hits:
+            missing.append(pat)
             continue
         if len(hits) > 1:
             log(f"\n！短名「{pat}」一次命中 {len(hits)} 个章节：")
@@ -453,12 +498,17 @@ def resolve_chapter_args(chapters: list[Chapter], patterns: list[str]) -> list[C
                     part = part.strip()
                     if part.isdigit() and 1 <= int(part) <= len(hits):
                         sel.append(hits[int(part) - 1])
-                if sel:
-                    keep = sel
+                if not sel:
+                    die(f"编号无效：{ans}（可选 1-{len(hits)}，逗号分隔）")
+                keep = sel
             for h in keep:
                 picked[h.name] = h
         else:
             picked[hits[0].name] = hits[0]
+    if missing:
+        if strict:
+            die("答案档案里找不到这些章节：" + "、".join(missing))
+        log("  ! 答案档案里没有：" + "、".join(missing) + "（将尝试从课堂里发现）")
     result = list(picked.values())
     result.sort(key=lambda c: order[c.name])
     return result
@@ -476,7 +526,10 @@ def cmd_run(args, cfg: dict) -> None:
     log("\n将按档案顺序处理：")
     print_archive_status(todo)
     if not args.yes:
-        input("\n回车开始（Ctrl+C 取消）…")
+        try:
+            input("\n回车开始（Ctrl+C 取消）…")
+        except EOFError:
+            die("当前环境无法交互确认：请加 -y 直接开始。")
 
     browser = ensure_browser(cfg)
     classroom = classroom_page(browser, cfg)
@@ -491,6 +544,15 @@ def cmd_run(args, cfg: dict) -> None:
         log("  → 检查平台状态…")
         rows = scrape_status(browser, status_page,
                              cfg["edge"]["classroom"] + f"/{ch.homework_id}/detail?tabs=1")
+        if not rows:
+            log("  ! 详情页没有读到关卡列表，跳过本章")
+            results[ch.name] = {"done": 0, "skipped": 0, "failed": 1}
+            continue
+        if len(rows) != len(ch.levels):
+            log(f"  ! 平台关卡数（{len(rows)}）与档案（{len(ch.levels)}）不一致，"
+                "请先 harvest 补骨架；跳过本章")
+            results[ch.name] = {"done": 0, "skipped": 0, "failed": 1}
+            continue
         to_run = [lv for i, lv in enumerate(ch.levels, 1)
                   if not lv.skip and not is_passed_row(row_at(rows, i, lv.name))]
         if not to_run:
