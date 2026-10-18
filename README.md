@@ -21,7 +21,7 @@
 │   ├── popup.html/js  # 扩展弹窗
 │   └── fonts/         # 内置 Maple Mono 字体（OFL 协议）
 ├── 头歌答题脚本/       # Python 自动答题器
-│   ├── 答题.py         # 主程序（browser / scan / harvest / run）
+│   ├── 答题.py         # 主程序（browser / harvest / run）
 │   ├── cdp.py         # 零依赖 CDP 客户端
 │   ├── config.toml    # 配置
 │   ├── answers.toml   # 标准答案档案（章节顺序 + 每关答案）
@@ -47,7 +47,7 @@
 ```bash
 cd 头歌答题脚本
 python3 答题.py browser            # 启动专用副本浏览器，登录一次头歌
-python3 答题.py scan -a            # 扫描章节，生成答案档案骨架
+python3 答题.py harvest            # 扫描章节并采集答案（缺骨架自动补，已截止章节自动跳过）
 # 编辑 answers.toml 填答案（代码用三单引号包住完整文件；选择题填字母）
 python3 答题.py run -y             # 开跑：自动跳过已满分关卡，失败暂停（开跑前会列出每关答案状态）
 # 章节参数直接跟在命令后，如：run -y 五 七 / harvest 八
