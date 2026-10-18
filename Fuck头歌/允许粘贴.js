@@ -814,7 +814,8 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     setTimeout(() => {
       try {
         // 合成 Ctrl+Z 不可靠（撤销栈可能为空/被平台清空）→ 直接把被删掉的文本插回去
-        dels.sort((a, b) => b.rangeOffset - a.rangeOffset).forEach(c => {
+        // 多段删除必须按偏移升序回插：每插回一段，后面各段的原始偏移正好被补回
+        dels.sort((a, b) => a.rangeOffset - b.rangeOffset).forEach(c => {
           const text = before.substr(c.rangeOffset, c.rangeLength);
           if (!text) return;
           const p = m.getPositionAt(c.rangeOffset);
