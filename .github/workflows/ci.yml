@@ -17,7 +17,10 @@ jobs:
           python-version: "3.13"
 
       - name: 语法检查
-        run: python -m py_compile "头歌答题脚本/答题.py" "头歌答题脚本/cdp.py"
+        run: python -m compileall -q "头歌答题脚本"
 
       - name: 单元测试
-        run: python "头歌答题脚本/tests/test_archive.py"
+        run: |
+          for f in 头歌答题脚本/tests/test_*.py; do
+            python "$f"
+          done

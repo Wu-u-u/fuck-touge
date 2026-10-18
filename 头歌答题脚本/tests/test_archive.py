@@ -10,7 +10,7 @@ import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import 答题  # noqa: E402
+from eduauto.archive import Level, write_back_answers, write_scan_skeleton  # noqa: E402
 
 passed = failed = 0
 
@@ -26,11 +26,11 @@ def check(name, cond, detail=""):
 
 
 # 1. Level 解析
-lv = 答题.Level({"name": "A", "answer": "x", "multi": False})
+lv = Level({"name": "A", "answer": "x", "multi": False})
 check("Level multi=False", lv.multi is False)
-lv2 = 答题.Level({"name": "B", "answer": "x"})
+lv2 = Level({"name": "B", "answer": "x"})
 check("Level multi 缺省=None", lv2.multi is None)
-lv3 = 答题.Level({"name": "C", "multi": True, "files": [{"path": "a.java", "answer": "y"}]})
+lv3 = Level({"name": "C", "multi": True, "files": [{"path": "a.java", "answer": "y"}]})
 check("Level multi=True + files", lv3.multi is True and len(lv3.files) == 1)
 
 # 2. write_scan_skeleton（新文件）
@@ -44,7 +44,7 @@ scanned = [{
         {"name": "关卡3"},
     ],
 }]
-答题.write_scan_skeleton(p, scanned)
+write_scan_skeleton(p, scanned)
 data = tomllib.loads(p.read_text())
 lvls = data["chapters"][0]["levels"]
 check("骨架 3 关", len(lvls) == 3)
@@ -62,7 +62,7 @@ scanned2 = [{
         {"name": "关卡4", "multi": False},
     ],
 }]
-答题.write_scan_skeleton(p, scanned2)
+write_scan_skeleton(p, scanned2)
 data2 = tomllib.loads(p.read_text())
 check("追补 L4", len(data2["chapters"][0]["levels"]) == 4 and data2["chapters"][0]["levels"][3]["multi"] is False)
 
@@ -82,13 +82,13 @@ archive.write_text(
     'answer = ""\n'
 )
 changes = {"测试章": {1: {"answer": "answer = '''\nprint(1)\n'''", "multi": False}}}
-答题.write_back_answers(archive, changes, force=False)
+write_back_answers(archive, changes, force=False)
 d3 = tomllib.loads(archive.read_text())
 l1 = d3["chapters"][0]["levels"][0]
 check("write_back L1 multi=False + 答案", l1.get("multi") is False and "print(1)" in l1.get("answer", ""))
 
 changes2 = {"测试章": {2: {"answer": "[[chapters.levels.files]]\npath = \"a.java\"\nanswer = '''\nx\n'''", "multi": True}}}
-答题.write_back_answers(archive, changes2, force=True)
+write_back_answers(archive, changes2, force=True)
 d4 = tomllib.loads(archive.read_text())
 l2 = d4["chapters"][0]["levels"][1]
 check("write_back L2 multi=True + files", l2.get("multi") is True and l2.get("files", [{}])[0].get("path") == "a.java")
@@ -105,7 +105,7 @@ archive2.write_text(
     'multi = false\n'
     'answer = ""\n'
 )
-答题.write_back_answers(archive2, {"测试章2": {1: "answer = '''\ncode2\n'''"}}, force=False)
+write_back_answers(archive2, {"测试章2": {1: "answer = '''\ncode2\n'''"}}, force=False)
 d5 = tomllib.loads(archive2.read_text())
 l5 = d5["chapters"][0]["levels"][0]
 check("str 载荷保留 multi 行", l5.get("multi") is False and "code2" in l5.get("answer", ""))

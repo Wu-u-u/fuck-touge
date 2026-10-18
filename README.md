@@ -21,7 +21,8 @@
 │   ├── popup.html/js  # 扩展弹窗
 │   └── fonts/         # 内置 Maple Mono 字体（OFL 协议）
 ├── 头歌答题脚本/       # Python 自动答题器
-│   ├── 答题.py         # 主程序（browser / harvest / run）
+│   ├── 答题.py         # CLI 入口（browser / harvest / run）
+│   ├── eduauto/       # 逻辑模块：配置 / 浏览器 / 关卡 / 编辑器 / 答案 / 流程
 │   ├── cdp.py         # 零依赖 CDP 客户端
 │   ├── config.toml    # 配置
 │   ├── answers.toml   # 标准答案档案（章节顺序 + 每关答案）
