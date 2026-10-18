@@ -1,11 +1,11 @@
-// Fuck 头歌 v2.4.3 —— 仅作用于头歌：
+// Fuck 头歌 v2.4.4 —— 仅作用于头歌：
 //   ① 允许粘贴/复制，并阻止网页篡改剪贴板
 //   ② 答对后自动点掉“恭喜通过”弹层里的「下一关」/「最后一关」/「完成」
 //   ③ 编辑器增强：主题（Catppuccin / GitHub 高对比）+ Maple Mono 字体 + 光标动画（默认关）
 //   ④ 页面皮肤：仅答题页面内，选择题等无编辑器页面也换成主题深色（主题开启时）
 (() => {
   "use strict";
-  try { window.__fuckTouge = "2.4.3"; } catch (e) {}
+  try { window.__fuckTouge = "2.4.4"; } catch (e) {}
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -44,12 +44,15 @@
   };
   let themeOn = true, fontOn = false, fontAsked = false, themeName = "catppuccin", cursorOn = false;
   try {
-    const old = localStorage.getItem("fuckTougeUI");   // 旧版单一开关 → 平滑迁移
-    themeOn = localStorage.getItem(UI_THEME_KEY) !== "off" && old !== "off";
-    fontOn = localStorage.getItem(UI_FONT_KEY) === "on" || old === "on";
+    const old = localStorage.getItem("fuckTougeUI");   // 旧版单一开关 → 平滑迁移（迁移后即删，否则会永远覆盖新开关）
+    const theme = localStorage.getItem(UI_THEME_KEY) ?? (old === "off" ? "off" : "on");
+    const font = localStorage.getItem(UI_FONT_KEY) ?? (old === "on" ? "on" : "off");
+    themeOn = theme !== "off";
+    fontOn = font === "on";
     fontAsked = !!localStorage.getItem(UI_FONT_ASKED);
     themeName = localStorage.getItem(UI_THEME_NAME) || "catppuccin";
     cursorOn = localStorage.getItem(UI_CURSOR_KEY) === "on";
+    if (old !== null) localStorage.removeItem("fuckTougeUI");
   } catch (e) {}
 
   let platformTheme = "vs-dark";   // 平台请求的主题：vs=浅色 / vs-dark=深色
@@ -800,27 +803,32 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
   /* ── ② 粘贴回落保护：网页会删掉刚粘贴的内容，检测到删除后撤销回来 ── */
   let watchUntil = 0, undoCount = 0;
 
-  const modelChange = e => {
+  const modelChange = (m, e) => {
+    const before = m.__ftLastValue ?? m.getValue();     // 变更前的完整内容（撤销栈不可用时用它还原）
+    m.__ftLastValue = m.getValue();
     if (Date.now() > watchUntil || undoCount >= 3) return;
-    if (!e.changes.some(c => !c.text && c.rangeLength > 0)) return;
+    const dels = e.changes.filter(c => !c.text && c.rangeLength > 0);
+    if (!dels.length) return;
     undoCount++;
     watchUntil = Date.now() + 300;
     setTimeout(() => {
-      const ta = document.activeElement?.closest?.(".monaco-editor")
-        ? document.activeElement
-        : $(".monaco-editor textarea.inputarea");
-      if (!ta) return;
-      ta.focus();
-      const k = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ctrlKey: true, key: "z" });
-      Object.defineProperty(k, "keyCode", { get: () => 90 });
-      ta.dispatchEvent(k);
+      try {
+        // 合成 Ctrl+Z 不可靠（撤销栈可能为空/被平台清空）→ 直接把被删掉的文本插回去
+        dels.sort((a, b) => b.rangeOffset - a.rangeOffset).forEach(c => {
+          const text = before.substr(c.rangeOffset, c.rangeLength);
+          if (!text) return;
+          const p = m.getPositionAt(c.rangeOffset);
+          m.applyEdits([{ range: new window.Monaco.Range(p.lineNumber, p.column, p.lineNumber, p.column), text }]);
+        });
+      } catch (err) {}
     }, 30);
   };
 
   const hookModel = m => {
     if (m.__ftHooked) return;
     m.__ftHooked = true;
-    m.onDidChangeContent(modelChange);
+    m.__ftLastValue = m.getValue();
+    m.onDidChangeContent(e => modelChange(m, e));
   };
 
   const hookMonaco = M => {
@@ -917,7 +925,7 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
   const findNextBtn = box => {
     for (const el of $$("a, button, [role=button]", box)) {
       const kind = NEXT_LABELS[normText(el.innerText)];
-      if (kind) return { el, kind };
+      if (kind && visible(el)) return { el, kind };
     }
     return null;
   };
@@ -957,6 +965,7 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
 
     box.__ftClicked = true;
     setTimeout(() => {
+      if (!next.el.isConnected) { box.__ftClicked = false; return; }   // SPA 重渲染换掉了按钮 → 下一轮重新找
       clickLikeUser(next.el);
       jumpNotice(next.kind);
     }, 200);
