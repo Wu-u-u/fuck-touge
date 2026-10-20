@@ -36,12 +36,13 @@ _CARD_MATCH_JS = r"""
     return best;
   };
   const findCard = target => {
-    let best = null, bestScore = 0;
+    let best = null, bestScore = 0, ties = 0;
     for (const c of document.querySelectorAll('[class*="listItem"]')) {
       const s = matchScore(c, target);
-      if (s > bestScore) { best = c; bestScore = s; }
+      if (s > bestScore) { best = c; bestScore = s; ties = 1; }
+      else if (s === bestScore && s > 0) { ties++; }
     }
-    return best;
+    return {card: best, score: bestScore, ties};
   };
 """
 
@@ -51,8 +52,10 @@ def card_pos_js(name: str) -> str:
 (function(){
 __CARD_MATCH__
   const target = norm(__NAME__);
-  const card = findCard(target);
+  const found = findCard(target);
+  const card = found.card;
   if (!card) return JSON.stringify({ok:false, reason:'card-not-found'});
+  if (found.ties > 1) return JSON.stringify({ok:false, reason:'ambiguous', ties:found.ties});
   card.scrollIntoView({block:'center'});
   const cands = [...card.querySelectorAll('*')].filter(el => norm(el.innerText) === '开始学习');
   for (const el of cands) {
@@ -194,7 +197,7 @@ def card_progress_js(name: str) -> str:
     return r"""
 JSON.stringify((function(){
 __CARD_MATCH__
-  const card = findCard(norm(__NAME__));
+  const card = findCard(norm(__NAME__)).card;
   if (!card) return {done: 0, total: 0, name: ''};
   const m = (card.innerText||'').match(/(\d+)\s*\/\s*(\d+)/);
   const t = (card.innerText||'').split('\n').map(s=>s.trim()).filter(Boolean);

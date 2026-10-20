@@ -10,7 +10,7 @@ import json  # noqa: E402
 import tempfile  # noqa: E402
 
 import eduauto.config as config  # noqa: E402
-from eduauto.answers import answer_to_toml  # noqa: E402
+from eduauto.answers import answer_to_toml, looks_like_template  # noqa: E402
 from eduauto.archive import Chapter  # noqa: E402
 from eduauto.code import answer_choice, choice_letters  # noqa: E402
 from eduauto.config import (apply_current_profile, load_config,  # noqa: E402
@@ -190,11 +190,22 @@ try:
     check("slots 只保留非空字符串",
           _st["slots"] == {"1": "/p1"} and config.STATE_FILE.exists(), str(_st))
 
-    config.STATE_FILE.write_text(json.dumps({"slots": []}), encoding="utf-8")
+    config.STATE_FILE.with_name("state.json.bad").unlink(missing_ok=True)
+    config.STATE_FILE.write_text(json.dumps({
+        "slots": [], "names": {"1": "吴建祥", "2": 3}, "running": [],
+    }), encoding="utf-8")
     _st = load_state()
-    check("slots 容器类型错误隔离",
-          _st == {} and not config.STATE_FILE.exists()
-          and config.STATE_FILE.with_name("state.json.bad").exists())
+    check("state 字段类型错误只重置该字段",
+          _st["slots"] == {} and _st["running"] == {}
+          and _st["names"] == {"1": "吴建祥"}
+          and config.STATE_FILE.exists()
+          and not config.STATE_FILE.with_name("state.json.bad").exists(), str(_st))
+
+    config.STATE_FILE.write_text(json.dumps({"slots": {"1": "/p1"}, "current": 5}),
+                                 encoding="utf-8")
+    _st = load_state()
+    check("state current 类型错误只删除该字段",
+          _st.get("slots") == {"1": "/p1"} and "current" not in _st, str(_st))
 
     # browser 1 必须用 config 里的原始档案，而不是 apply_current_profile 后的当前槽
     _d = Path(tempfile.mkdtemp())
@@ -220,6 +231,15 @@ try:
 finally:
     config.STATE_FILE = _old_state_file
 
+
+# ── 编辑器模板检测 ──────────────────────────────────────────────
+check("模板检测：空内容", looks_like_template(""))
+check("模板检测：TODO 短代码", looks_like_template("# TODO\npass\n"))
+check("模板检测：中文占位", looks_like_template("// 请在此填写代码\n"))
+check("模板检测：正常长代码",
+      not looks_like_template("class A:\n    def f(self):\n        return 1\n" * 20))
+check("模板检测：长代码单个 TODO 注释不误伤",
+      not looks_like_template("# TODO: 优化\n" + "x = 1\n" * 100))
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

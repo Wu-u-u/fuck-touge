@@ -119,19 +119,25 @@ def load_state() -> dict:
         return _quarantine_state(f"读取失败：{e}")
     if not isinstance(data, dict):
         return _quarantine_state("顶层不是对象")
-    for key in ("slots", "names"):
+    for key in ("slots", "names", "running"):
         value = data.get(key)
         if value is None:
             data[key] = {}
         elif not isinstance(value, dict):
-            return _quarantine_state(f"{key} 不是对象")
-    slots = {}
-    for key, value in data["slots"].items():
-        if isinstance(key, str) and key and isinstance(value, str) and value.strip():
-            slots[key] = value
-        else:
-            log(f"  ! state.json 的 slots 项无效，已忽略：{key!r}: {value!r}")
-    data["slots"] = slots
+            log(f"  ! state.json 的 {key} 不是对象，已重置该字段")
+            data[key] = {}
+    for field in ("slots", "names"):
+        clean = {}
+        for key, value in data[field].items():
+            if isinstance(key, str) and key and isinstance(value, str) and value.strip():
+                clean[key] = value
+            else:
+                log(f"  ! state.json 的 {field} 项无效，已忽略：{key!r}: {value!r}")
+        data[field] = clean
+    cur = data.get("current")
+    if cur is not None and (not isinstance(cur, str) or not cur):
+        log(f"  ! state.json 的 current 无效，已忽略：{cur!r}")
+        data.pop("current", None)
     return data
 
 

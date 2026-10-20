@@ -549,7 +549,8 @@ def cmd_run(args, cfg: dict) -> None:
 
     results = {}
     status_page = classroom     # 复用登录用的课堂页做状态检查标签，全程不重复开
-    for ch in todo:
+
+    def run_one(ch) -> None:
         log(f"\n══ 章节：{ch.name} ══")
         if not ch.homework_id:
             die(f"章节「{ch.name}」缺少 homework_id，请先 harvest。")
@@ -560,18 +561,18 @@ def cmd_run(args, cfg: dict) -> None:
         if not rows:
             log("  ! 详情页没有读到关卡列表，跳过本章")
             results[ch.name] = {"done": 0, "skipped": 0, "failed": 1}
-            continue
+            return
         if len(rows) != len(ch.levels):
             log(f"  ! 平台关卡数（{len(rows)}）与档案（{len(ch.levels)}）不一致，"
                 "请先 harvest 补骨架；跳过本章")
             results[ch.name] = {"done": 0, "skipped": 0, "failed": 1}
-            continue
+            return
         to_run = [lv for i, lv in enumerate(ch.levels, 1)
                   if not lv.skip and not is_passed_row(row_at(rows, i, lv.name))]
         if not to_run:
             log("  → 本章所有关卡都已通过或在档案里标了 skip，跳过")
             results[ch.name] = {"done": 0, "skipped": len(ch.levels), "failed": 0}
-            continue
+            return
         missing = [lv.name for lv in to_run if lv.answer_empty()]
         if missing:
             die(f"章节「{ch.name}」还有关卡没填答案：{'、'.join(missing)}\n"
@@ -586,10 +587,23 @@ def cmd_run(args, cfg: dict) -> None:
             if entry_classroom.target.get("id"):
                 browser.close_target(entry_classroom.target["id"])
 
+
+    abort_code = 0
+    for ch in todo:
+        try:
+            run_one(ch)
+        except SystemExit as e:
+            results.setdefault(ch.name, {"done": 0, "skipped": 0, "failed": 1, "aborted": True})
+            abort_code = int(e.code or 2)
+            break
+
     log("\n══════ 汇总 ══════")
     for name, s in results.items():
         extra = f"（用时 {fmt_secs(s['secs'])}）" if s.get("secs") else ""
         log(f"  {name}：作答 {s['done']} 关，跳过 {s['skipped']} 关，失败 {s['failed']} 关{extra}")
+    if abort_code:
+        log(f"\n已中止（总用时 {fmt_secs(time.time() - t0)}）。浏览器保持打开，可自行检查。")
+        sys.exit(abort_code)
     log(f"\n完成（总用时 {fmt_secs(time.time() - t0)}）。浏览器保持打开，可自行检查。")
 
 

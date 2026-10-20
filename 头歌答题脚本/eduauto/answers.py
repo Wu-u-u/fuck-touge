@@ -222,6 +222,27 @@ def read_submitted_code(page: Page, timeout: float = 15) -> str | None:
         close_code_modal(page)
 
 
+_TEMPLATE_MARKERS = (
+    "请在此", "在此填写", "在此处填写", "实现代码", "填写代码",
+    "your code here", "your code goes here", "write your code",
+    "todo",
+)
+
+
+def looks_like_template(code: str) -> bool:
+    """判断编辑器内容是否更像平台模板/占位，而不是用户答案。
+
+    保守策略：至少命中 1 个标记；若只命中 1 个且文本较长（>=400 字符），
+    视为正常代码里的注释，避免误伤。空内容也算模板。
+    """
+    text = str(code or "")
+    if not text.strip():
+        return True
+    low = text.lower()
+    hits = sum(1 for marker in _TEMPLATE_MARKERS if marker in low)
+    return hits >= 1 and (hits >= 2 or len(text) < 400)
+
+
 def read_saved_answer(page: Page, st: dict) -> tuple[str | None, str | None, str]:
     """读取当前关卡服务器上已保存的答案。
 
@@ -234,13 +255,19 @@ def read_saved_answer(page: Page, st: dict) -> tuple[str | None, str | None, str
             return read_saved_files(page, paths)  # 多文件：逐个点开读
         close_file_menu(page)
         code = read_editor_code(page)             # 首选：直接读编辑器（默认就是对的）
-        if not code or not code.strip():
+        src = "编辑器"
+        if not code or not code.strip() or looks_like_template(code):
             if st.get("models", 0) != 1:
-                return None, None, f"编辑器没读到内容，且有 {st.get('models')} 个 model"
-            code = read_submitted_code(page)      # 回退：评测记录里的提交代码
-            src = "评测记录"
-        else:
-            src = "编辑器"
+                if not code or not code.strip():
+                    return None, None, f"编辑器没读到内容，且有 {st.get('models')} 个 model"
+                return None, None, "编辑器内容像模板，且无法读取评测记录"
+            rec = read_submitted_code(page)       # 回退：评测记录里的提交代码
+            if rec and rec.strip() and not looks_like_template(rec):
+                code, src = rec, "评测记录（编辑器像模板）"
+            elif not code or not code.strip():
+                return None, None, "编辑器是空的，记录里也没读到"
+            else:
+                return None, None, "编辑器内容像模板，评测记录也没读到"
         if not code or not code.strip():
             return None, None, "编辑器是空的，记录里也没读到"
         return "code", code, f"{len(code)} 字符（{src}）"
