@@ -49,10 +49,18 @@
     const font = localStorage.getItem(UI_FONT_KEY) ?? (old === "on" ? "on" : "off");
     themeOn = theme !== "off";
     fontOn = font === "on";
-    fontAsked = !!localStorage.getItem(UI_FONT_ASKED);
+    fontAsked = !!localStorage.getItem(UI_FONT_ASKED) || old !== null;   // 旧版已拍板过字体，迁移后不再重复弹询问
     themeName = localStorage.getItem(UI_THEME_NAME) || "catppuccin";
     cursorOn = localStorage.getItem(UI_CURSOR_KEY) === "on";
-    if (old !== null) localStorage.removeItem("fuckTougeUI");
+    if (old !== null) {
+      // 迁移必须落盘：只删旧键的话，下次加载走 ?? 默认值 —— 用户关掉的主题会重新打开、
+      // 开着的字体会被关掉。先把上面合并出的最终值写回对应新键，再删旧键；
+      // 写的都是当前生效值，随时刷新都得到相同结果（幂等）
+      try { localStorage.setItem(UI_THEME_KEY, themeOn ? "on" : "off"); } catch (e) {}
+      try { localStorage.setItem(UI_FONT_KEY, fontOn ? "on" : "off"); } catch (e) {}
+      try { localStorage.setItem(UI_FONT_ASKED, "1"); } catch (e) {}
+      try { localStorage.removeItem("fuckTougeUI"); } catch (e) {}
+    }
   } catch (e) {}
 
   let platformTheme = "vs-dark";   // 平台请求的主题：vs=浅色 / vs-dark=深色
@@ -350,20 +358,23 @@
   };
   const editors = [];              // { ed, orig }：编辑器实例 + 原字体设置，便于恢复默认
 
-  // 读取原值：字体项用于恢复默认；光标项单独存，避免两类设置互相覆盖
+  // 读取原值：字体项用于恢复默认；光标项单独存（闪烁样式 + 平滑动画），避免两类设置互相覆盖
   const readOrigOptions = ed => {
     try {
       const EO = window.Monaco?.editor?.EditorOption;
-      if (!EO) return { font: {}, cursor: false };
+      if (!EO) return { font: {}, cursor: null };
       return {
         font: {
           fontFamily: ed.getOption(EO.fontFamily),
           fontLigatures: ed.getOption(EO.fontLigatures),
           bracketPairColorization: ed.getOption(EO.bracketPairColorization),
         },
-        cursor: EO.cursorSmoothCaretAnimation ? ed.getOption(EO.cursorSmoothCaretAnimation) : false,
+        cursor: {   // 备份原光标行为：光标开关关闭时按原值还原，而不是把 cursorBlinking 永远留在 smooth
+          blinking: EO.cursorBlinking ? ed.getOption(EO.cursorBlinking) : undefined,
+          caret: EO.cursorSmoothCaretAnimation ? ed.getOption(EO.cursorSmoothCaretAnimation) : undefined,
+        },
       };
-    } catch (e) { return { font: {}, cursor: false }; }
+    } catch (e) { return { font: {}, cursor: null }; }
   };
 
   /* Java 着色增强：自定义 Monaco 的 Java tokenizer ——
@@ -430,14 +441,15 @@
   });
 
   const installTokenizer = () => {
+    if (!themeOn) return;   // 主题关闭时不接管着色：装了我们这套 Java tokenizer 会顶掉平台自带高亮
     try {
-      window.Monaco?.languages?.setMonarchTokensProvider?.("java", JAVA_MONARCH(themeOn));
+      window.Monaco?.languages?.setMonarchTokensProvider?.("java", JAVA_MONARCH(true));
     } catch (e) {}
   };
 
   const applyTheme = () => {
     try { window.Monaco?.editor?.__ftOrigSetTheme?.(themeOn ? uiTheme(platformTheme) : platformTheme); } catch (e) {}
-    installTokenizer();
+    installTokenizer();   // 内部有 themeOn 判断，关主题时不会去动 setMonarchTokensProvider
   };
 
   const applyFont = () => {
@@ -447,11 +459,13 @@
     if (fontOn) { try { document.fonts?.ready?.then(() => window.Monaco?.editor?.remeasureFonts?.()); } catch (e) {} }
   };
 
-  // 光标手感：闪烁统一用柔和档；平滑移动跟随开关（此版本只有开/关，打字时也会滑）
+  // 光标手感：开启 = 柔和闪烁 + 平滑移动（此版本只有开/关，打字时也会滑）；
+  // 关闭 = 按 readOrigOptions 备份的原值还原（以前强制 smooth 且从不还原，会一直顶掉页面自己的光标设置）
   const cursorOptions = orig => {
     const EO = window.Monaco?.editor?.EditorOption;
-    const opts = { cursorBlinking: "smooth" };
-    if (EO?.cursorSmoothCaretAnimation) opts.cursorSmoothCaretAnimation = cursorOn ? true : orig;
+    if (!orig || !EO?.cursorBlinking) return {};
+    const opts = { cursorBlinking: cursorOn ? "smooth" : orig.blinking };
+    if (EO.cursorSmoothCaretAnimation) opts.cursorSmoothCaretAnimation = cursorOn ? true : orig.caret;
     return opts;
   };
 
@@ -589,6 +603,46 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
 `;
 
   const isAnswerPage = () => /^\/tasks\/[^/]+\/[^/]+\/[^/]+/.test(location.pathname);   // 答题页（…/tasks/课程/关卡组/关卡）
+
+  const HEAD_WAIT_MS = 5000;   // 等 <head> 的上限：等不到再退回 documentElement
+  let skinStyle = null;        // 在途（还没挂上）的样式节点；挂上/放弃后置回 null，页面删掉时可重建
+  const attachSkinStyle = () => {
+    const pending = skinStyle;
+    skinStyle = null;
+    if (!pending) return;
+    try {
+      const root = document.head || document.documentElement;
+      if (root && !pending.isConnected) root.appendChild(pending);
+    } catch (e) { /* 挂载失败就放弃，下次 applySkin 发现缺样式会重建 */ }
+  };
+  // 皮肤样式：document_start 时 <head> 可能还没出现，直接挂 documentElement 虽然也生效，
+  // 但页面骨架载入后容易被整体替换掉——所以等 head 出现（MutationObserver，另设超时上限），
+  // 上限 HEAD_WAIT_MS 内没等到再退回 documentElement，保证样式最终一定挂上
+  const injectSkinStyle = () => {
+    if (skinStyle || $("#ft-skin-style")) return;   // 已挂上 / 已在途就不重复注入
+    const style = document.createElement("style");
+    style.id = "ft-skin-style";
+    style.textContent = SKIN_CSS;
+    skinStyle = style;
+    if (document.head) { attachSkinStyle(); return; }
+    let mo = null;
+    const cap = setTimeout(() => {
+      try { mo?.disconnect(); } catch (e) {}
+      attachSkinStyle();
+    }, HEAD_WAIT_MS);
+    try {
+      mo = new MutationObserver(() => {
+        if (!document.head) return;
+        clearTimeout(cap);
+        try { mo.disconnect(); } catch (e) {}
+        attachSkinStyle();
+      });
+      mo.observe(document, { childList: true, subtree: true });
+    } catch (e) {
+      clearTimeout(cap);
+      attachSkinStyle();
+    }
+  };
   const applySkin = () => {
     const el = document.documentElement;
     if (!el) { setTimeout(applySkin, 10); return; }   // document_start 早期可能还没有 <html>
@@ -596,12 +650,7 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     themeOn && on ? el.setAttribute("data-ft-skin", themeName === "github" ? "github" : "catppuccin")
                   : el.removeAttribute("data-ft-skin");
     fontOn && on ? el.setAttribute("data-ft-font", "") : el.removeAttribute("data-ft-font");
-    if (on && (themeOn || fontOn) && !$("#ft-skin-style")) {
-      const style = document.createElement("style");
-      style.id = "ft-skin-style";
-      style.textContent = SKIN_CSS;
-      (document.head || el).appendChild(style);
-    }
+    if (on && (themeOn || fontOn)) injectSkinStyle();   // 去重/等 head/超时兜底都在这里面
   };
   applySkin();
   // 单页应用内切换界面（主页 ↔ 答题页等）时同步开关
@@ -877,16 +926,30 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     if (document.activeElement?.closest?.(".monaco-editor")) e.preventDefault();
   }, true);
 
-  /* ── ⑤ 清理属性式拦截 ── */
-  const stripAttrs = () => {
-    const attrs = ["onpaste", "oncopy", "oncut", "ondrop", "oncontextmenu"];
-    [document, document.body].forEach(el => el && attrs.forEach(a => (el[a] = null)));
-    $$("[onpaste],[oncopy],[oncut],[ondrop],[oncontextmenu]")
-      .forEach(el => attrs.forEach(a => el.removeAttribute(a)));
+  /* ── ⑤ 清理属性式拦截：只清 onpaste / oncopy / oncut ──
+     不再动 ondrop / oncontextmenu——平台用它们实现正常的拖放上传与右键菜单，去掉反而坏事；
+     也不再每秒全文档扫 5 个选择器（太重）。改为：启动清一次 + MutationObserver 增量跟进。
+     这三个都是事件处理 IDL 属性，无论页面写标记还是 el.onpaste=fn 赋值，都体现为属性变更，观察得到 */
+  const PASTE_ATTRS = ["onpaste", "oncopy", "oncut"];
+  const stripAttrs = root => {
+    [document, document.body].forEach(el => el && PASTE_ATTRS.forEach(a => { el[a] = null; }));
+    if (root && root.nodeType === 1) PASTE_ATTRS.forEach(a => { try { root.removeAttribute(a); } catch (e) {} });
+    $$(PASTE_ATTRS.map(a => `[${a}]`).join(","), root || document)
+      .forEach(el => PASTE_ATTRS.forEach(a => { try { el.removeAttribute(a); } catch (e) {} }));
   };
+  try {
+    new MutationObserver(muts => muts.forEach(m => {
+      if (m.type === "attributes") {                    // 新挂上的拦截属性 → 立即摘除
+        const el = m.target;
+        if (el && PASTE_ATTRS.includes(m.attributeName)) el.removeAttribute(m.attributeName);
+      } else {
+        m.addedNodes?.forEach(n => { if (n.nodeType === 1) stripAttrs(n); });
+      }
+    })).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: PASTE_ATTRS });
+  } catch (e) {}
   document.readyState === "loading"
-    ? document.addEventListener("DOMContentLoaded", stripAttrs)
-    : stripAttrs();
+    ? document.addEventListener("DOMContentLoaded", () => stripAttrs(document))
+    : stripAttrs(document);
 
   /* ── ⑥ 自动下一关 ──
      触发：出现可见的“通过”庆祝弹层（.evaluate-result-container；失败只会弹报错提示，不会出现它）
@@ -1016,5 +1079,5 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     autoNextAt = now + 200;
     autoNext();
   }).observe(document, { childList: true, subtree: true });
-  setInterval(() => { autoNext(); maybeAskUI(); stripAttrs(); }, 1000);
+  setInterval(() => { autoNext(); maybeAskUI(); }, 1000);   // 属性清理交由上面的 MutationObserver，不再每秒全量扫
 })();

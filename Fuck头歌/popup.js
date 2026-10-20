@@ -52,16 +52,27 @@ const setMsg = (text, warn) => {
     picked = LABELS[s.themeName] ? s.themeName : "catppuccin";
     themeSub.textContent = LABELS[picked] + " · 深浅自动";
     themePick.hidden = !tt.checked;
-    opts.forEach(b => b.classList.toggle("on", b.dataset.name === picked));
+    opts.forEach(b => {
+      const on = b.dataset.name === picked;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));   // 主题选项是“按下”式切换按钮，状态同步给读屏
+    });
   };
   render(st.value);
   setMsg("修改即时生效");
 
-  const push = async next => {
+  // 连点竞态：tabs.query / executeScript 的完成顺序不保证，旧请求的响应可能后到，
+  // 把新请求刚渲染的状态又盖回去 —— 给每次请求发一个单调递增序号，
+  // 响应回来时限次不同（已有更新操作存在）→ 过期响应整条丢弃：不渲染、不再提示。
+  // 同时只推本次变化的字段：页面端 __fuckTougeUI.set 支持局部更新，全量快照反而放大竞态窗口。
+  let seq = 0;
+  const push = async patch => {
+    const my = ++seq;
     const r = await withPage(
       n => window.__fuckTougeUI && window.__fuckTougeUI.set(n),
-      [next]
+      [patch]
     );
+    if (my !== seq) return;
     if (r.ok && r.value) {
       render(r.value);
       setMsg("修改即时生效");
@@ -69,13 +80,9 @@ const setMsg = (text, warn) => {
       setMsg("页面已刷新或不是头歌页面，请重试", true);
     }
   };
-  const state = () => ({ theme: tt.checked, font: tf.checked, themeName: picked, cursor: tc.checked });
 
-  tt.addEventListener("change", () => push(state()));
-  tf.addEventListener("change", () => push(state()));
-  tc.addEventListener("change", () => push(state()));
-  opts.forEach(b => b.addEventListener("click", () => {
-    picked = b.dataset.name;
-    push(state());
-  }));
+  tt.addEventListener("change", () => push({ theme: tt.checked }));
+  tf.addEventListener("change", () => push({ font: tf.checked }));
+  tc.addEventListener("change", () => push({ cursor: tc.checked }));
+  opts.forEach(b => b.addEventListener("click", () => push({ themeName: b.dataset.name })));
 })();

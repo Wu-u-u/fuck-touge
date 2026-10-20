@@ -13,12 +13,16 @@
   .box { padding: 14px 16px; }
   h1 { font-size: 14px; margin: 0 0 10px; font-weight: 600; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; }
-  .lab { font-weight: 500; }
+  .lab { font-weight: 500; cursor: pointer; }
   .sub { font-size: 11px; color: #7f849c; }
   .desc { margin-top: 8px; font-size: 12px; color: #7f849c; }
   .desc.warn { color: #f9e2af; }
   .switch { position: relative; width: 44px; height: 24px; flex: none; }
-  .switch input { display: none; }
+  /* 视觉隐藏而非 display:none：保留键盘聚焦能力，输入框仍可被 Tab 到 */
+  .switch input {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+    clip: rect(0 0 0 0); clip-path: inset(50%); overflow: hidden; white-space: nowrap;
+  }
   .slider {
     position: absolute; inset: 0; background: #45475a; border-radius: 12px;
     transition: .2s; cursor: pointer;
@@ -29,6 +33,8 @@
   }
   input:checked + .slider { background: #cba6f7; }
   input:checked + .slider::before { transform: translateX(20px); }
+  /* 键盘聚焦时给滑块描一圈可见的边 */
+  input:focus-visible + .slider { outline: 2px solid #cba6f7; outline-offset: 2px; }
   .pick { display: flex; gap: 6px; margin: 0 0 6px; }
   .pick[hidden] { display: none; }
   .opt {
@@ -36,6 +42,7 @@
     background: #1e1e2e; color: #cdd6f4; font: inherit; font-size: 12px; cursor: pointer;
   }
   .opt:hover { border-color: #585b70; }
+  .opt:focus-visible { outline: 2px solid #cba6f7; outline-offset: 1px; }
   .opt.on { background: #cba6f7; border-color: #cba6f7; color: #11111b; font-weight: 600; }
 </style>
 </head>
@@ -43,22 +50,22 @@
   <div class="box">
     <h1>Fuck 头歌</h1>
     <div class="row">
-      <div><div class="lab">主题</div><div class="sub" id="themeSub">深浅自动</div></div>
+      <div><label class="lab" for="tt">主题</label><div class="sub" id="themeSub">深浅自动</div></div>
       <label class="switch"><input type="checkbox" id="tt"><span class="slider"></span></label>
     </div>
     <div class="pick" id="themePick" hidden>
-      <button class="opt" data-name="catppuccin">Catppuccin</button>
-      <button class="opt" data-name="github">GitHub 高对比</button>
+      <button class="opt" type="button" aria-pressed="false" data-name="catppuccin">Catppuccin</button>
+      <button class="opt" type="button" aria-pressed="false" data-name="github">GitHub 高对比</button>
     </div>
     <div class="row">
-      <div><div class="lab">字体</div><div class="sub">Maple Mono · 仅英文（中文需自装）</div></div>
+      <div><label class="lab" for="tf">字体</label><div class="sub">Maple Mono · 仅英文（中文需自装）</div></div>
       <label class="switch"><input type="checkbox" id="tf"><span class="slider"></span></label>
     </div>
     <div class="row">
-      <div><div class="lab">光标动画</div><div class="sub">平滑移动 · 打字时也会滑动</div></div>
+      <div><label class="lab" for="tc">光标动画</label><div class="sub">平滑移动 · 打字时也会滑动</div></div>
       <label class="switch"><input type="checkbox" id="tc"><span class="slider"></span></label>
     </div>
-    <div class="desc" id="msg">读取中…</div>
+    <div class="desc" id="msg" aria-live="polite">读取中…</div>
   </div>
   <script src="popup.js"></script>
 </body>

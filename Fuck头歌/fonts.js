@@ -12,12 +12,37 @@
     `font-display:swap;src:url("${base}${file}") format("woff2");}`
   ).join("");
 
+  const style = document.createElement("style");
+  style.textContent = css;
+
+  // document_start 时 <head> 可能还没出现：等它出现再挂到 head（MutationObserver，另设超时上限），
+  // 上限内没等到再退回 documentElement —— 样式只在本脚本内挂这一次，避免重复
+  let attached = false;
+  const attach = root => {
+    if (attached || !root) return false;
+    try { root.appendChild(style); attached = true; } catch (e) {}
+    return attached;
+  };
+  const HEAD_WAIT_MS = 5000;
   const inject = () => {
-    const root = document.head || document.documentElement;
-    if (!root) { setTimeout(inject, 10); return; }
-    const style = document.createElement("style");
-    style.textContent = css;
-    root.appendChild(style);
+    if (attach(document.head)) return;
+    let mo = null;
+    const cap = setTimeout(() => {
+      try { mo?.disconnect(); } catch (e) {}
+      attach(document.documentElement);
+    }, HEAD_WAIT_MS);
+    try {
+      mo = new MutationObserver(() => {
+        if (!document.head) return;
+        clearTimeout(cap);
+        try { mo.disconnect(); } catch (e) {}
+        attach(document.head);
+      });
+      mo.observe(document, { childList: true, subtree: true });
+    } catch (e) {
+      clearTimeout(cap);
+      attach(document.documentElement);
+    }
   };
   inject();
 })();
