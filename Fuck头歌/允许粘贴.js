@@ -356,7 +356,7 @@
     const t = THEME_CHOICES[themeName] || THEME_CHOICES.catppuccin;
     return name === "vs" ? t.light : name === "vs-dark" ? t.dark : name;
   };
-  const editors = [];              // { ed, orig }：编辑器实例 + 原字体设置，便于恢复默认
+  const editors = [];              // { ed, orig, disposed }：编辑器实例 + 原字体设置，便于恢复默认
 
   // 读取原值：字体项用于恢复默认；光标项单独存（闪烁样式 + 平滑动画），避免两类设置互相覆盖
   const readOrigOptions = ed => {
@@ -453,7 +453,8 @@
   };
 
   const applyFont = () => {
-    editors.forEach(({ ed, orig }) => {
+    editors.forEach(({ ed, orig, disposed }) => {
+      if (disposed) return;                    // 已销毁的编辑器不再碰
       try { ed.updateOptions(fontOn ? UI_OPTIONS : orig); } catch (e) {}
     });
     if (fontOn) { try { document.fonts?.ready?.then(() => window.Monaco?.editor?.remeasureFonts?.()); } catch (e) {} }
@@ -470,7 +471,8 @@
   };
 
   const applyCursor = () => {
-    editors.forEach(({ ed, cursorOrig }) => {
+    editors.forEach(({ ed, cursorOrig, disposed }) => {
+      if (disposed) return;                    // 已销毁的编辑器不再碰
       try { ed.updateOptions(cursorOptions(cursorOrig)); } catch (e) {}
     });
   };
@@ -756,7 +758,15 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
         if (el) platformTheme = el.classList.contains("vs-dark") ? "vs-dark" : "vs";
       }
       const orig = readOrigOptions(ed);
-      editors.push({ ed, orig: orig.font, cursorOrig: orig.cursor });
+      const entry = { ed, orig: orig.font, cursorOrig: orig.cursor, disposed: false };
+      editors.push(entry);
+      try {                                                 // 编辑器销毁后立刻从数组里移除，避免越积越多
+        ed.onDidDispose?.(() => {
+          entry.disposed = true;
+          const i = editors.indexOf(entry);
+          if (i >= 0) editors.splice(i, 1);
+        });
+      } catch (e) {}
       if (fontOn) { try { ed.updateOptions(UI_OPTIONS); } catch (e) {} }
       try { ed.updateOptions(cursorOptions(orig.cursor)); } catch (e) {}
     };
@@ -831,45 +841,162 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     };
   } catch (e) {}
 
-  /* ── ① 剪贴板保护：头歌会在编辑器聚焦时往剪贴板写入一个空格 ── */
+  /* ── ① 剪贴板保护：头歌会在编辑器聚焦时往剪贴板写入一个空格/零宽字符 ──
+     只拦“全空白/零宽”的写入（那是平台的篡改动作），正常内容一律放行；
+     被拦时静默 resolve，避免页面出现 unhandledrejection */
+  const isBlankText = t => {
+    const s = String(t == null ? "" : t);
+    return !s.replace(/[\s\u200b-\u200d\u2060\ufeff]/g, "").length;      // 全是空白/零宽字符（含空串：清空剪贴板也是篡改）
+  };
+  const clipItemsText = items => {
+    const out = [];
+    for (const it of items || []) {
+      try {
+        const t = it && typeof it.text === "string" ? it.text : null;
+        if (t !== null) out.push(t);
+      } catch (e) {}
+    }
+    return out;
+  };
   try {
     const cb = navigator.clipboard;
     if (cb) {
-      const writeText = cb.writeText.bind(cb);
-      Object.defineProperty(cb, "writeText", {
-        configurable: true,
-        value: t => (String(t).length > 2 && String(t).trim() !== "")
-          ? writeText(t)
-          : Promise.reject(new DOMException("blocked", "NotAllowedError")),
-      });
-      Object.defineProperty(cb, "write", {
-        configurable: true,
-        value: () => Promise.reject(new DOMException("blocked", "NotAllowedError")),
-      });
+      let origWriteText = null;
+      try { origWriteText = cb.writeText.bind(cb); } catch (e) {}
+      // 实例补丁（保留）
+      try {
+        if (origWriteText) Object.defineProperty(cb, "writeText", {
+          configurable: true,
+          writable: true,
+          value: t => (isBlankText(t) ? Promise.resolve() : origWriteText(t)),
+        });
+      } catch (e) {}
+      // 原型补丁：页面绕过实例直接用 Clipboard.prototype.writeText 时也拦得住（不可配置就跳过）
+      try {
+        const proto = window.Clipboard && window.Clipboard.prototype;
+        if (proto && typeof proto.writeText === "function") {
+          const pOrig = proto.writeText;
+          Object.defineProperty(proto, "writeText", {
+            configurable: true,
+            writable: true,
+            value: function (t) {
+              if (isBlankText(t)) return Promise.resolve();
+              return pOrig.apply(this, arguments);
+            },
+          });
+        }
+      } catch (e) {}
+      // write（ClipboardItem）：不再整体封死，只在内容全是空白时拦
+      try {
+        if (typeof cb.write === "function") {
+          const write = cb.write.bind(cb);
+          Object.defineProperty(cb, "write", {
+            configurable: true,
+            writable: true,
+            value: items => {
+              const texts = clipItemsText(items);
+              if (texts.length && texts.every(isBlankText)) return Promise.resolve();
+              return write(items);
+            },
+          });
+        }
+      } catch (e) {}
     }
   } catch (e) {}
 
   /* ── ② 粘贴回落保护：网页会删掉刚粘贴的内容，检测到删除后撤销回来 ── */
-  let watchUntil = 0, undoCount = 0;
+  let watchUntil = 0, undoCount = 0, guardGen = 0;   // guardGen：取消保护时自增，让已排队的回插作废
+  const pasted = { start: -1, len: 0, text: "" };    // 最近一次粘贴：位置 + 长度 + 内容
+
+  const snapshotModels = () => {
+    try {
+      window.Monaco?.editor?.getModels?.().forEach(m => {
+        try { m.__ftLastValue = m.getValue(); } catch (e) {}
+      });
+    } catch (e) {}
+  };
+
+  // 开启保护窗口（粘贴时调用）；text 为粘贴内容（拿不到就靠模型变更事件补）
+  const openGuard = text => {
+    watchUntil = Date.now() + 300;
+    undoCount = 0;
+    guardGen++;
+    pasted.start = -1; pasted.len = 0; pasted.text = text || "";
+    snapshotModels();
+  };
+
+  // 用户主动编辑 → 立即取消保护（用户的撤销/退格绝不能被回插）
+  const cancelGuard = () => {
+    watchUntil = 0;
+    undoCount = 3;              // 预算置满
+    guardGen++;                 // 已排队的回插一并作废
+    pasted.start = -1; pasted.len = 0; pasted.text = "";
+  };
+
+  // before/after 的公共前后缀 → 差异范围（before 坐标）
+  const diffRange = (before, after) => {
+    const max = Math.min(before.length, after.length);
+    let p = 0;
+    while (p < max && before.charCodeAt(p) === after.charCodeAt(p)) p++;
+    let s = 0;
+    while (s < max - p && before.charCodeAt(before.length - 1 - s) === after.charCodeAt(after.length - 1 - s)) s++;
+    return { start: p, end: before.length - s };
+  };
+
+  // 删除区间是否命中“刚粘贴的文本”（疑似平台篡改）
+  const suspectTamper = (dStart, dEnd, removed) => {
+    const len = dEnd - dStart;
+    if (len <= 0 || !pasted.text) return false;                 // 不知道粘贴内容 → 不回插（宁漏勿误伤）
+    if (pasted.start >= 0 && pasted.len > 0) {                   // ① 位置重合
+      const pEnd = pasted.start + pasted.len;
+      const ov = Math.min(dEnd, pEnd) - Math.max(dStart, pasted.start);
+      if (ov > 0 && ov / Math.min(len, pasted.len) >= 0.5) return true;
+    }
+    const short = removed.length <= pasted.text.length ? removed : pasted.text;
+    const long = removed.length <= pasted.text.length ? pasted.text : removed;
+    if (short.length >= 4 && long.includes(short)) return true; // ② 内容基本一致（单字符不算）
+    return false;
+  };
 
   const modelChange = (m, e) => {
-    const before = m.__ftLastValue ?? m.getValue();     // 变更前的完整内容（撤销栈不可用时用它还原）
-    m.__ftLastValue = m.getValue();
-    if (Date.now() > watchUntil || undoCount >= 3) return;
+    if (Date.now() > watchUntil || undoCount >= 3) return;       // 窗口外：不做快照（避免每次输入都 O(n)）
+    const before = typeof m.__ftLastValue === "string" ? m.__ftLastValue : m.getValue();
+    const after = m.getValue();
+    m.__ftLastValue = after;                                     // 快照只在保护窗口内更新
+
+    if (pasted.start < 0) {                                     // 记录粘贴插入的位置与内容
+      const ins = e.changes.find(c => c.text);
+      if (ins) {
+        pasted.start = ins.rangeOffset;
+        pasted.len = ins.text.length;
+        if (!pasted.text) pasted.text = ins.text;
+      }
+    }
+
     const dels = e.changes.filter(c => !c.text && c.rangeLength > 0);
     if (!dels.length) return;
+    if (after.length >= before.length) return;                  // 只有“纯删除”才可能是平台篡改
+
+    const { start: dStart, end: dEnd } = diffRange(before, after);
+    if (dEnd <= dStart) return;
+    if (!suspectTamper(dStart, dEnd, before.slice(dStart, dEnd))) return;   // 只回插疑似平台篡改
+
     undoCount++;
-    watchUntil = Date.now() + 300;
+    watchUntil = Date.now() + 300;                              // 已确认是篡改 → 延长窗口继续守
+    const gen = guardGen;
     setTimeout(() => {
+      if (gen !== guardGen) return;                             // 用户已编辑 → 作废
       try {
         // 合成 Ctrl+Z 不可靠（撤销栈可能为空/被平台清空）→ 直接把被删掉的文本插回去
         // 多段删除必须按偏移升序回插：每插回一段，后面各段的原始偏移正好被补回
-        dels.sort((a, b) => a.rangeOffset - b.rangeOffset).forEach(c => {
-          const text = before.substr(c.rangeOffset, c.rangeLength);
-          if (!text) return;
-          const p = m.getPositionAt(c.rangeOffset);
-          m.applyEdits([{ range: new window.Monaco.Range(p.lineNumber, p.column, p.lineNumber, p.column), text }]);
-        });
+        dels.filter(c => c.rangeOffset < dEnd && c.rangeOffset + c.rangeLength > dStart)
+          .sort((a, b) => a.rangeOffset - b.rangeOffset)
+          .forEach(c => {
+            const text = before.substr(c.rangeOffset, c.rangeLength);
+            if (!text) return;
+            const p = m.getPositionAt(c.rangeOffset);
+            m.applyEdits([{ range: new window.Monaco.Range(p.lineNumber, p.column, p.lineNumber, p.column), text }]);
+          });
       } catch (err) {}
     }, 30);
   };
@@ -877,7 +1004,6 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
   const hookModel = m => {
     if (m.__ftHooked) return;
     m.__ftHooked = true;
-    m.__ftLastValue = m.getValue();
     m.onDidChangeContent(e => modelChange(m, e));
   };
 
@@ -907,13 +1033,25 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
   setTimeout(() => clearInterval(hookTimer), 60000);
 
   /* ── ③ 按键直通：Ctrl+V 不被页面拦截；Ctrl+C / Ctrl+X 放行 ── */
+  // 用户主动编辑的按键：一旦按下就立刻取消粘贴保护，
+  // 否则用户自己的 Ctrl+Z / 退格会被误判成平台篡改而“回插”，看起来就是按了没反应
+  const isUserEditKey = e => {
+    const key = e.key || "";
+    const k = key.toLowerCase();
+    if (e.ctrlKey || e.metaKey) return k === "z";      // 撤销 / 重做
+    if (e.altKey) return false;
+    if (key === "Backspace" || key === "Delete" || key === "Enter" || key === "Tab") return true;
+    return key.length === 1;                            // 可打印输入
+  };
+
   window.addEventListener("keydown", e => {
+    if (isUserEditKey(e)) cancelGuard();               // 用户动手编辑 → 保护窗口立即关闭
+
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     const key = (e.key || "").toLowerCase(), code = e.keyCode || e.which;
     if (key === "v" || code === 86) {
       e.stopImmediatePropagation();
-      watchUntil = Date.now() + 300;   // 网页删除是同步的（约 10ms），窗口开 300ms 足够，且避免误撤销用户自己的删除
-      undoCount = 0;
+      openGuard();              // 网页删除是同步的（约 10ms），窗口开 300ms 足够
     } else if (key === "c" || key === "x" || code === 67 || code === 88) {
       e.stopImmediatePropagation();
     }
@@ -921,8 +1059,9 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
 
   /* ── ④ 阻止浏览器“默认粘贴插入”：否则 Monaco 会把内容当成打字输入、触发自动缩进 ── */
   window.addEventListener("paste", e => {
-    watchUntil = Date.now() + 300;    // 同步窗口；同时重置“撤销预算”，右键粘贴也能持续受保护
-    undoCount = 0;
+    let text = "";
+    try { text = e.clipboardData?.getData?.("text/plain") || e.clipboardData?.getData?.("text") || ""; } catch (err) {}
+    openGuard(text);           // 同步窗口；同时重置“撤销预算”，右键粘贴也能持续受保护
     if (document.activeElement?.closest?.(".monaco-editor")) e.preventDefault();
   }, true);
 
@@ -983,6 +1122,19 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     } catch (e) {}
   };
 
+  // 关卡标识：SPA 换关时路由会变 → 用来判断“是不是已经跳到别的关卡了”
+  const levelKey = () => location.pathname + location.search + location.hash;
+
+  // 双路径互斥：结果弹层 / 选择题页面按钮，同一关只允许认领一次（防止连跳两关）
+  const jumpClaim = { key: "", at: 0 };
+  const claimJump = key => {
+    const now = Date.now();
+    if (jumpClaim.key !== key) { jumpClaim.key = key; jumpClaim.at = 0; }   // 换关了 → 重新允许
+    if (jumpClaim.at && now - jumpClaim.at < 5000) return false;             // 已被另一条路径认领
+    jumpClaim.at = now;
+    return true;
+  };
+
   // 弹层按钮文案 → 类型：普通关「下一关」；最后一关「最后一关」；最后的测试关是「完成」
   const NEXT_LABELS = { "下一关": "next", "最后一关": "last", "完成": "last" };
   const normText = s => String(s || "").replace(/[\s\u200b-\u200d\ufeff]/g, "");
@@ -1014,61 +1166,80 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     box.__ftSeenAt = box.__ftSeenAt || Date.now();
     const next = findNextBtn(box);
 
-    if (!next) {                                 // 弹层出现 3 秒还没有按钮 → 保守提示
-      if (!box.__ftLastToast && Date.now() - box.__ftSeenAt > 3000) {
+    if (!next) {                                 // 弹层出现 9 秒还没有按钮 → 保守提示（不一定是最后一关）
+      if (!box.__ftLastToast && Date.now() - box.__ftSeenAt > 9000) {
         box.__ftLastToast = true;
-        toast("已经是最后一关了 😋");
+        toast("未检测到跳转按钮");
       }
       return;
     }
 
     if (next.el.disabled === true || next.el.getAttribute("aria-disabled") === "true") {
-      if (Date.now() - box.__ftSeenAt > 10000) box.__ftClicked = true;   // 一直不激活就放弃，避免无限等
+      if (!box.__ftLastToast && Date.now() - box.__ftSeenAt > 10000) {
+        box.__ftLastToast = true;
+        toast("跳转按钮未激活，请手动点击「下一关」");   // 不再静默放弃
+      }
       return;                                    // 按钮还没激活（评测刚结束时短暂禁用）→ 下一轮再点
     }
 
     box.__ftClicked = true;
+    const key = levelKey();
     setTimeout(() => {
       if (!next.el.isConnected) { box.__ftClicked = false; return; }   // SPA 重渲染换掉了按钮 → 下一轮重新找
+      if (levelKey() !== key) return;                                  // 已换关 → 放弃本次点击
+      if (!claimJump(key)) return;                                     // 另一条路径已认领 → 只跳一次
       clickLikeUser(next.el);
       jumpNotice(next.kind);
     }, 200);
   };
 
   /* ── ⑦ 选择题：手动点「评测」且评测结束后，自动点页面自带的「下一关」（仅选择题页）── */
-  let choiceEval = null;   // { seenDisabled, t0 }
+  let choiceEval = null;   // { seenDisabled, t0, key }
 
   const evalButton = () => $$("button, [role=button]").find(b => (b.innerText || "").trim() === "评测");
   const pageNextButton = () => $$("a, button, [role=button]").find(el =>
     visible(el) && (el.innerText || "").trim() === "下一关" && !el.closest(".evaluate-result-container"));
+  const resultBox = () => $$(".evaluate-result-container, [class*=\"evaluate-result\"]").find(visible) || null;
 
   const watchChoiceEval = () => {
     if (!choiceEval) return;
     const btn = evalButton();
     if (btn?.disabled) choiceEval.seenDisabled = true;
-    const finished = btn && !btn.disabled && (choiceEval.seenDisabled || Date.now() - choiceEval.t0 > 1500);
+    const box = resultBox();
+    // 判定评测结束：必须看到 disabled→enabled，或出现明确的结果容器；
+    // 去掉纯时间兜底，避免评测还没跑完就提前跳关
+    const finished = !!box || (!!btn && !btn.disabled && choiceEval.seenDisabled);
     if (finished) {
+      const key = choiceEval.key || levelKey();      // 点「评测」时的关卡 → 评测期间换关就不跳
       choiceEval = null;
+      if (box) return;                       // 结果弹层优先：由弹层路径点「下一关」，本页路径作废
       setTimeout(() => {
+        if (levelKey() !== key) return;                          // 已经换关 → 放弃
+        if (resultBox()) return;                                 // 弹出结果层 → 交给弹层路径（只跳一次）
         const next = pageNextButton();
         if (!next) {                       // 最后一关：页面上没有「下一关」按钮
           toast("已经是最后一关了 😋");
           return;
         }
+        if (!claimJump(key)) return;      // 弹层路径已认领 → 本路径作废
         next.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
         jumpNotice();
       }, 300);
       return;
     }
-    if (Date.now() - choiceEval.t0 > 30000) { choiceEval = null; return; }
-    setTimeout(watchChoiceEval, 250);
+    if (Date.now() - choiceEval.t0 > 10000) {      // 10 秒还没评测完 → 只提示并停止，不跳关
+      choiceEval = null;
+      toast("评测未完成，已停止自动跳转");
+      return;
+    }
+    setTimeout(watchChoiceEval, 150);
   };
 
   document.addEventListener("click", e => {
     const btn = e.target?.closest?.("button, [role=button], a");
     if (!btn || (btn.innerText || "").trim() !== "评测" || $(".monaco-editor")) return;   // 仅限选择题
-    choiceEval = { seenDisabled: false, t0: Date.now() };
-    setTimeout(watchChoiceEval, 250);
+    choiceEval = { seenDisabled: !!btn.disabled, t0: Date.now(), key: levelKey() };
+    setTimeout(watchChoiceEval, 150);
   }, true);
 
   // document 在 document_start 时必然存在（documentElement 可能还没有）
