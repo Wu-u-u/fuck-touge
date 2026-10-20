@@ -886,33 +886,50 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
           });
         }
       } catch (e) {}
-      // write（ClipboardItem）：不再整体封死，只在内容全是空白时拦
+      // write（ClipboardItem）：允许正常文本/富文本/图片，拦截“空内容”（空白文本、空 ClipboardItem、空数组）
       try {
         if (typeof cb.write === "function") {
           const write = cb.write.bind(cb);
+          const itemHasContent = it => {
+            try {
+              if (it && typeof it.getType === "function" && it.types) {
+                const types = [...it.types];
+                if (!types.length) return Promise.resolve(false);            // 空 ClipboardItem
+                const textType = types.includes("text/plain") ? "text/plain"
+                               : types.includes("text/html") ? "text/html" : "";
+                if (!textType) return Promise.resolve(true);                 // 图片等非文本文档 → 放行
+                return it.getType(textType).then(b => b.text())
+                  .then(t => !isBlankText(t))
+                  .catch(() => false);
+              }
+            } catch (e) {}
+            return Promise.resolve(false);
+          };
+          const allowWrite = items => {
+            const list = Array.isArray(items) ? items : [];
+            if (!list.length) return Promise.resolve(false);
+            return Promise.all(list.map(itemHasContent)).then(oks => oks.some(Boolean));
+          };
           Object.defineProperty(cb, "write", {
             configurable: true,
             writable: true,
-            value: items => {
-              // 真实 ClipboardItem 没有 .text：异步读 text/plain Blob 后再决定是否放行，
-              // 避免空白 ClipboardItem 绕过守卫，同时不误伤富文本复制。
-              const list = Array.isArray(items) ? items : [];
-              const reads = list.map(it => {
-                try {
-                  if (it && typeof it.getType === "function") {
-                    return it.getType("text/plain").then(b => b.text()).catch(() => "");
-                  }
-                  if (it && typeof it.text === "string") return Promise.resolve(it.text);
-                } catch (e) {}
-                return Promise.resolve("");
-              });
-              return Promise.all(reads).then(texts => {
-                const known = texts.filter(t => typeof t === "string" && t.length);
-                if (known.length && known.every(isBlankText)) return undefined;
-                return write(items);
-              });
-            },
+            value: items => allowWrite(items).then(ok => (ok ? write(items) : undefined)),
           });
+          // 原型补丁：页面绕过实例直接用 Clipboard.prototype.write 时也拦得住
+          try {
+            const proto = window.Clipboard && window.Clipboard.prototype;
+            if (proto && typeof proto.write === "function") {
+              const pWrite = proto.write;
+              Object.defineProperty(proto, "write", {
+                configurable: true,
+                writable: true,
+                value: function (items) {
+                  const self = this;
+                  return allowWrite(items).then(ok => (ok ? pWrite.apply(self, arguments) : undefined));
+                },
+              });
+            }
+          } catch (e) {}
         }
       } catch (e) {}
     }
@@ -1210,43 +1227,19 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     }, 200);
   };
 
-  /* ── ⑦ 选择题：手动点「评测」且评测结束后，自动点页面自带的「下一关」（仅选择题页）── */
-  let choiceEval = null;   // { seenDisabled, t0, key }
+  /* ── ⑦ 选择题：手动点「评测」后等结果；只有平台弹庆祝弹层（=通过）才跳关，否则只提示 ── */
+  let choiceEval = 0;      // 评测开始时间戳（0 = 未在观察）
 
-  const evalButton = () => $$("button, [role=button]").find(b => (b.innerText || "").trim() === "评测");
-  const pageNextButton = () => $$("a, button, [role=button]").find(el =>
-    visible(el) && (el.innerText || "").trim() === "下一关" && !el.closest(".evaluate-result-container"));
   const resultBox = () => $$(".evaluate-result-container, [class*=\"evaluate-result\"]").find(visible) || null;
 
   const watchChoiceEval = () => {
     if (!choiceEval) return;
-    const btn = evalButton();
-    if (btn?.disabled) choiceEval.seenDisabled = true;
-    const box = resultBox();
-    // 判定评测结束：必须看到 disabled→enabled，或出现明确的结果容器；
-    // 去掉纯时间兜底，避免评测还没跑完就提前跳关
-    const finished = !!box || (!!btn && !btn.disabled && choiceEval.seenDisabled);
-    if (finished) {
-      const key = choiceEval.key || levelKey();      // 点「评测」时的关卡 → 评测期间换关就不跳
-      choiceEval = null;
-      if (box) return;                       // 结果弹层优先：由弹层路径点「下一关」，本页路径作废
-      setTimeout(() => {
-        if (levelKey() !== key) return;                          // 已经换关 → 放弃
-        if (resultBox()) return;                                 // 弹出结果层 → 交给弹层路径（只跳一次）
-        const next = pageNextButton();
-        if (!next) {                       // 最后一关：页面上没有「下一关」按钮
-          toast("已经是最后一关了 😋");
-          return;
-        }
-        if (!claimJump(key)) return;      // 弹层路径已认领 → 本路径作废
-        next.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-        jumpNotice();
-      }, 300);
-      return;
-    }
-    if (Date.now() - choiceEval.t0 > 10000) {      // 10 秒还没评测完 → 只提示并停止，不跳关
-      choiceEval = null;
-      toast("评测未完成，已停止自动跳转");
+    // 平台只在“通过”（含部分正确）时弹庆祝弹层，失败没有任何可判定信号；
+    // 因此：看到弹层 → 交给弹层路径跳关；一段时间内没有弹层 → 视为未通过，只提示不跳关。
+    if (resultBox()) { choiceEval = 0; return; }
+    if (Date.now() - choiceEval > 3000) {
+      choiceEval = 0;
+      toast("未检测到通过，已停止自动跳转");
       return;
     }
     setTimeout(watchChoiceEval, 150);
@@ -1255,7 +1248,7 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
   document.addEventListener("click", e => {
     const btn = e.target?.closest?.("button, [role=button], a");
     if (!btn || (btn.innerText || "").trim() !== "评测" || $(".monaco-editor")) return;   // 仅限选择题
-    choiceEval = { seenDisabled: !!btn.disabled, t0: Date.now(), key: levelKey() };
+    choiceEval = Date.now();
     setTimeout(watchChoiceEval, 150);
   }, true);
 
