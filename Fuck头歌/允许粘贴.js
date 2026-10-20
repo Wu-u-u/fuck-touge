@@ -892,6 +892,9 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
           const write = cb.write.bind(cb);
           const itemHasContent = it => {
             try {
+              if (it && typeof it.text === "string") {
+                return Promise.resolve(!isBlankText(it.text));   // 测试替身/旧式对象
+              }
               if (it && typeof it.getType === "function" && it.types) {
                 const types = [...it.types];
                 if (!types.length) return Promise.resolve(false);            // 空 ClipboardItem
