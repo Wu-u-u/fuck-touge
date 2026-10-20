@@ -84,6 +84,15 @@ class WS:
         self.sock.sendall(header + mask + masked)
 
     def _recv_json(self) -> dict:
+        try:
+            return self._recv_json_inner()
+        except socket.timeout:
+            raise                       # 交给 call() 统一转成「等待超时」
+        except OSError as e:
+            self.closed = True
+            raise CDPError(f"WebSocket 读取失败（标签页可能已关闭）: {e}") from e
+
+    def _recv_json_inner(self) -> dict:
         msg = b""
         while True:
             b1 = self._recv_exact(1)[0]
@@ -242,13 +251,18 @@ class Browser:
         raise RuntimeError("创建标签页后找不到目标")
 
     def attach(self, target: dict) -> WS:
-        ws = WS(target["webSocketDebuggerUrl"])
-        ws.call("Runtime.enable")
         try:
-            ws.call("Page.enable")
+            ws = WS(target["webSocketDebuggerUrl"])
+            ws.call("Runtime.enable")
+            try:
+                ws.call("Page.enable")
+            except CDPError:
+                pass
+            return ws
         except CDPError:
-            pass
-        return ws
+            raise
+        except (ConnectionError, OSError) as e:
+            raise CDPError(f"连接标签页失败（标签页可能已关闭）: {e}") from e
 
     def close_target(self, target_id: str) -> None:
         try:

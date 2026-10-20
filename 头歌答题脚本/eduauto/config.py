@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import math
 import os
 import re
 import time
@@ -62,17 +63,35 @@ def load_config(path: Path) -> dict:
                 run["answers"] = str(cfg_path.resolve().parent / ans)
     if not isinstance(cfg.get("edge"), dict) or not isinstance(cfg.get("run"), dict):
         die("配置文件格式错误：edge / run 必须是 TOML 表。")
+    raw_port = cfg["edge"].get("port", 9222)
+    if isinstance(raw_port, bool):
+        die(f"配置文件格式错误：edge.port 必须是整数（当前 {raw_port!r}）。")
+    if isinstance(raw_port, float) and (
+            not math.isfinite(raw_port) or not raw_port.is_integer()):
+        die(f"配置文件格式错误：edge.port 必须是整数（当前 {raw_port!r}）。")
     try:
-        cfg["edge"]["port"] = int(cfg["edge"].get("port", 9222))
-    except (TypeError, ValueError):
-        die(f"配置文件格式错误：edge.port 必须是整数（当前 {cfg['edge'].get('port')!r}）。")
+        port = int(raw_port)
+    except (TypeError, ValueError, OverflowError):
+        die(f"配置文件格式错误：edge.port 必须是整数（当前 {raw_port!r}）。")
+    if not 1 <= port <= 65535:
+        die(f"配置文件格式错误：edge.port 必须在 1-65535 之间（当前 {raw_port!r}）。")
+    cfg["edge"]["port"] = port
     if not isinstance(cfg["run"].get("answers"), str) or not cfg["run"]["answers"].strip():
         die("配置文件格式错误：run.answers 必须是非空路径字符串。")
     for key in ("eval_timeout", "level_timeout"):
+        raw = cfg["run"].get(key)
+        if isinstance(raw, bool):
+            die(f"配置文件格式错误：run.{key} 必须是大于 0 的有限数字（当前 {raw!r}）。")
         try:
-            cfg["run"][key] = float(cfg["run"][key])
-        except (TypeError, ValueError, KeyError):
-            die(f"配置文件格式错误：run.{key} 必须是数字。")
+            value = float(raw)
+        except (TypeError, ValueError):
+            die(f"配置文件格式错误：run.{key} 必须是大于 0 的有限数字（当前 {raw!r}）。")
+        if not math.isfinite(value) or value <= 0:
+            die(f"配置文件格式错误：run.{key} 必须是大于 0 的有限数字（当前 {raw!r}）。")
+        cfg["run"][key] = value
+    # apply_current_profile() 会把 edge.profile 改成当前槽的路径，browser 1
+    # 需要原始 config 档案作为「1 号槽」的默认值，先在这里留一份。
+    cfg["edge"]["default_profile"] = cfg["edge"]["profile"]
     return cfg
 
 
@@ -92,16 +111,27 @@ def load_state() -> dict:
         return {}
     try:
         data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except UnicodeDecodeError as e:
+        return _quarantine_state(f"编码错误：{e}")
     except json.JSONDecodeError as e:
         return _quarantine_state(f"JSON 语法错误：{e}")
     except OSError as e:
         return _quarantine_state(f"读取失败：{e}")
     if not isinstance(data, dict):
         return _quarantine_state("顶层不是对象")
-    if not isinstance(data.get("slots"), dict):
-        data["slots"] = {}
-    if not isinstance(data.get("names"), dict):
-        data["names"] = {}
+    for key in ("slots", "names"):
+        value = data.get(key)
+        if value is None:
+            data[key] = {}
+        elif not isinstance(value, dict):
+            return _quarantine_state(f"{key} 不是对象")
+    slots = {}
+    for key, value in data["slots"].items():
+        if isinstance(key, str) and key and isinstance(value, str) and value.strip():
+            slots[key] = value
+        else:
+            log(f"  ! state.json 的 slots 项无效，已忽略：{key!r}: {value!r}")
+    data["slots"] = slots
     return data
 
 
@@ -146,7 +176,8 @@ def setup_slot(cfg: dict, arg: str | None) -> tuple[str, str, str]:
         cur = state.get("current")
         if cur and slots.get(cur):
             return cur, slots[cur], ""
-        prof = os.path.expanduser(cfg["edge"]["profile"])
+        prof = os.path.expanduser(
+            cfg["edge"].get("default_profile") or cfg["edge"]["profile"])
         slots["1"] = prof
         state["current"] = "1"
         save_state(state)
@@ -183,7 +214,10 @@ def setup_slot(cfg: dict, arg: str | None) -> tuple[str, str, str]:
         save_state(state)
         return n, slots[n], ""
     if n == "1":
-        prof = os.path.expanduser(cfg["edge"]["profile"])
+        # apply_current_profile() 可能已把 edge.profile 改成别的槽，1 号槽必须用
+        # load_config() 保存下来的原始 config 档案。
+        prof = os.path.expanduser(
+            cfg["edge"].get("default_profile") or cfg["edge"]["profile"])
         note = "（当前 config 档案已记为槽 1）"
     else:
         prof = str(PROFILE_BASE / f"slot{n}")

@@ -16,13 +16,42 @@ LEVEL_RE = re.compile(r"第(\d+)关\s*[：:]\s*([^\n]{1,60})")
 PASS_STATUS = {"已通过", "已提交"}
 
 
+# 课堂卡片的双向匹配：档案名常常比卡片标题长（如档案「Java面向对象（二） - 封装、
+# 继承和多态」vs 卡片「Java面向对象（二）」），只做 cardText.includes(target)
+# 永远找不到。这里同时接受 target.includes(卡片标题行)，并按最长命中行打分，
+# 避免短标题误命中别的卡片。
+_CARD_MATCH_JS = r"""
+  const norm = s => (s||'').replace(/[\s\u3000]+/g,'');
+  const NOISE = /^(开始学习|查看作品|已截止|继续学习|提交中|未开始|已完成)$/;
+  const titleLines = c => (c.innerText||'').split('\n')
+      .map(s => s.trim())
+      .filter(s => s && !NOISE.test(s) && !/^\d+\s*\/\s*\d+$/.test(s));
+  const matchScore = (c, target) => {
+    if (norm(c.innerText).includes(target)) return 100000 + target.length;
+    let best = 0;
+    for (const line of titleLines(c)) {
+      const n = norm(line);
+      if (n.length >= 2 && target.includes(n)) best = Math.max(best, n.length);
+    }
+    return best;
+  };
+  const findCard = target => {
+    let best = null, bestScore = 0;
+    for (const c of document.querySelectorAll('[class*="listItem"]')) {
+      const s = matchScore(c, target);
+      if (s > bestScore) { best = c; bestScore = s; }
+    }
+    return best;
+  };
+"""
+
+
 def card_pos_js(name: str) -> str:
     return r"""
 (function(){
-  const norm = s => (s||'').replace(/[\s\u3000]+/g,'');
+__CARD_MATCH__
   const target = norm(__NAME__);
-  const cards = [...document.querySelectorAll('[class*="listItem"]')];
-  const card = cards.find(c => norm(c.innerText).includes(target));
+  const card = findCard(target);
   if (!card) return JSON.stringify({ok:false, reason:'card-not-found'});
   card.scrollIntoView({block:'center'});
   const cands = [...card.querySelectorAll('*')].filter(el => norm(el.innerText) === '开始学习');
@@ -41,7 +70,8 @@ def card_pos_js(name: str) -> str:
   return JSON.stringify({ok:false, reason:'start-button-not-found',
                          text: (card.innerText||'').replace(/\n+/g,' | ').slice(0,120)});
 })()
-""".replace("__NAME__", json.dumps(name, ensure_ascii=False))
+""".replace("__CARD_MATCH__", _CARD_MATCH_JS).replace(
+        "__NAME__", json.dumps(name, ensure_ascii=False))
 
 
 class ChapterEnterError(RuntimeError):
@@ -132,17 +162,21 @@ def _click_toolbar_and_wait(page: Page, label: str, old_index: int,
     return st
 
 
-def rewind_to_first(page: Page, timeout: float = 60) -> dict:
-    """不断点「上一关」，直到第 1 关（或没有上一关）。"""
+def rewind_to_first(page: Page, timeout: float = 60) -> tuple[dict, bool]:
+    """不断点「上一关」，直到第 1 关（或没有上一关）。
+
+    返回 (状态, 是否确实回到第 1 关)。回退失败（停在中间关卡）时第二项为 False，
+    调用方必须据此决定停止或报错，不能当成正常从中间开始。
+    """
     st = page.wait_level(timeout=timeout)
     for _ in range(20):
-        if st.get("index", 0) <= 1 or not st.get("hasPrev"):
-            return st
+        if (st.get("index") or 0) <= 1 or not st.get("hasPrev"):
+            break
         old = st.get("index")
         st = _click_toolbar_and_wait(page, "上一关", old)
         if st.get("index") == old:
             break
-    return st
+    return st, st.get("index") == 1
 
 
 def advance_level(page: Page, old_index: int, timeout: float = 60) -> dict:
@@ -159,15 +193,15 @@ def card_progress_js(name: str) -> str:
     """按名字片段找课堂卡片，返回 {done, total, name}（name 为卡片完整标题）。"""
     return r"""
 JSON.stringify((function(){
-  const norm = s => (s||'').replace(/[\s\u3000]+/g,'');
-  const card = [...document.querySelectorAll('[class*="listItem"]')]
-      .find(c => norm(c.innerText).includes(norm(__NAME__)));
+__CARD_MATCH__
+  const card = findCard(norm(__NAME__));
   if (!card) return {done: 0, total: 0, name: ''};
   const m = (card.innerText||'').match(/(\d+)\s*\/\s*(\d+)/);
   const t = (card.innerText||'').split('\n').map(s=>s.trim()).filter(Boolean);
   return {done: m ? +m[1] : 0, total: m ? +m[2] : 0, name: t[1] || ''};
 })())
-""".replace("__NAME__", json.dumps(name, ensure_ascii=False))
+""".replace("__CARD_MATCH__", _CARD_MATCH_JS).replace(
+        "__NAME__", json.dumps(name, ensure_ascii=False))
 
 
 def scrape_status(browser: cdp.Browser, classroom: Page, detail_url: str,

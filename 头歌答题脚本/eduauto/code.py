@@ -270,18 +270,24 @@ def write_uri_code(page: Page, uri: str, code: str) -> int:
 
 
 def read_saved_files(page: Page, paths: list[str]) -> tuple[str | None, object, str]:
-    """多文件关卡：逐个点开文件，从新 model 读代码。"""
+    """多文件关卡：逐个点开文件，从新 model 读代码（结束后收起下拉，避免遮罩）。"""
     out, notes = [], []
-    for path in paths:
-        uri = click_code_file(page, path)
-        if not uri:
-            return None, None, f"点开文件「{path}」失败（下拉菜单里没反应）"
-        code = wait_uri_settled(page, uri)
-        if not isinstance(code, str) or not code.strip():
-            return None, None, f"文件「{path}」读不到内容"
-        out.append((path, code))
-        notes.append(f"{path}（{len(code)} 字符）")
-    return "files", out, "；".join(notes)
+    try:
+        for path in paths:
+            uri = click_code_file(page, path)
+            if not uri:
+                return None, None, f"点开文件「{path}」失败（下拉菜单里没反应）"
+            code = wait_uri_settled(page, uri)
+            if not isinstance(code, str) or not code.strip():
+                return None, None, f"文件「{path}」读不到内容"
+            out.append((path, code))
+            notes.append(f"{path}（{len(code)} 字符）")
+        return "files", out, "；".join(notes)
+    finally:
+        try:
+            close_file_menu(page)       # 下拉展开着会挡住后面的「下一关」点击
+        except cdp.CDPError:
+            pass
 
 
 def write_files(page: Page, live_paths: list[str], entries: list[dict]) -> None:
@@ -290,7 +296,18 @@ def write_files(page: Page, live_paths: list[str], entries: list[dict]) -> None:
     entries 来自答案档案：[{"path": ..., "answer": ...}, ...]。
     写入后把每个文件再点一遍：既让平台把自己的状态同步完整，也顺便核对
     新点开的 model 内容确实等于档案答案（不等就补写一次）。
+    结束后必定收起「代码文件」下拉，避免遮罩吞掉后面的「下一关」点击。
     """
+    try:
+        _write_files(page, live_paths, entries)
+    finally:
+        try:
+            close_file_menu(page)
+        except cdp.CDPError:
+            pass
+
+
+def _write_files(page: Page, live_paths: list[str], entries: list[dict]) -> None:
     def _entry_for(live: str) -> dict | None:
         """优先完整路径；只有 basename 在档案和当前关卡里都唯一时才退回 basename。"""
         live_n = (live or "").strip().replace("\\", "/")
@@ -408,20 +425,57 @@ def set_code(page: Page, code: str) -> None:
     log(f"    已整文件覆盖写入并校验通过（{n} 字符）")
 
 
+CHOICE_LETTER_RE = re.compile(r"^[A-Za-z]$")
+
+
+def _choice_letter(value) -> str:
+    """规范并校验单个选项字母：必须是 A-Z 的单个字母。"""
+    s = str(value).strip()
+    if not s:
+        raise ValueError("选择题答案里有空选项")
+    if not CHOICE_LETTER_RE.fullmatch(s):
+        raise ValueError(
+            f"选择题答案「{s}」无效：每题必须是单个字母 A-Z"
+            "（多选题写成 [\"A\",\"B\"]，不要写 \"AB\"）")
+    return s.upper()
+
+
+def _norm_choice_items(items) -> list[list[str]]:
+    """把「每题一项」的答案规范成 [[字母...], ...]，并拒绝空/非法值。"""
+    if isinstance(items, str):
+        items = [items]
+    if not isinstance(items, (list, tuple)) or not items:
+        raise ValueError("选择题答案不能为空")
+    out: list[list[str]] = []
+    for it in items:
+        if isinstance(it, (list, tuple)):
+            if not it:
+                raise ValueError("选择题答案里有空的选项组")
+            out.append([_choice_letter(x) for x in it])
+        else:
+            out.append([_choice_letter(it)])
+    return out
+
+
 def answer_choice(page: Page, items: list) -> None:
     """选择题：按题号顺序点选选项。
 
     items 每题一项：可以是 'A'，也可以是 ['A','B','D']（多选题）。
     关键：页面会回显历史勾选，而 checkbox 点击是"切换"，所以必须
     先清掉不在答案里的已勾选项，再补勾缺少的（radio 点目标即切换，无需清）。
+    作答前先校验页面选项组数与答案题数一致，避免错位作答。
     """
-    norm_items = []
-    for it in items:
-        if isinstance(it, list):
-            norm_items.append([str(x).strip().upper()[:1] for x in it])
-        else:
-            norm_items.append([str(it).strip().upper()[:1]])
+    norm_items = _norm_choice_items(items)
     payload = json.dumps(norm_items)
+
+    # 作答前校验页面选项组数与答案题数一致，避免错位作答
+    try:
+        groups = int(page.ws.eval("document.querySelectorAll('.option').length") or 0)
+    except (cdp.CDPError, TypeError, ValueError):
+        groups = 0
+    if groups != len(norm_items):
+        raise RuntimeError(
+            f"页面选项组数（{groups}）与答案题数（{len(norm_items)}）不一致，已停止")
 
     def apply_and_check() -> tuple[list, list]:
         result = page.ws.eval_json(
@@ -470,12 +524,19 @@ JSON.stringify([...document.querySelectorAll('.option')].map(g =>
 
 
 def choice_letters(answer) -> list:
-    """把档案里的选择题答案规整成「每题一项」的列表；多选题为子列表。"""
-    if isinstance(answer, list):
-        return answer
+    """把档案里的选择题答案规整成「每题一项」的列表；多选题为子列表。
+
+    校验规则：空答案/空项、非 A-Z 字符、多字符（如 "AB"）一律拒绝；
+    多选请写成嵌套列表（[["A","B"], ["C"]]）。
+    """
+    if isinstance(answer, (list, tuple)):
+        return _norm_choice_items(answer)
     s = str(answer or "").strip()
     if not s:
-        return []
+        raise ValueError("选择题答案不能为空")
     if "," in s or "，" in s:
-        return [x.strip().upper()[:1] for x in re.split(r"[,，]", s) if x.strip()]
-    return [s.upper()[:1]]
+        parts = re.split(r"[,，]", s)
+        if any(not p.strip() for p in parts):
+            raise ValueError(f"选择题答案「{s}」里有空项")
+        return [_choice_letter(p) for p in parts]
+    return [_choice_letter(s)]

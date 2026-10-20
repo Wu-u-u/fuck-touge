@@ -59,7 +59,12 @@ JSON.stringify([...document.querySelectorAll('[class*="listItem"]')].map(c => {
 def harvest_levels(page: Page, passed: set, ch: "Chapter | None", force: bool) -> dict:
     """在章节页里走一遍关卡，采集 passed 集合里关卡的答案。"""
     collected: dict = {}
-    st = rewind_to_first(page)
+    st, reached_first = rewind_to_first(page)
+    if not reached_first:
+        idx = st.get("index")
+        log(f"  ! 无法回到第 1 关（当前停在第{idx or '?'}关），停止采集本章，"
+            "已采结果保留")
+        return collected
     guard = 0
     while guard < 50:
         guard += 1
@@ -190,6 +195,9 @@ def cmd_harvest(args, cfg: dict) -> None:
     for t in targets:
         name, ch, card = t["name"], t["ch"], t["card"]
         key = ch.name if ch is not None else name
+        # 进章节用课堂卡片上的标题（档案名可能比卡片标题长，点不到「开始学习」）；
+        # 写回档案仍用 key（档案章节名）。
+        entry_name = (card or {}).get("name") or name
         log(f"\n→ 章节：{name}")
         if card and card.get("closed"):
             log("  ! 已截止（只能查看作品）——跳过，不建骨架、不采集")
@@ -201,7 +209,7 @@ def cmd_harvest(args, cfg: dict) -> None:
         if ch is None or not ch.homework_id:
             classroom = classroom_page(browser, cfg, old=classroom)
             try:
-                target, ws = enter_chapter(browser, classroom, name, on_fail="raise")
+                target, ws = enter_chapter(browser, classroom, entry_name, on_fail="raise")
             except ChapterEnterError as e:
                 log(f"  ! 无法进入本章（{e}）——已截止/不可进，跳过（不建骨架）")
                 continue
@@ -263,7 +271,7 @@ def cmd_harvest(args, cfg: dict) -> None:
         if target is None:
             classroom = classroom_page(browser, cfg, old=classroom)
             try:
-                target, ws = enter_chapter(browser, classroom, name, on_fail="raise")
+                target, ws = enter_chapter(browser, classroom, entry_name, on_fail="raise")
             except ChapterEnterError as e:
                 log(f"  ! 无法进入本章（{e}）——已截止的章节只有「查看作品」，跳过")
                 continue
@@ -328,9 +336,13 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
             log("  ! 详情页上没找到进入关卡的按钮，跳过本章")
             browser.close_target(target["id"])
             return stats
-        st = rewind_to_first(page)
+        st, reached_first = rewind_to_first(page)
         if not st.get("index"):
             die(f"章节「{ch.name}」进入后未能读到关卡信息。")
+        if not reached_first:
+            die(f"章节「{ch.name}」无法回到第 1 关（当前停在第{st.get('index')}关），"
+                "前面关卡会被跳过，已暂停。\n"
+                "  请手动点「上一关」回到第 1 关，或先 harvest 后再运行。")
         log(f"  从第{st.get('index')}关开始：{st.get('name')}")
         guard = 0
         while guard < 50:
@@ -421,7 +433,7 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
                         f"  请填写：{cfg['run']['answers']}")
                 try:
                     answer_choice(page, choice_letters(lv.answer))
-                except RuntimeError as e:
+                except (ValueError, RuntimeError) as e:
                     stats["failed"] += 1
                     die(f"第{idx}关「{lname}」选项勾选失败，已暂停：{e}")
             else:
@@ -543,7 +555,8 @@ def cmd_run(args, cfg: dict) -> None:
             die(f"章节「{ch.name}」缺少 homework_id，请先 harvest。")
         log("  → 检查平台状态…")
         rows = scrape_status(browser, status_page,
-                             cfg["edge"]["classroom"] + f"/{ch.homework_id}/detail?tabs=1")
+                             cfg["edge"]["classroom"] + f"/{ch.homework_id}/detail?tabs=1",
+                             expect=len(ch.levels))
         if not rows:
             log("  ! 详情页没有读到关卡列表，跳过本章")
             results[ch.name] = {"done": 0, "skipped": 0, "failed": 1}
