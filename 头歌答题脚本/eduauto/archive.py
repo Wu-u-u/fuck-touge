@@ -56,6 +56,31 @@ def _chapter_spans(lines: list[str]) -> list[dict]:
     return spans
 
 
+def _chapter_names(text: str) -> list[str]:
+    """解析文本里的章节名列表（用于写回前后的结构一致性校验）。"""
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return []
+    return [str(c.get("name") or "") for c in data.get("chapters", [])
+            if isinstance(c, dict)]
+
+
+def _files_paths_unique(text: str) -> bool:
+    """检查每个关卡的 files path 是否唯一（防止重复块累积）。"""
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return False
+    for ch in data.get("chapters", []):
+        for lv in ch.get("levels", []):
+            paths = [str(f.get("path") or "") for f in lv.get("files", [])
+                     if isinstance(f, dict)]
+            if len(paths) != len(set(paths)):
+                return False
+    return True
+
+
 def _find_chapter_span(spans: list[dict], name: str) -> dict | None:
     target = norm(name)
     if not target:
@@ -137,7 +162,11 @@ def sort_chapter_blocks(text: str) -> str:
     header = "".join(lines[:spans[0]["start"]])
     blocks = [(sp["name"] or "", "".join(lines[sp["start"]:sp["end"]])) for sp in spans]
     ordered = sorted(enumerate(blocks), key=lambda item: chapter_sort_key(item[1][0], item[0]))
-    return header + "".join(block for _, (_, block) in ordered)
+    ordered_text = header + "".join(block for _, (_, block) in ordered)
+    if sorted(_chapter_names(ordered_text)) != sorted(_chapter_names(text)):
+        log("  ! 章节重排可能受答案内 [[chapters]] 行影响，已跳过排序")
+        return text
+    return ordered_text
 
 
 class Level:
@@ -317,7 +346,11 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
                 insert = "\n" + insert
             src.insert(span["end"], insert)
             text = "".join(src)
+    old_names = _chapter_names(text)
     text = sort_chapter_blocks(text)
+    new_names = _chapter_names(text)
+    if any(name not in new_names for name in old_names) or len(new_names) < len(old_names):
+        die("生成档案时章节结构异常（答案里可能含 [[chapters]] 行），未写入原文件")
     try:
         tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:
@@ -478,10 +511,11 @@ def _scan_answer_zone(lines: list[str], lstart: int, lend: int) -> tuple[int | N
             while nxt < lend and (lines[nxt].strip() == ""
                                   or lines[nxt].strip().startswith("#")):
                 nxt += 1
-            if nxt < lend and _FILES_HDR.match(lines[nxt].strip()):
-                i = nxt            # 文件条目之间的注释/空行属于答案区，一并替换
+            ns = lines[nxt].strip() if nxt < lend else ""
+            if (_FILES_HDR.match(ns) or _KEY_PATH.match(ns) or _KEY_ANSWER.match(ns)):
+                i = nxt            # files 块内部的注释/空行属于答案区，一并替换
                 continue
-            return k, i            # 区条目后的注释/空行开始是“保留尾部”
+            return k, i            # 答案区之后的注释/空行开始是“保留尾部”
         if _KEY_ANSWER.match(s) or _KEY_PATH.match(s):
             vend = _find_value_end(lines, i, lend)
             if vend < 0:
@@ -509,6 +543,7 @@ def write_back_answers(path: Path, changes: dict[str, dict[int, object]], force:
         die(f"答案档案不存在：{path}\n  先运行：python3 答题.py harvest")
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines(keepends=True)
+    old_names = _chapter_names(text)
 
     # 1) 扫描出行级结构：章节块 / 关卡块
     chapters: list[dict] = []
@@ -660,6 +695,10 @@ def write_back_answers(path: Path, changes: dict[str, dict[int, object]], force:
         tomllib.loads(new_text)
     except tomllib.TOMLDecodeError as e:
         die(f"写回答案时 TOML 校验失败，未改动原文件：{e}")
+    if _chapter_names(new_text) != old_names:
+        die("写回后章节结构发生变化（可能是答案里含有 [[chapters]] 行），未改动原文件")
+    if not _files_paths_unique(new_text):
+        die("写回后多文件关卡的 path 出现重复，未改动原文件")
     _atomic_write(path, new_text)
     for _, _, _, name in sorted(edits, key=lambda e: e[0]):
         log(f"  ✓ 已写回：「{name}」")

@@ -894,9 +894,23 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
             configurable: true,
             writable: true,
             value: items => {
-              const texts = clipItemsText(items);
-              if (texts.length && texts.every(isBlankText)) return Promise.resolve();
-              return write(items);
+              // 真实 ClipboardItem 没有 .text：异步读 text/plain Blob 后再决定是否放行，
+              // 避免空白 ClipboardItem 绕过守卫，同时不误伤富文本复制。
+              const list = Array.isArray(items) ? items : [];
+              const reads = list.map(it => {
+                try {
+                  if (it && typeof it.getType === "function") {
+                    return it.getType("text/plain").then(b => b.text()).catch(() => "");
+                  }
+                  if (it && typeof it.text === "string") return Promise.resolve(it.text);
+                } catch (e) {}
+                return Promise.resolve("");
+              });
+              return Promise.all(reads).then(texts => {
+                const known = texts.filter(t => typeof t === "string" && t.length);
+                if (known.length && known.every(isBlankText)) return undefined;
+                return write(items);
+              });
             },
           });
         }
@@ -932,6 +946,9 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     guardGen++;                 // 已排队的回插一并作废
     pasted.start = -1; pasted.len = 0; pasted.text = "";
   };
+
+  // 用户剪切（含右键菜单）也要立刻放行，不能把剪切当成平台篡改回插
+  window.addEventListener("cut", () => cancelGuard(), true);
 
   // before/after 的公共前后缀 → 差异范围（before 坐标）
   const diffRange = (before, after) => {
@@ -1038,7 +1055,7 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
   const isUserEditKey = e => {
     const key = e.key || "";
     const k = key.toLowerCase();
-    if (e.ctrlKey || e.metaKey) return k === "z";      // 撤销 / 重做
+    if (e.ctrlKey || e.metaKey) return k === "z" || k === "x";   // 撤销 / 重做 / 剪切
     if (e.altKey) return false;
     if (key === "Backspace" || key === "Delete" || key === "Enter" || key === "Tab") return true;
     return key.length === 1;                            // 可打印输入

@@ -84,7 +84,7 @@ def load_config(path: Path) -> dict:
             die(f"配置文件格式错误：run.{key} 必须是大于 0 的有限数字（当前 {raw!r}）。")
         try:
             value = float(raw)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             die(f"配置文件格式错误：run.{key} 必须是大于 0 的有限数字（当前 {raw!r}）。")
         if not math.isfinite(value) or value <= 0:
             die(f"配置文件格式错误：run.{key} 必须是大于 0 的有限数字（当前 {raw!r}）。")

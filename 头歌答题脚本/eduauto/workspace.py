@@ -208,6 +208,14 @@ def scrape_status(browser: cdp.Browser, classroom: Page, detail_url: str,
                   expect: int | None = None) -> list[dict]:
     """打开章节详情页，按顺序返回 [{'name','full','score','status'}, ...]。"""
     classroom.ws.call("Page.navigate", {"url": detail_url})
+    # 复用标签页时，导航提交前旧表格仍是有效 DOM：先等 URL 真正切到目标详情页
+    m = re.search(r"/shixun_homework/(\d+)/detail", detail_url)
+    if m:
+        classroom.ws.wait_for(
+            f"location.href.includes('/shixun_homework/{m.group(1)}/detail')"
+            " && document.readyState === 'complete'",
+            timeout=20,
+        )
     ok = classroom.ws.wait_for(
         "!!document.querySelector('.ant-table-row')", timeout=45
     )
