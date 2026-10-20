@@ -52,6 +52,10 @@ _cfg = load_config(_cfgfile)
 check("answers 相对配置目录", _cfg["run"]["answers"] == str(_cfgdir / "rel.toml"),
       _cfg["run"]["answers"])
 
+# Chapter 必须保留 homework_id（run/harvest 依赖）
+_ch0 = Chapter({"name": "测试章", "homework_id": "123", "levels": []})
+check("Chapter 保留 homework_id", _ch0.homework_id == "123")
+
 # 章节匹配忽略空白
 _ch = Chapter({"name": "Java语言基础（五） - 循环结构基础", "levels": []})
 _r = resolve_chapter_args([_ch], ["Java语言基础（五）-循环结构基础"], strict=False)

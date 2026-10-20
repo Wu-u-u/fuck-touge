@@ -196,6 +196,7 @@ class Level:
 class Chapter:
     def __init__(self, raw: dict):
         self.name = str(raw.get("name", "")).strip()
+        self.homework_id = str(raw.get("homework_id", "")).strip()
         lvs = raw.get("levels", [])
         if not isinstance(lvs, list):
             die(f"答案档案格式错误：章节「{self.name}」的 levels 不是数组"
