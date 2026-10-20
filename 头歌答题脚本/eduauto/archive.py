@@ -34,13 +34,12 @@ def _raw_level_empty(raw: dict) -> bool:
 
 
 def _chapter_spans(lines: list[str]) -> list[dict]:
-    """按 [[chapters]] 切块，返回 [{start, end, name}]（end 为下一章起始）。"""
-    starts = [
-        i for i, line in enumerate(lines)
-        if line.strip() == "[[chapters]]"
-        and any(re.match(r"^\s*name\s*=", lines[j])
-                for j in range(i + 1, min(i + 8, len(lines))))
-    ]
+    """按 [[chapters]] 切块，返回 [{start, end, name}]（end 为下一章起始）。
+
+    每个章头都算一章：name 找不到时不丢弃该章（否则章头若隔了长注释，
+    后面的排序会静默错位），只是不参与名字比较，并 log 提示。
+    """
+    starts = [i for i, line in enumerate(lines) if line.strip() == "[[chapters]]"]
     spans = []
     for bi, s in enumerate(starts):
         e = starts[bi + 1] if bi + 1 < len(starts) else len(lines)
@@ -51,6 +50,8 @@ def _chapter_spans(lines: list[str]) -> list[dict]:
             name = _parse_name_line(lines[k])
             if name is not None:
                 break
+        if name is None:
+            log(f"  ! 第 {s + 1} 行的章节找不到 name，该章不参与排序比较")
         spans.append({"start": s, "end": e, "name": name})
     return spans
 
@@ -146,10 +147,13 @@ class Level:
         self.type = str(raw.get("type", "")).strip()
         self.answer = raw.get("answer", "")
         files = []
-        for f in raw.get("files") or []:
-            if isinstance(f, dict):
-                files.append({"path": str(f.get("path", "")).strip(),
-                              "answer": f.get("answer", "")})
+        if (isinstance(raw.get("files"), list)):
+            for i, f in enumerate(raw["files"]):
+                if isinstance(f, dict):
+                    files.append({"path": str(f.get("path", "")).strip(),
+                                  "answer": f.get("answer", "")})
+                else:
+                    log(f"  ! 关卡「{self.name}」的 files 第 {i + 1} 项不是表格，已忽略")
         self.files = files          # 多代码文件关卡的答案：[{path, answer}]
         _m = raw.get("multi")       # 代码关是否多文件：True/False；旧档案没有此字段 → None
         self.multi = bool(_m) if _m is not None else None
@@ -163,8 +167,14 @@ class Level:
 class Chapter:
     def __init__(self, raw: dict):
         self.name = str(raw.get("name", "")).strip()
-        self.homework_id = str(raw.get("homework_id", "")).strip()
-        self.levels = [Level(x) for x in raw.get("levels", [])]
+        lvs = raw.get("levels", [])
+        if not isinstance(lvs, list):
+            die(f"答案档案格式错误：章节「{self.name}」的 levels 不是数组"
+                "（TOML 里应写 [[chapters.levels]]），请手工检查。")
+        for x in lvs:
+            if not isinstance(x, dict):
+                die(f"答案档案格式错误：章节「{self.name}」的 levels 里有不是表格的条目，请手工检查。")
+        self.levels = [Level(x) for x in lvs]
 
 
 def load_answers(path: Path, *, missing_ok: bool = False) -> list[Chapter]:
@@ -179,7 +189,14 @@ def load_answers(path: Path, *, missing_ok: bool = False) -> list[Chapter]:
         die(f"答案档案 TOML 语法错误：{path}\n  {e}")
     except OSError as e:
         die(f"答案档案读取失败：{path}\n  {e}")
-    chapters = [Chapter(c) for c in data.get("chapters", [])]
+    raw_chs = data.get("chapters", [])
+    if not isinstance(raw_chs, list):
+        die(f"答案档案格式错误：chapters 不是数组（TOML 里应写 [[chapters]]，"
+            f"现在是 {type(raw_chs).__name__}）：{path}\n  请手工检查")
+    for c in raw_chs:
+        if not isinstance(c, dict):
+            die(f"答案档案格式错误：chapters 里有不是表格的条目：{path}\n  请手工检查")
+    chapters = [Chapter(c) for c in raw_chs]
     if not chapters and not missing_ok:
         die("答案档案里没有任何 [[chapters]] 条目。")
     return chapters
@@ -285,7 +302,7 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
                     continue
             have_names = [str(lv.get("name") or "") for lv in raw.get("levels", [])]
             scan_names = [lv["name"] for lv in ch["levels"]]
-            if have_names != scan_names[:len(have_names)]:
+            if [norm(x) for x in have_names] != [norm(x) for x in scan_names[:len(have_names)]]:
                 log(f"  ! 章节「{span['name']}」的档案条目与扫描结果顺序/名字不一致，"
                     "未自动改动，请手动核对")
                 continue
@@ -312,11 +329,180 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
 
 
 
+_FILES_HDR = re.compile(r"^\[\[chapters\.levels\.files\]\]")
+_KEY_ANSWER = re.compile(r"^answer\s*=")
+_KEY_PATH = re.compile(r"^path\s*=")
+
+
+def _value_done(text: str) -> bool:
+    """text 以 TOML value 的起点开始（可能跨多行，含换行）。
+
+    value 已完整结束（闭合后本行只剩注释/空白）时返回 True；
+    字符串/数组未闭合，或闭合后同行还有别的内容时返回 False。
+    assignments/archive 只用到字符串和数组，但这里按 TOML 常见形态扫描以策万全。
+    """
+    n = len(text)
+    i = 0
+    stack: list[str] = []          # "[", "{", "'", '"', "'''", '"""'
+
+    def closed_entire_line(k: int) -> bool:
+        # 闭合之后，本行要只剩注释/空白才算这个 value 结束
+        while k < n and text[k] in " \t":
+            k += 1
+        return k >= n or text[k] in "#\r\n"
+
+    while i < n:
+        top = stack[-1] if stack else ""
+        if top in ("'''", '"""'):
+            j = text.find(top, i)
+            if j < 0:
+                return False
+            i = j + 3
+            stack.pop()
+            if not stack and closed_entire_line(i):
+                return True
+            continue
+        if top == "'":
+            j = text.find("'", i)
+            if j < 0:
+                return False
+            i = j + 1
+            stack.pop()
+            if not stack and closed_entire_line(i):
+                return True
+            continue
+        if top == '"':
+            j = i
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            if j >= n:
+                return False
+            i = j + 1
+            stack.pop()
+            if not stack and closed_entire_line(i):
+                return True
+            continue
+        c = text[i]
+        if c in " \t\r\n":
+            i += 1
+            continue
+        if c == "#":
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        if c in ("'", '"'):
+            if text[i:i + 3] in ("'''", '"""'):
+                stack.append(text[i:i + 3])
+                i += 3
+                continue
+            stack.append(c)
+            i += 1
+            continue
+        if c == "[":
+            stack.append("[")
+            i += 1
+            continue
+        if c == "{":
+            stack.append("{")
+            i += 1
+            continue
+        if c == "]":
+            if stack and stack[-1] == "[":
+                stack.pop()
+                i += 1
+                if not stack and closed_entire_line(i):
+                    return True
+                continue
+            return False   # 括号不配对（TOML 不合法）
+        if c == "}":
+            if stack and stack[-1] == "{":
+                stack.pop()
+                i += 1
+                if not stack and closed_entire_line(i):
+                    return True
+                continue
+            return False
+        if c == "," and stack:
+            i += 1
+            continue
+        j0 = i
+        while i < n and text[i] not in ",\n#]}\t \"'":
+            i += 1
+        if not stack and closed_entire_line(i):
+            return True
+        if i == j0:
+            i += 1           # 顶层零散字符（不合法 TOML），强制前进避免死循环
+        continue
+    return False
+
+
+def _find_value_end(lines: list[str], i: int, limit: int) -> int:
+    """lines[i] 是 `key = value` 行，返回 value（含行尾注释）占到哪一行（含）。
+
+    未在 [i, limit) 内闭合时返回 -1（无法安全定位，调用方应放弃写回该块）。
+    """
+    eq = lines[i].find("=")
+    buf = lines[i][eq + 1:]
+    j = i
+    while j + 1 < limit and not _value_done(buf):
+        j += 1
+        buf += lines[j]
+    return j if _value_done(buf) else -1
+
+
+def _scan_answer_zone(lines: list[str], lstart: int, lend: int) -> tuple[int | None, int]:
+    """在关卡块 [lstart, lend) 内精确定位答案区 [zone_start, zone_end)。
+
+    · 答案区 = 第一个 answer/files 行起，最后一个答案值（单行/跨行数组/
+      三引号字符串/连续的 [[chapters.levels.files]] 块及其间注释）的结束；
+    · 答案区之后的 skip/type/注释等行原样保留（由调用方移到新 payload 之前）；
+    · 块里没有答案区时 zone_start=None；
+    · answer 值没闭合 / 出现其他表头时 raise ValueError（无法安全判断）。
+    """
+    k = lstart + 1
+    while k < lend:
+        s = lines[k].strip()
+        if _FILES_HDR.match(s) or _KEY_ANSWER.match(s):
+            break
+        k += 1
+    if k >= lend:
+        return None, lend          # 块里没有答案区（老一点的档案可能只有名字）
+    i = k
+    while i < lend:
+        s = lines[i].strip()
+        if _FILES_HDR.match(s):
+            i += 1
+            continue
+        if s == "" or s.startswith("#"):
+            nxt = i
+            while nxt < lend and (lines[nxt].strip() == ""
+                                  or lines[nxt].strip().startswith("#")):
+                nxt += 1
+            if nxt < lend and _FILES_HDR.match(lines[nxt].strip()):
+                i = nxt            # 文件条目之间的注释/空行属于答案区，一并替换
+                continue
+            return k, i            # 区条目后的注释/空行开始是“保留尾部”
+        if _KEY_ANSWER.match(s) or _KEY_PATH.match(s):
+            vend = _find_value_end(lines, i, lend)
+            if vend < 0:
+                raise ValueError("answer 的值没有闭合（跨行字符串/数组写坏了）")
+            i = vend + 1
+            continue
+        if s.startswith("["):
+            raise ValueError(f"答案区里出现了其他表头「{s}」")
+        return k, i                # 其他键（skip/type/…）：答案区到此结束
+    return k, lend
+
+
 def write_back_answers(path: Path, changes: dict[str, dict[int, object]], force: bool) -> int:
     """把采集结果写回答案档案：按章节块、按关卡序号替换 answer / files。
 
     · 默认只填空答案（多文件关按“所有文件是否都有答案”判断），force=True 才覆盖；
-    · 只替换目标关卡的答案区，name/skip/type/multi 等头部字段与注释原样保留；
+    · 只替换目标关卡的答案区（单行/跨行数组/三引号字符串/[[chapters.levels.files]]
+      块都精确定位），name/skip/type/multi 等字段与注释原样保留—— answer 之后
+      的 skip/type/注释会移到新答案之前，绝不会被删掉；
+    · 关卡块结构无法安全判断（answer 未闭合 / 答案区混入其他表头）时直接 die，
+      提示手工处理，绝不静默删；
     · 写入前用 tomllib 校验，成功落盘后才打印“已写回”；返回写回的关卡数。
     """
     if not path.exists():
@@ -420,21 +606,37 @@ def write_back_answers(path: Path, changes: dict[str, dict[int, object]], force:
             if not force and not _raw_level_empty(raw_lv):
                 log(f"  ! 「{level['name']}」已有答案，未覆盖（-f 可强制覆盖）")
                 continue
-            # 头部 = 第一个 answer/files 行之前的内容，原样保留
-            header_end = lend
-            for k in range(lstart + 1, lend):
-                s = lines[k].strip()
-                if re.match(r"^answer\s*=", s) or s == "[[chapters.levels.files]]":
-                    header_end = k
-                    break
-            header = list(lines[lstart + 1:header_end])
+            # 头部 = 第一个 answer/files 行之前的内容，原样保留；
+            # 答案区 = 从那行起到最后一个答案值结束（跨行数组/三引号字符串/
+            # 多个 [[chapters.levels.files]] 块都要覆盖到）；
+            # 答案区之后的 skip/type/注释等行保留下来，移到新 payload 之前。
+            try:
+                zone_start, zone_end = _scan_answer_zone(lines, lstart, lend)
+            except ValueError as e:
+                die("答案档案结构无法安全判断，已停止写回，请手工修改：\n"
+                    f"  章节「{cname}」关卡「{arch_name or f'第{idx}关'}」"
+                    f"（第 {lstart + 1} 行起）：{e}")
+            if zone_start is None:
+                header = list(lines[lstart + 1:lend])   # 块里没有答案区：整体当头部
+                tail = []
+            else:
+                header = list(lines[lstart + 1:zone_start])
+                tail = list(lines[zone_end:lend])
+            # 尾部两端的多余空行去掉，避免块内堆叠
+            while tail and not tail[-1].strip():
+                tail.pop()
+            while tail and not tail[0].strip():
+                tail.pop(0)
             if extra_multi is not None:
                 new_multi = f"multi = {'true' if extra_multi else 'false'}\n"
                 replaced = False
-                for k, line in enumerate(header):
-                    if re.match(r"^\s*multi\s*=", line):
-                        header[k] = new_multi
-                        replaced = True
+                for lst in (header, tail):
+                    for k, line in enumerate(lst):
+                        if re.match(r"^\s*multi\s*=", line):
+                            lst[k] = new_multi
+                            replaced = True
+                            break
+                    if replaced:
                         break
                 if not replaced:
                     pos = 0
@@ -446,7 +648,7 @@ def write_back_answers(path: Path, changes: dict[str, dict[int, object]], force:
             payload_lines = payload.splitlines(keepends=True)
             if payload_lines and not payload_lines[-1].endswith("\n"):
                 payload_lines[-1] += "\n"
-            new_block = [lines[lstart]] + header + payload_lines + ["\n"]
+            new_block = [lines[lstart]] + header + tail + payload_lines + ["\n"]
             edits.append((lstart, lend, new_block, str(level["name"] or f"第{idx}关")))
 
     if not edits:

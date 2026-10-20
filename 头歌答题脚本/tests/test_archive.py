@@ -212,5 +212,151 @@ check("写回保留 skip/type/注释/multi",
       and _lv11.get("multi") is False and "# 用户注释" in _txt8
       and _lv11.get("answer") == "C")
 
+# 12. 答案区之后的 skip/type/注释：写回后仍存在（移到新 payload 之前，绝不删除）
+archive9 = Path(tmp) / "arch9.toml"
+archive9.write_text(
+    '[[chapters]]\n'
+    'name = "尾部字段章"\n'
+    '\n'
+    '[[chapters.levels]]\n'
+    'name = "L1"\n'
+    'answer = ""\n'
+    'skip = false\n'
+    'type = "code"\n'
+    '# L1 备注\n'
+)
+n9 = write_back_answers(archive9, {"尾部字段章": {1: {"answer": 'answer = "X"', "multi": False}}}, force=False)
+_txt9 = archive9.read_text()
+_lv9 = tomllib.loads(_txt9)["chapters"][0]["levels"][0]
+check("写回保留 answer 之后的 skip/type/注释",
+      n9 == 1 and _lv9.get("skip") is False and _lv9.get("type") == "code"
+      and _lv9.get("multi") is False and _lv9.get("answer") == "X"
+      and "# L1 备注" in _txt9)
+
+# 13. 文件末尾（最后一个关卡之后）的注释：写回后仍存在
+archive10 = Path(tmp) / "arch10.toml"
+archive10.write_text(
+    '[[chapters]]\n'
+    'name = "尾注章"\n'
+    '\n'
+    '[[chapters.levels]]\n'
+    'name = "L1"\n'
+    'answer = []\n'
+    '\n'
+    '# 文件末尾说明注释\n'
+)
+n10 = write_back_answers(archive10, {"尾注章": {1: 'answer = ["A", "B"]'}}, force=False)
+_txt10 = archive10.read_text()
+check("文件末尾注释保留",
+      n10 == 1 and tomllib.loads(_txt10)["chapters"][0]["levels"][0].get("answer") == ["A", "B"]
+      and "# 文件末尾说明注释" in _txt10)
+
+# 14. 多文件块 + 尾部注释：两个 files 块整体替换、尾部注释不死
+archive11 = Path(tmp) / "arch11.toml"
+archive11.write_text(
+    '[[chapters]]\n'
+    'name = "多文件注释章"\n'
+    '\n'
+    '[[chapters.levels]]\n'
+    'name = "L1"\n'
+    'multi = true\n'
+    '[[chapters.levels.files]]\n'
+    'path = "a.java"\n'
+    "answer = '''\nolda\n'''\n"
+    '[[chapters.levels.files]]\n'
+    'path = "b.java"\n'
+    "answer = '''\noldb\n'''\n"
+    '\n'
+    '# 两份文件的答案都要保留\n'
+)
+payload11 = ("[[chapters.levels.files]]\npath = \"a.java\"\nanswer = '''\nna\n'''\n"
+             "[[chapters.levels.files]]\npath = \"b.java\"\nanswer = '''\nnb\n'''")
+n11 = write_back_answers(archive11, {"多文件注释章": {1: {"answer": payload11, "multi": True}}}, force=True)
+_txt11 = archive11.read_text()
+_d11 = tomllib.loads(_txt11)
+_f11 = _d11["chapters"][0]["levels"][0]["files"]
+check("多文件块+尾部注释写回",
+      n11 == 1 and len(_f11) == 2 and "na" in _f11[0]["answer"] and "nb" in _f11[1]["answer"]
+      and "# 两份文件的答案都要保留" in _txt11 and "olda" not in _txt11 and "oldb" not in _txt11)
+
+# 15. 章头隔着长注释也能认出章节，sort_chapter_blocks 顺序正确
+from eduauto.archive import sort_chapter_blocks          # noqa: E402
+from eduauto.archive import _chapter_spans as _spans15   # noqa: E402
+_long = "".join(f"# 章头注释第 {i} 行\n" for i in range(1, 15))
+_text15 = (
+    '# 顶部说明\n'
+    '[[chapters]]\n' + _long + 'name = "第二章（二）"\n'
+    '[[chapters.levels]]\n'
+    'name = "L1"\n'
+    'answer = ""\n'
+    '\n'
+    '[[chapters]]\nname = "第一章（一）"\n'
+    '[[chapters.levels]]\n'
+    'name = "L1"\n'
+    'answer = ""\n'
+)
+_sorted15 = sort_chapter_blocks(_text15)
+_sp15 = [sp["name"] for sp in _spans15(_sorted15.splitlines(keepends=True))]
+check("章头长注释 + 排序正确",
+      _sorted15.index("第一章") < _sorted15.index("第二章") and _sp15 == ["第一章（一）", "第二章（二）"],
+      str(_sp15))
+
+# 16. chapters 不是 list：友好 die → SystemExit(2)
+_bad = Path(tmp) / "arch_bad.toml"
+_bad.write_text('chapters = "oops"\n')
+try:
+    load_answers(_bad)
+    check("chapters=非数组 die", False, "没有触发 SystemExit")
+except SystemExit as e:
+    check("chapters=非数组 die", isinstance(getattr(e, "code", None), int) and e.code == 2,
+          f"code={getattr(e, 'code', None)}")
+
+# 17. 骨架前缀仅空白差异（norm 相等）也能追补
+archive12 = Path(tmp) / "arch12.toml"
+archive12.write_text(
+    '[[chapters]]\n'
+    'name = "空白章"\n'
+    '\n'
+    '[[chapters.levels]]\n'
+    'name = "关  卡1"\n'
+    'answer = ""\n'
+)
+write_scan_skeleton(archive12, [{"name": "空白章", "levels": [
+    {"name": "关卡1", "multi": False}, {"name": "关卡2"},
+]}])
+_d12 = tomllib.loads(archive12.read_text())
+check("骨架前缀空白差异仍追补", len(_d12["chapters"]) == 1 and len(_d12["chapters"][0]["levels"]) == 2,
+      str(_d12["chapters"]))
+
+# 18. 关卡块里混入无法安全判断的表头：die（code 2）且原文件一字不动
+archive13 = Path(tmp) / "arch13.toml"
+_src13 = ('[[chapters]]\n'
+          'name = "表头混杂章"\n'
+          '\n'
+          '[[chapters.levels]]\n'
+          'name = "L1"\n'
+          'answer = "x"\n'
+          '[other.table]\n'
+          'answer = "y"\n'
+          '\n'
+          '# 末尾注释\n')
+archive13.write_text(_src13)
+try:
+    write_back_answers(archive13, {"表头混杂章": {1: {"answer": 'answer = "Z"', "multi": None}}},
+                       force=True)
+    check("混入表头 die 不静默删", False, "没有触发 SystemExit")
+except SystemExit as e:
+    check("混入表头 die 不静默删", getattr(e, "code", None) == 2
+          and archive13.read_text() == _src13, f"code={getattr(e, 'code', None)}")
+
+# 19. answer 值未闭合（三引号没关）：整块跳过不写，原文件不丢内容
+archive14 = Path(tmp) / "arch14.toml"
+_src14 = ('[[chapters]]\nname = "未闭合章"\n\n[[chapters.levels]]\nname = "L1"\n'
+          "answer = '''\nnever closed\n")
+archive14.write_text(_src14)
+n14 = write_back_answers(archive14, {"未闭合章": {1: {"answer": 'answer = "Z"', "multi": None}}},
+                         force=True)
+check("answer 未闭合整块跳过", n14 == 0 and archive14.read_text() == _src14, f"n={n14}")
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
