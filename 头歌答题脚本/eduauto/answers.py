@@ -225,7 +225,7 @@ def read_submitted_code(page: Page, timeout: float = 15) -> str | None:
 _TEMPLATE_MARKERS = (
     "请在此", "在此填写", "在此处填写", "实现代码", "填写代码",
     "your code here", "your code goes here", "write your code",
-    "todo",
+    "# todo", "// todo", "/* todo",
 )
 
 
