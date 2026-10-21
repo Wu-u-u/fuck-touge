@@ -107,33 +107,47 @@ def _verify_scan_result(data: dict, scanned: list[dict]) -> None:
             names.remove(n)
 
 
+def _fuzzy_spans(spans: list[dict], name: str) -> list[dict]:
+    target = norm(name)
+    if not target:
+        return []
+    return [sp for sp in spans
+            if sp["name"] is not None
+            and (target in norm(sp["name"]) or norm(sp["name"]) in target)]
+
+
 def _find_chapter_span(spans: list[dict], name: str) -> dict | None:
+    """精确匹配优先；模糊匹配必须唯一，多命中返回 None 由调用方拒绝。"""
     target = norm(name)
     if not target:
         return None
     for sp in spans:
         if sp["name"] is not None and norm(sp["name"]) == target:
             return sp
-    for sp in spans:
-        if sp["name"] is not None:
-            cn = norm(sp["name"])
-            if target in cn or cn in target:
-                return sp
-    return None
+    fuzzy = _fuzzy_spans(spans, name)
+    return fuzzy[0] if len(fuzzy) == 1 else None
+
+
+def _fuzzy_raw_chapters(chapters: list[dict], name: str) -> list[dict]:
+    target = norm(name)
+    if not target:
+        return []
+    return [c for c in chapters
+            if norm(str(c.get("name") or ""))
+            and (target in norm(str(c.get("name") or ""))
+                 or norm(str(c.get("name") or "")) in target)]
 
 
 def _find_raw_chapter(chapters: list[dict], name: str) -> dict | None:
+    """精确匹配优先；模糊匹配必须唯一，多命中返回 None 由调用方拒绝。"""
     target = norm(name)
     if not target:
         return None
     for c in chapters:
         if norm(str(c.get("name") or "")) == target:
             return c
-    for c in chapters:
-        cn = norm(str(c.get("name") or ""))
-        if cn and (target in cn or cn in target):
-            return c
-    return None
+    fuzzy = _fuzzy_raw_chapters(chapters, name)
+    return fuzzy[0] if len(fuzzy) == 1 else None
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -282,6 +296,15 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
     """
     if not scanned:
         return
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for ch in scanned:
+        n = norm(ch["name"])
+        if n in seen:
+            die(f"扫描结果里章节「{ch['name']}」重复，无法安全补骨架")
+        seen.add(n)
+        unique.append(ch)
+    scanned = unique
 
     def level_lines(lv: dict) -> list[str]:
         """生成一个关卡的档案行：name [+ multi] + answer 或文件块（scan 只写空骨架）。"""
@@ -289,6 +312,8 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
                f'name = {json.dumps(lv["name"], ensure_ascii=False)}']
         multi = lv.get("multi")
         paths = lv.get("paths") or []
+        if len(paths) != len(set(paths)):
+            die(f"关卡「{lv['name']}」的代码文件路径重复，无法安全补骨架")
         if multi is not None:
             out.append(f'multi = {"true" if multi else "false"}')
         if multi and paths:
@@ -339,6 +364,11 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
             spans = _chapter_spans(src)
             span = _find_chapter_span(spans, ch["name"])
             if span is None:
+                fuzzy = _fuzzy_spans(spans, ch["name"])
+                if len(fuzzy) > 1:
+                    die(f"章节「{ch['name']}」匹配到多个档案章节，无法安全补骨架")
+                if any(sp["name"] is None for sp in spans):
+                    die("档案里存在没有 name 的章节，无法安全匹配，请手工修复")
                 text = text.rstrip() + "\n\n" + block(ch) + "\n"
                 touched.append(ch)
                 continue
@@ -720,22 +750,37 @@ def write_back_answers(path: Path, changes: dict[str, dict[int, object]], force:
                         cur_ch["name"] = nm
     close_chapter(len(lines))
 
+    # 行扫描可能把答案字符串里的 [[chapters]] / [[chapters.levels]] 当成结构行；
+    # 与 tomllib 的解析结果对比，不一致就明确拒绝，绝不静默跳过丢答案。
+    try:
+        _real_chapters = tomllib.loads(text).get("chapters", [])
+    except tomllib.TOMLDecodeError:
+        # 整份档案本来就不合法（如答案未闭合）：保持旧的“逐块解析失败则跳过”，
+        # 由下面的块级 tomllib 校验兜底；这里不额外 die。
+        _real_chapters = None
+    if _real_chapters is not None and (
+            len(_real_chapters) != len(chapters) or any(
+                len(rc.get("levels", [])) != len(lc["levels"])
+                for rc, lc in zip(_real_chapters, chapters))):
+        die("答案档案的行级结构与 TOML 解析不一致（答案里可能含 "
+            "[[chapters]] 行），无法安全写回，请手工修复后再试")
+
     # 2) 变更 key 与档案章节名对齐（卡片名可能只是档案名的超集/子集）
     remaining = dict(changes)
     matched: list[tuple[dict, dict]] = []
-    for ch in chapters:
-        cname = ch.get("name") or ""
-        key = next((k for k in remaining if norm(k) == norm(cname)), None)
-        if key is None:
-            for k in remaining:
-                kn, cn = norm(k), norm(cname)
-                if kn and cn and (kn in cn or cn in kn):
-                    key = k
-                    break
-        if key is not None:
-            matched.append((ch, remaining.pop(key)))
-    for key in remaining:
-        log(f"  ! 档案里没有章节「{key}」，答案未写回")
+    for key in list(remaining):
+        exact = [ch for ch in chapters
+                 if norm(str(ch.get("name") or "")) == norm(key)]
+        candidates = exact or _fuzzy_raw_chapters(chapters, key)
+        if len(candidates) > 1:
+            die(f"变更章节「{key}」匹配到多个档案章节，无法安全写回；"
+                "请把档案里的章节名区分清楚")
+        if not candidates:
+            log(f"  ! 档案里没有章节「{key}」，答案未写回")
+            continue
+        matched.append((candidates[0], remaining.pop(key)))
+    order = {str(ch.get("name") or ""): i for i, ch in enumerate(chapters)}
+    matched.sort(key=lambda pair: order.get(str(pair[0].get("name") or ""), 0))
     if not matched:
         return 0
 
@@ -834,6 +879,8 @@ def write_back_answers(path: Path, changes: dict[str, dict[int, object]], force:
                 header[-1] += "\n"
             if tail and not tail[-1].endswith("\n"):
                 tail[-1] += "\n"
+            if payload.lstrip().startswith("[[chapters.levels.files]]"):
+                header = [ln for ln in header if not re.match(r"^\s*files\s*=", ln)]
             new_block = [lines[lstart]] + header + tail + payload_lines + ["\n"]
             # 写盘前重新解析：载荷与重建后的关卡 answer/files 必须一致，
             # 防止换行/表头/结构行把答案写进别的地方。

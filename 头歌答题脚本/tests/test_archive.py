@@ -516,5 +516,84 @@ except SystemExit:
     _noop_ok = False
 check("骨架名字不一致时安全 no-op", _noop_ok and archive8.read_bytes() == _before)
 
+
+# 12. 模糊章节多命中：写回/骨架都必须拒绝，不能写错章
+amb = Path(tmp) / "amb.toml"
+amb.write_text(
+    '[[chapters]]\nname = "第八章"\n\n[[chapters.levels]]\nname = "L1"\nanswer = ""\n\n'
+    '[[chapters]]\nname = "第八章 补充"\n\n[[chapters.levels]]\nname = "L1"\nanswer = ""\n',
+    encoding="utf-8")
+_before = amb.read_bytes()
+try:
+    write_back_answers(amb, {"第八章 补充题": {1: 'answer = "WRONG"'}}, force=True)
+    _amb_wb = False
+except SystemExit:
+    _amb_wb = True
+check("模糊章节多命中写回拒绝", _amb_wb and amb.read_bytes() == _before)
+try:
+    write_scan_skeleton(amb, [{"name": "第八章 补充题", "homework_id": "1",
+                               "levels": [{"name": "L1"}]}])
+    _amb_sk = False
+except SystemExit:
+    _amb_sk = True
+check("模糊章节多命中骨架拒绝", _amb_sk and amb.read_bytes() == _before)
+
+# 13. 无名章节 / 重复扫描章 / 重复 path 都要拒绝
+noname = Path(tmp) / "noname.toml"
+noname.write_text(
+    '[[chapters]]\nhomework_id = "1"\n\n[[chapters.levels]]\nname = "L1"\nanswer = ""\n',
+    encoding="utf-8")
+try:
+    write_scan_skeleton(noname, [{"name": "某章", "homework_id": "1",
+                                  "levels": [{"name": "L1"}]}])
+    _noname = False
+except SystemExit:
+    _noname = True
+check("无名章节不重复建章", _noname)
+
+dup = Path(tmp) / "dup.toml"
+dup.write_text('[[chapters]]\nname = "旧"\n\n[[chapters.levels]]\nname = "L1"\nanswer = ""\n',
+               encoding="utf-8")
+try:
+    write_scan_skeleton(dup, [{"name": "新", "levels": [{"name": "L1"}]},
+                              {"name": "新", "levels": [{"name": "L1"}]}])
+    _dup = False
+except SystemExit:
+    _dup = True
+check("重复扫描章节拒绝", _dup)
+
+try:
+    write_scan_skeleton(Path(tmp) / "dup2.toml", [{
+        "name": "章", "levels": [{"name": "L1", "multi": True,
+                                  "paths": ["a.java", "a.java"]}]}])
+    _dup2 = False
+except SystemExit:
+    _dup2 = True
+check("重复代码文件 path 拒绝", _dup2)
+
+# 14. 已有答案含 [[chapters]] 时写回必须明确拒绝，不能静默跳过
+bad = Path(tmp) / "badstruct.toml"
+bad.write_text(
+    '[[chapters]]\nname = "结构章"\n\n[[chapters.levels]]\nname = "L1"\n'
+    'answer = \'\'\'code\n[[chapters]]\nname = "fake"\n\'\'\'\n\n'
+    '[[chapters.levels]]\nname = "L2"\nanswer = ""\n', encoding="utf-8")
+try:
+    write_back_answers(bad, {"结构章": {2: 'answer = "X"'}}, force=True)
+    _bad = False
+except SystemExit:
+    _bad = True
+check("已有答案含结构行时拒绝写回", _bad)
+
+# 15. files = [] 占位 + 多文件载荷应可写入
+emptyf = Path(tmp) / "emptyf.toml"
+emptyf.write_text(
+    '[[chapters]]\nname = "空files"\n\n[[chapters.levels]]\nname = "L1"\nfiles = []\n',
+    encoding="utf-8")
+_payload = ('[[chapters.levels.files]]\npath = "a.java"\nanswer = """A"""\n'
+            '[[chapters.levels.files]]\npath = "b.java"\nanswer = """B"""')
+_n = write_back_answers(emptyf, {"空files": {1: {"answer": _payload, "multi": True}}}, force=True)
+_d = tomllib.loads(emptyf.read_text())
+check("files=[] 占位可写多文件", _n == 1 and len(_d["chapters"][0]["levels"][0].get("files", [])) == 2)
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

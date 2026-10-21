@@ -220,8 +220,11 @@ class WS:
 
 def http_json(path: str, port: int = DEFAULT_PORT, timeout: float = 5.0):
     url = f"http://127.0.0.1:{port}{path}"
-    with urllib.request.urlopen(url, timeout=timeout) as r:
-        return json.load(r)
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return json.load(r)
+    except OSError as e:
+        raise CDPError(f"无法连接调试端口 {port}（浏览器可能已关闭）：{e}") from e
 
 
 class Browser:

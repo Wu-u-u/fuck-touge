@@ -120,6 +120,14 @@ code, out = run_case(ok, rows=[{"name": "别的关", "full": "10", "score": "0",
 check("run 详情表关卡名不一致跳过", code == 2 and "关卡名与档案不一致" in out
       and "失败 1 关" in out, f"code={code}")
 
+def keyboard_interrupt(*a, **k):
+    raise KeyboardInterrupt
+
+
+code, out = run_case(keyboard_interrupt)
+check("run 捕获 Ctrl+C 并汇总", code == 2 and "汇总" in out
+      and "用户中断" in out and "已中止" in out, f"code={code}")
+
 code, out = run_case(runtime_error)
 check("run 捕获 RuntimeError 并汇总", code == 2 and "汇总" in out
       and "章节中止" in out and "已中止" in out, f"code={code}")

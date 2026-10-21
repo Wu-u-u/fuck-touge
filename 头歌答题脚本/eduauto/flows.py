@@ -370,6 +370,9 @@ def cmd_harvest(args, cfg: dict) -> None:
         except (RuntimeError, cdp.CDPError) as e:
             aborted = SystemExit(2)
             log(f"  ! 采集中止：{e}")
+        except KeyboardInterrupt:
+            aborted = SystemExit(2)
+            log("  ! 用户中断（Ctrl+C），先写回已采答案…")
         finally:
             try:
                 browser.close_target(target["id"])
@@ -635,8 +638,8 @@ def cmd_run(args, cfg: dict) -> None:
     if not args.yes:
         try:
             input("\n回车开始（Ctrl+C 取消）…")
-        except EOFError:
-            die("当前环境无法交互确认：请加 -y 直接开始。")
+        except (EOFError, KeyboardInterrupt):
+            die("已取消。")
 
     browser = ensure_browser(cfg)
     classroom = classroom_page(browser, cfg)
@@ -695,9 +698,11 @@ def cmd_run(args, cfg: dict) -> None:
     for ch in todo:
         try:
             run_one(ch)
-        except (SystemExit, RuntimeError) as e:
+        except (SystemExit, RuntimeError, KeyboardInterrupt) as e:
             if isinstance(e, RuntimeError):
                 log(f"  ! 章节中止：{e}")
+            elif isinstance(e, KeyboardInterrupt):
+                log("  ! 用户中断（Ctrl+C），先汇总已跑章节…")
             # die 的章节按失败 1 关+中止计入汇总；已就位的 stats 保留部分进度
             s = results.get(ch.name) or {"done": 0, "skipped": 0, "failed": 0}
             if not s.get("failed"):
