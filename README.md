@@ -37,7 +37,7 @@
 
 ### 一、浏览器扩展（Fuck头歌）
 
-1. 下载本仓库（或到 **Releases** 下载最新的 `FuckTouge-v0.9.17.zip` 答题脚本包 / `FuckTouge-v2.4.6.zip` 扩展包）；
+1. 下载本仓库（或到 **Releases** 下载最新的 `FuckTouge-v0.9.18.zip` 答题脚本包 / `FuckTouge-v2.4.6.zip` 扩展包）；
 2. Edge → 扩展 → 管理扩展 → 打开「开发人员选项」→「加载解压缩的扩展」→ 选择 `Fuck头歌` 文件夹；
 3. 打开头歌页面刷新即生效。
 
