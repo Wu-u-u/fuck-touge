@@ -81,6 +81,31 @@ def _files_paths_unique(text: str) -> bool:
     return True
 
 
+def _verify_scan_result(data: dict, scanned: list[dict]) -> None:
+    """校验扫描到的章节/关卡都真实出现在解析结果里。
+
+    只比对字符串内容不够：[[chapters]] / [[chapters.levels]] 若被写进
+    三引号答案，TOML 仍然能解析，但关卡其实“消失”在答案字符串里。
+    这里按解析后的 chapters/levels 结构逐个核对，不一致就 die（不写盘）。
+    """
+    chapters = data.get("chapters", [])
+    if not isinstance(chapters, list):
+        die("生成档案时 chapters 不是数组，未写入原文件")
+    for ch in scanned:
+        raw = _find_raw_chapter(chapters, ch["name"])
+        if raw is None:
+            die(f"生成档案时章节「{ch['name']}」没有出现在解析结果里，未写入原文件"
+                "（答案里可能含 [[chapters]] 行）")
+        names = [norm(str(lv.get("name") or "")) for lv in raw.get("levels", [])
+                 if isinstance(lv, dict)]
+        for lv in ch["levels"]:
+            n = norm(str(lv["name"]))
+            if n not in names:
+                die(f"生成档案时关卡「{lv['name']}」（章节「{ch['name']}」）"
+                    "没有出现在解析结果里，未写入原文件（答案里可能含结构行）")
+            names.remove(n)
+
+
 def _find_chapter_span(spans: list[dict], name: str) -> dict | None:
     target = norm(name)
     if not target:
@@ -319,11 +344,35 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
                 continue
             # 回填 homework_id（只补空，不覆盖已有值）
             if ch.get("homework_id") and not str(raw.get("homework_id") or "").strip():
+                hid_line = f'homework_id = {json.dumps(ch["homework_id"], ensure_ascii=False)}'
+                # 只在章头区（第一个 [[chapters.levels]] 之前）查找/插入，
+                # 避免命中关卡答案里的同名文本。
+                hdr_end = span["end"]
                 for k in range(span["start"] + 1, span["end"]):
-                    if re.match(r"^\s*name\s*=", src[k]):
-                        src.insert(k + 1,
-                                   f'homework_id = {json.dumps(ch["homework_id"], ensure_ascii=False)}\n')
+                    if src[k].strip() == "[[chapters.levels]]":
+                        hdr_end = k
                         break
+                replaced = False
+                for k in range(span["start"] + 1, hdr_end):
+                    m = _HID_ASSIGN.match(src[k].rstrip("\r\n"))
+                    if m is not None:
+                        # 原地只换值，保留行首缩进与行尾注释
+                        val = json.dumps(ch["homework_id"], ensure_ascii=False)
+                        src[k] = f"{m.group(1)}{val}{m.group(3)}\n"
+                        replaced = True
+                        break
+                    if re.match(r"^\s*homework_id\s*=", src[k]):
+                        indent = src[k][:len(src[k]) - len(src[k].lstrip())]
+                        src[k] = indent + hid_line + "\n"
+                        replaced = True
+                        break
+                if not replaced:
+                    for k in range(span["start"] + 1, hdr_end):
+                        if re.match(r"^\s*name\s*=", src[k]):
+                            if not src[k].endswith("\n"):
+                                src[k] += "\n"
+                            src.insert(k + 1, hid_line + "\n")
+                            break
                 text = "".join(src)
                 src = text.splitlines(keepends=True)
                 spans = _chapter_spans(src)
@@ -350,12 +399,13 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
     old_names = _chapter_names(text)
     text = sort_chapter_blocks(text)
     new_names = _chapter_names(text)
-    if any(name not in new_names for name in old_names) or len(new_names) < len(old_names):
+    if sorted(new_names) != sorted(old_names):
         die("生成档案时章节结构异常（答案里可能含 [[chapters]] 行），未写入原文件")
     try:
-        tomllib.loads(text)
+        parsed = tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:
         die(f"生成档案时 TOML 校验失败，未写入原文件：{e}")
+    _verify_scan_result(parsed, scanned)
     _atomic_write(path, text)
 
 
@@ -366,6 +416,45 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
 _FILES_HDR = re.compile(r"^\[\[chapters\.levels\.files\]\]")
 _KEY_ANSWER = re.compile(r"^answer\s*=")
 _KEY_PATH = re.compile(r"^path\s*=")
+_STRUCT_HDR = re.compile(
+    r"^\s*(?:\[\[chapters\]\]|\[\[chapters\.levels\]\])(?:\s|#|$)")
+_HID_ASSIGN = re.compile(
+    r"^(\s*homework_id\s*=\s*)(\"(?:[^\"\\]|\\.)*\"|'[^']*'|[^\s#]+)([ \t]*(?:#.*)?)$")
+
+# 把写回载荷/重建块包成最小合法档案，便于用 tomllib 精确核对答案
+_LEVEL_WRAP = ('[[chapters]]\nname = "__wrap__"\n\n'
+               '[[chapters.levels]]\nname = "__wrap__"\n')
+_BLOCK_WRAP = '[[chapters]]\nname = "__wrap__"\n'
+
+
+def _parse_wrapped_level(prefix: str, body: str) -> dict:
+    """prefix + body 必须解析出一个带单个关卡的档案，返回该关卡表。"""
+    text = prefix + body
+    if not text.endswith("\n"):
+        text += "\n"
+    data = tomllib.loads(text)
+    return data["chapters"][0]["levels"][0]
+
+
+def _level_answer_shape(raw: dict) -> tuple:
+    """关卡的答案形态：("files", [(path, answer)…]) 或 ("answer", 值)。
+
+    files 为空数组时按单 answer 关卡处理（与 _raw_level_empty 的空值判断一致），
+    否则 `files = []` 这种占位会被误当成多文件关卡。
+    """
+    files = raw.get("files")
+    if isinstance(files, list) and files:
+        return ("files", [(str(f.get("path") or ""), f.get("answer")) for f in files
+                          if isinstance(f, dict)])
+    return ("answer", raw.get("answer"))
+
+
+def _payload_struct_line(payload: str) -> str | None:
+    """载荷里行首出现章节/关卡表头时返回该行（用于拒绝会污染档案的载荷）。"""
+    for line in payload.splitlines():
+        if _STRUCT_HDR.match(line):
+            return line.strip()
+    return None
 
 
 def _value_done(text: str) -> bool:
@@ -385,13 +474,48 @@ def _value_done(text: str) -> bool:
             k += 1
         return k >= n or text[k] in "#\r\n"
 
+    def skip_multiline(k: int, quote: str) -> int | None:
+        """跳过以 quote 收尾的多行字符串，返回结束引号之后的下标。
+
+        TOML 允许用 4/5 个引号收尾（多出的 1/2 个引号属于内容），
+        所以不能直接 find("'''")；基本字符串里的 \\\" 也要跳过，
+        否则会把转义引号误当成结束符。
+        """
+        if quote == "'''":
+            while k < n:
+                if text[k] != "'":
+                    k += 1
+                    continue
+                run = k
+                while run < n and text[run] == "'":
+                    run += 1
+                if run - k >= 3:
+                    return run          # 连同 4/5 引号收尾一起吃掉
+                k = run
+            return None
+        while k < n:
+            c = text[k]
+            if c == "\\":
+                k += 2                 # 转义字符（含 \""" 里的第一个引号）
+                continue
+            if c != '"':
+                k += 1
+                continue
+            run = k
+            while run < n and text[run] == '"':
+                run += 1
+            if run - k >= 3:
+                return run
+            k = run
+        return None
+
     while i < n:
         top = stack[-1] if stack else ""
         if top in ("'''", '"""'):
-            j = text.find(top, i)
-            if j < 0:
+            j = skip_multiline(i, top)
+            if j is None:
                 return False
-            i = j + 3
+            i = j
             stack.pop()
             if not stack and closed_entire_line(i):
                 return True
@@ -498,6 +622,10 @@ def _scan_answer_zone(lines: list[str], lstart: int, lend: int) -> tuple[int | N
         s = lines[k].strip()
         if _FILES_HDR.match(s) or _KEY_ANSWER.match(s):
             break
+        if s.startswith("["):
+            # [chapters.levels.files] 之类的子表头出现在 answer 之前：
+            # 再往后写 answer 会落进子表里，直接拒绝。
+            raise ValueError(f"答案区之前出现了表头「{s}」")
         k += 1
     if k >= lend:
         return None, lend          # 块里没有答案区（老一点的档案可能只有名字）
@@ -622,6 +750,10 @@ def write_back_answers(path: Path, changes: dict[str, dict[int, object]], force:
             if not payload.strip():
                 log(f"  ! 「{cname}」第{idx}关答案为空，跳过")
                 continue
+            struct_line = _payload_struct_line(payload)
+            if struct_line is not None:
+                die("答案载荷里出现了章节/关卡表头，已停止写回（避免毒化档案）：\n"
+                    f"  章节「{cname}」第{idx}关：{struct_line}")
             if not (1 <= idx <= len(ch[0]["levels"])):
                 log(f"  ! 章节「{cname}」没有第 {idx} 关，跳过")
                 continue
@@ -680,11 +812,36 @@ def write_back_answers(path: Path, changes: dict[str, dict[int, object]], force:
                         if re.match(r"^\s*name\s*=", line):
                             pos = k + 1
                             break
+                    # 插入点前一行若是 EOF 无换行的最后一行，先补换行，
+                    # 否则 multi 会和它粘在同一行。
+                    if pos > 0 and not header[pos - 1].endswith("\n"):
+                        header[pos - 1] += "\n"
                     header.insert(pos, new_multi)
             payload_lines = payload.splitlines(keepends=True)
             if payload_lines and not payload_lines[-1].endswith("\n"):
                 payload_lines[-1] += "\n"
+            # EOF 无换行时，直接拼 payload 会粘到上一行（注释/字段）里：
+            # 三个拼接位置的末行都补上换行，保证 payload 从新行开始。
+            if lines[lstart] and not lines[lstart].endswith("\n"):
+                lines[lstart] += "\n"
+            if header and not header[-1].endswith("\n"):
+                header[-1] += "\n"
+            if tail and not tail[-1].endswith("\n"):
+                tail[-1] += "\n"
             new_block = [lines[lstart]] + header + tail + payload_lines + ["\n"]
+            # 写盘前重新解析：载荷与重建后的关卡 answer/files 必须一致，
+            # 防止换行/表头/结构行把答案写进别的地方。
+            payload_text = "".join(payload_lines)
+            try:
+                expected_lv = _parse_wrapped_level(_LEVEL_WRAP, payload_text)
+                actual_lv = _parse_wrapped_level(_BLOCK_WRAP, "".join(new_block))
+            except tomllib.TOMLDecodeError as e:
+                die(f"写回载荷或重建后的关卡无法解析，未改动原文件：{e}")
+            if "answer" not in expected_lv and "files" not in expected_lv:
+                die("写回载荷里没有 answer/files，未改动原文件")
+            if _level_answer_shape(actual_lv) != _level_answer_shape(expected_lv):
+                die("写回后关卡答案与载荷不一致，未改动原文件（请手工核对）：\n"
+                    f"  章节「{cname}」关卡「{arch_name or f'第{idx}关'}」")
             edits.append((lstart, lend, new_block, str(level["name"] or f"第{idx}关")))
 
     if not edits:
@@ -696,7 +853,7 @@ def write_back_answers(path: Path, changes: dict[str, dict[int, object]], force:
         tomllib.loads(new_text)
     except tomllib.TOMLDecodeError as e:
         die(f"写回答案时 TOML 校验失败，未改动原文件：{e}")
-    if _chapter_names(new_text) != old_names:
+    if sorted(_chapter_names(new_text)) != sorted(old_names):
         die("写回后章节结构发生变化（可能是答案里含有 [[chapters]] 行），未改动原文件")
     if not _files_paths_unique(new_text):
         die("写回后多文件关卡的 path 出现重复，未改动原文件")

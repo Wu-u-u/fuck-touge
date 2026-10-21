@@ -358,5 +358,148 @@ n14 = write_back_answers(archive14, {"未闭合章": {1: {"answer": 'answer = "Z
                          force=True)
 check("answer 未闭合整块跳过", n14 == 0 and archive14.read_text() == _src14, f"n={n14}")
 
+# 20. 文件末尾没有换行：payload 不能粘到上一行（注释/字段）里
+archive15 = Path(tmp) / "arch15.toml"
+_src15 = ('[[chapters]]\nname = "EOF尾注章"\n\n[[chapters.levels]]\nname = "L1"\n'
+          'answer = "old"\n# 末尾注释没有换行')
+archive15.write_text(_src15)
+n15 = write_back_answers(archive15, {"EOF尾注章": {1: 'answer = "NEW"'}}, force=True)
+_txt15 = archive15.read_text()
+_d15 = tomllib.loads(_txt15)
+check("EOF 无换行：payload 不粘注释",
+      n15 == 1 and _d15["chapters"][0]["levels"][0].get("answer") == "NEW"
+      and "# 末尾注释没有换行" in _txt15 and '\nanswer = "NEW"' in _txt15,
+      repr(_txt15))
+
+# 20b. 关卡头/name 行是文件最后一行且没有换行：payload 仍从新行开始
+archive16 = Path(tmp) / "arch16.toml"
+archive16.write_text('[[chapters]]\nname = "EOF头章"\n\n[[chapters.levels]]\nname = "L1"')
+n16 = write_back_answers(
+    archive16, {"EOF头章": {1: {"answer": 'answer = "NEW"', "multi": False}}}, force=True)
+_d16 = tomllib.loads(archive16.read_text())
+check("EOF 无换行：关卡头后写回",
+      n16 == 1 and _d16["chapters"][0]["levels"][0].get("answer") == "NEW"
+      and _d16["chapters"][0]["levels"][0].get("multi") is False,
+      repr(archive16.read_text()))
+
+# 21. 已有答案里含 [[chapters]]：scan 追补关卡会毒化答案，必须 die 且不写
+archive17 = Path(tmp) / "arch17.toml"
+_src17 = ('[[chapters]]\nname = "结构行章"\nhomework_id = "1"\n\n'
+          '[[chapters.levels]]\nname = "L1"\n'
+          "answer = '''\ncode\n[[chapters]]\ntext\n'''\n\n"
+          '[[chapters.levels]]\nname = "L2"\nanswer = ""\n')
+archive17.write_text(_src17)
+try:
+    write_scan_skeleton(archive17, [{
+        "name": "结构行章", "homework_id": "1",
+        "levels": [{"name": "L1"}, {"name": "L2"}, {"name": "L3"}],
+    }])
+    check("scan 答案含 [[chapters]] 时 die", False, "没有触发 SystemExit")
+except SystemExit as e:
+    check("scan 答案含 [[chapters]] 时 die",
+          getattr(e, "code", None) == 2 and archive17.read_text() == _src17,
+          f"code={getattr(e, 'code', None)}")
+
+# 22. 章节乱序的档案：合法排序不能被结构守卫误拒
+archive18 = Path(tmp) / "arch18.toml"
+archive18.write_text(
+    '[[chapters]]\nname = "第一章（一）"\n\n[[chapters.levels]]\nname = "L1"\nanswer = ""\n\n'
+    '[[chapters]]\nname = "项目实战"\n\n[[chapters.levels]]\nname = "P1"\nanswer = ""\n\n'
+    '[[chapters]]\nname = "第二章（二）"\n\n[[chapters.levels]]\nname = "L2"\nanswer = ""\n'
+)
+n18 = write_back_answers(archive18, {"第一章（一）": {1: 'answer = "A"'}}, force=False)
+_d18 = tomllib.loads(archive18.read_text())
+_names18 = [c.get("name") for c in _d18["chapters"]]
+check("乱序章节写回不被误拒",
+      n18 == 1 and _names18 == ["第一章（一）", "第二章（二）", "项目实战"]
+      and _d18["chapters"][0]["levels"][0].get("answer") == "A", str(_names18))
+
+# 23. homework_id = "" 占位：原地替换，不能插入重复键
+archive19 = Path(tmp) / "arch19.toml"
+archive19.write_text(
+    '[[chapters]]\nname = "空HID章"\nhomework_id = ""  # 保留注释\n\n'
+    '[[chapters.levels]]\nname = "L1"\nanswer = ""\n'
+)
+write_scan_skeleton(archive19, [{"name": "空HID章", "homework_id": "999",
+                                 "levels": [{"name": "L1"}, {"name": "L2"}]}])
+_txt19 = archive19.read_text()
+_d19 = tomllib.loads(_txt19)
+check("homework_id 空占位原地回填",
+      _d19["chapters"][0].get("homework_id") == "999"
+      and _txt19.count("homework_id") == 1 and "# 保留注释" in _txt19
+      and len(_d19["chapters"][0]["levels"]) == 2, _txt19)
+
+# 23b. 没有 homework_id 行且 name 行是 EOF（无换行）：插入后仍是合法 TOML
+archive20 = Path(tmp) / "arch20.toml"
+archive20.write_text('[[chapters]]\nname = "EOF-HID章"')
+write_scan_skeleton(archive20, [{"name": "EOF-HID章", "homework_id": "9",
+                                 "levels": [{"name": "L1"}]}])
+_d20 = tomllib.loads(archive20.read_text())
+check("homework_id 插入前补换行",
+      _d20["chapters"][0].get("homework_id") == "9", repr(archive20.read_text()))
+
+# 24. answer 之前出现 [chapters.levels.files] 子表头：die 不写
+archive21 = Path(tmp) / "arch21.toml"
+_src21 = ('[[chapters]]\nname = "子表头章"\n\n[[chapters.levels]]\nname = "L1"\n'
+          '[chapters.levels.files]\nanswer = ""\n')
+archive21.write_text(_src21)
+try:
+    write_back_answers(archive21, {"子表头章": {1: 'answer = "A"'}}, force=False)
+    check("answer 前子表头 die", False, "没有触发 SystemExit")
+except SystemExit as e:
+    check("answer 前子表头 die",
+          getattr(e, "code", None) == 2 and archive21.read_text() == _src21,
+          f"code={getattr(e, 'code', None)}")
+
+# 25. payload 行首含章节/关卡表头：直接 die，不毒化后续写回
+archive22 = Path(tmp) / "arch22.toml"
+_src22 = ('[[chapters]]\nname = "载荷结构章"\n\n[[chapters.levels]]\nname = "L1"\nanswer = ""\n\n'
+          '[[chapters.levels]]\nname = "L2"\nanswer = ""\n')
+archive22.write_text(_src22)
+_payloads = [
+    "answer = '''\n[[chapters]]\nname = \"不是章\"\n'''",
+    "answer = '''\n[[chapters.levels]]\nname = \"假关卡\"\n'''",
+]
+for _pl in _payloads:
+    try:
+        write_back_answers(archive22, {"载荷结构章": {1: _pl}}, force=True)
+        check("payload 含结构行 die", False, "没有触发 SystemExit")
+    except SystemExit as e:
+        check("payload 含结构行 die",
+              getattr(e, "code", None) == 2 and archive22.read_text() == _src22,
+              f"code={getattr(e, 'code', None)}")
+
+# 26. 4/5 引号收尾的多行字面量：是合法 TOML，不能被当成“未闭合”
+for _n, _val in (("4 引号", "'''x = 'abc''''"), ("5 引号", "'''x = 'abc'''''")):
+    _p = Path(tmp) / f"arch23_{_n[:1]}.toml"
+    _p.write_text('[[chapters]]\nname = "引号章"\n\n[[chapters.levels]]\nname = "L1"\n'
+                  f"answer = {_val}\n")
+    _cnt = write_back_answers(_p, {"引号章": {1: 'answer = "B"'}}, force=True)
+    check(f"多行字面量 {_n} 收尾可写回",
+          _cnt == 1
+          and tomllib.loads(_p.read_text())["chapters"][0]["levels"][0].get("answer") == "B")
+
+# 26b. """ 内的 \""" 是内容，不是结束符
+archive24 = Path(tmp) / "arch24.toml"
+archive24.write_text('[[chapters]]\nname = "转义引号章"\n\n[[chapters.levels]]\nname = "L1"\n'
+                     'answer = """a\\"""\ncode\n"""\n')
+n24 = write_back_answers(archive24, {"转义引号章": {1: 'answer = "B"'}}, force=True)
+check('""" 内 \\""" 不误判',
+      n24 == 1
+      and tomllib.loads(archive24.read_text())["chapters"][0]["levels"][0].get("answer") == "B")
+
+# 27. 载荷被 answer 之后的表头截走：解析对比必须发现并 die
+archive25 = Path(tmp) / "arch25.toml"
+_src25 = ('[[chapters]]\nname = "尾表头章"\n\n[[chapters.levels]]\nname = "L1"\n'
+          'answer = ""\nskip = false\n[other.table]\nx = 1\n')
+archive25.write_text(_src25)
+try:
+    write_back_answers(archive25, {"尾表头章": {1: 'answer = "A"'}}, force=False)
+    check("载荷落入尾表头 die", False, "没有触发 SystemExit")
+except SystemExit as e:
+    check("载荷落入尾表头 die",
+          getattr(e, "code", None) == 2 and archive25.read_text() == _src25,
+          f"code={getattr(e, 'code', None)}")
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
