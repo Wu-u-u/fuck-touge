@@ -8,6 +8,7 @@ import contextlib  # noqa: E402
 import io  # noqa: E402
 import json  # noqa: E402
 import tempfile  # noqa: E402
+import threading  # noqa: E402
 
 import eduauto.config as config  # noqa: E402
 from eduauto.answers import answer_to_toml, looks_like_template  # noqa: E402
@@ -263,6 +264,24 @@ try:
     _st = load_state()
     check("state current 类型错误只删除该字段",
           _st.get("slots") == {"1": "/p1"} and "current" not in _st, str(_st))
+
+    # state 锁：两个线程并发 update_state 不能互相覆盖
+    thread_state = _state_dir / "thread-state.json"
+    _saved_state = config.STATE_FILE
+    config.STATE_FILE = thread_state
+    _bar = threading.Barrier(2)
+
+    def _worker(k):
+        _bar.wait()
+        for _ in range(10):
+            config.update_state(**{k: k})
+
+    _ts = [threading.Thread(target=_worker, args=(k,)) for k in ("a", "b")]
+    [_t.start() for _t in _ts]
+    [_t.join() for _t in _ts]
+    _st2 = load_state()
+    check("state 锁并发不丢更新", _st2.get("a") == "a" and _st2.get("b") == "b", str(_st2))
+    config.STATE_FILE = _saved_state
 
     # browser 1 必须用 config 里的原始档案，而不是 apply_current_profile 后的当前槽
     _d = Path(tempfile.mkdtemp())
