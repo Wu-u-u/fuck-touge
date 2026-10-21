@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Playwright 本地 fixture</title>
+<style>
+  html, body { margin: 0; padding: 0; font-family: sans-serif; }
+  #btn { position: absolute; left: 40px; top: 60px; width: 180px; height: 50px; }
+  #out { position: absolute; left: 40px; top: 130px; }
+  #inp { position: absolute; left: 40px; top: 170px; width: 240px; height: 28px; }
+  #editable { position: absolute; left: 40px; top: 220px; width: 240px;
+              height: 70px; border: 1px solid #888; padding: 4px; }
+  #modal { position: absolute; left: 360px; top: 60px; width: 260px;
+           height: 130px; border: 1px solid #888; padding: 8px;
+           background: #fffbe6; }
+  #esc { position: absolute; left: 360px; top: 220px; }
+</style>
+</head>
+<body>
+  <button id="btn" type="button">点击我</button>
+  <div id="out">未点击</div>
+  <input id="inp" type="text" placeholder="输入框">
+  <div id="editable" contenteditable="true">可编辑区域</div>
+  <div id="modal">按 Escape 关闭的弹窗</div>
+  <div id="esc">Escape 未触发</div>
+<script>
+  window.__clicks = 0;
+  window.__keys = [];
+  document.getElementById('btn').addEventListener('click', function () {
+    window.__clicks += 1;
+    document.getElementById('out').textContent = '已点击 ' + window.__clicks;
+  });
+  document.addEventListener('keydown', function (event) {
+    window.__keys.push({ key: event.key, code: event.code, type: event.type });
+    if (event.key === 'Escape') {
+      document.getElementById('modal').style.display = 'none';
+      document.getElementById('esc').textContent = 'Escape 已触发';
+    }
+  });
+</script>
+</body>
+</html>
