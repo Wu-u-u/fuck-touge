@@ -6,13 +6,17 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "package": "node build.mjs --zip"
+    "package": "node build.mjs --zip",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
+    "@types/chrome": "^0.3.5",
     "esbuild": "^0.28.2",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
   }
 }
