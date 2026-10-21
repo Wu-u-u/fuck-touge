@@ -18,12 +18,12 @@ port = 9222
 # 若放别处再取消注释。相对路径按本配置文件所在目录解析
 # extension = "Fuck头歌"
 
-# 课堂-实训作业列表页（脚本的起点/入口）
-classroom = "https://www.educoder.net/classrooms/JODEM6CH/shixun_homework"
+# 课程列表页（browser / cd -ls 的起点）
+courses = "https://www.educoder.net/classrooms"
 
 [run]
-# 答案档案文件
-answers = "answers.toml"
+# 课程答案目录：每个课程一个 <课程名>-<课程码>.toml，cd 时自动创建
+answers_dir = "answers"
 
 # 单次评测最长等待（秒）
 eval_timeout = 180

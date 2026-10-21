@@ -255,15 +255,17 @@ def ensure_browser(cfg: dict) -> BrowserLike:
     return browser
 
 
-def classroom_page(browser: BrowserLike, cfg: dict, old: "Page | None" = None) -> "Page":
-    """开一个全新的课堂（实训作业列表）标签页；old 传入则顺手关掉旧页。
+def classroom_page(browser: BrowserLike, cfg: dict, old: "Page | None" = None,
+                   url: str | None = None) -> "Page":
+    """开一个全新的课堂/课程标签页；old 传入则顺手关掉旧页。
 
+    url 为空时使用课程列表页；课程页/详情页由调用方传入自己的 URL。
     实测：课堂页被导航去详情页再返回后，React 交互可能失效（点击无反应），
     所以每章都从干净的新标签页开始最稳。
     """
     if old and old.target.get("id"):
         browser.close_target(old.target["id"])
-    url = cfg["edge"]["classroom"]
+    url = url or cfg["edge"]["courses"]
     target = browser.create_target(url)
     ws = browser.attach(target)
     ws.wait_for("document.readyState === 'complete'", timeout=40)

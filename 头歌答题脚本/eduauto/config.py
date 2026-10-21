@@ -37,10 +37,10 @@ DEFAULT_CONFIG = {
         "profile": "~/.config/microsoft-edge-debug",
         "port": 9222,
         "extension": str(HERE.parent / "Fuck头歌"),
-        "classroom": "https://www.educoder.net/classrooms/JODEM6CH/shixun_homework",
+        "courses": "https://www.educoder.net/classrooms",
     },
     "run": {
-        "answers": str(HERE / "answers.toml"),
+        "answers_dir": str(HERE / "answers"),
         "eval_timeout": 180,      # 单次评测最长等待（秒）
         "level_timeout": 60,      # 页面加载/跳转最长等待（秒）
     },
@@ -65,9 +65,9 @@ def load_config(path: Path) -> dict:
                 cfg[section] = values
         run = cfg.get("run")
         if isinstance(run, dict):
-            ans = run.get("answers")
-            if isinstance(ans, str) and ans and not Path(ans).expanduser().is_absolute():
-                run["answers"] = str(cfg_path.resolve().parent / ans)
+            adir = run.get("answers_dir")
+            if isinstance(adir, str) and adir and not Path(adir).expanduser().is_absolute():
+                run["answers_dir"] = str(cfg_path.resolve().parent / adir)
     if not isinstance(cfg.get("edge"), dict) or not isinstance(cfg.get("run"), dict):
         die("配置文件格式错误：edge / run 必须是 TOML 表。")
     raw_port = cfg["edge"].get("port", 9222)
@@ -83,8 +83,8 @@ def load_config(path: Path) -> dict:
     if not 1 <= port <= 65535:
         die(f"配置文件格式错误：edge.port 必须在 1-65535 之间（当前 {raw_port!r}）。")
     cfg["edge"]["port"] = port
-    if not isinstance(cfg["run"].get("answers"), str) or not cfg["run"]["answers"].strip():
-        die("配置文件格式错误：run.answers 必须是非空路径字符串。")
+    if not isinstance(cfg["run"].get("answers_dir"), str) or not cfg["run"]["answers_dir"].strip():
+        die("配置文件格式错误：run.answers_dir 必须是非空路径字符串。")
     for key in ("eval_timeout", "level_timeout"):
         raw = cfg["run"].get(key)
         if isinstance(raw, bool):
@@ -98,7 +98,7 @@ def load_config(path: Path) -> dict:
         cfg["run"][key] = value
     # edge 的路径/URL 三项必须是字符串；profile/extension 若是相对路径，
     # 按配置文件所在目录解析（和使用中的 run.answers 同一规则）。
-    for key in ("profile", "extension", "classroom"):
+    for key in ("profile", "extension", "courses"):
         value = cfg["edge"].get(key)
         if not isinstance(value, str) or not value.strip():
             die(f"配置文件格式错误：edge.{key} 必须是非空字符串（当前 {value!r}）。")

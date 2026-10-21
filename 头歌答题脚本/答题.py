@@ -31,7 +31,7 @@ from eduauto.browser import (
     ensure_login, port_alive, read_account_name,
 )
 from eduauto.config import SLOT_RE, apply_current_profile, load_config, load_state, remember_name, setup_slot
-from eduauto.flows import cmd_harvest, cmd_run, cmd_scan_retired
+from eduauto.flows import cmd_cd, cmd_harvest, cmd_run, cmd_scan_retired
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -101,6 +101,11 @@ def main() -> None:
     p_scan = sub.add_parser("scan", help="（已并入 harvest，仅保留兼容提示）")
     add_chapter_args(p_scan)
     p_scan.add_argument("-a", "--all", action="store_true", help=argparse.SUPPRESS)
+    p_cd = sub.add_parser("cd", help="选择课程并进入课程起始页")
+    p_cd.add_argument("-ls", "--list", action="store_true", dest="list_courses",
+                      help="列出当前账号的课程")
+    p_cd.add_argument("target", nargs="?", default=None,
+                      help="课程序号（cd -ls 里的编号）或课程名片段")
     p_harvest = sub.add_parser("harvest", help="扫描并采集：缺骨架补骨架，有已满分关卡就采集答案")
     add_chapter_args(p_harvest)
     p_harvest.add_argument("-f", "--force", action="store_true", help="覆盖档案里已有答案")
@@ -128,11 +133,19 @@ def main() -> None:
             log(f"→ 档案槽『{slot}』：{note}")
         cfg["edge"]["profile"] = profile
         browser = ensure_browser(cfg)
-        classroom = classroom_page(browser, cfg)
-        ensure_login(browser, classroom.ws)
+        from eduauto.course import list_courses, open_course_list
+        page = open_course_list(browser, cfg)
+        ensure_login(browser, page.ws)
+        courses = list_courses(page)
         log(f"✓ 副本浏览器就绪，已记住档案槽「{slot}」，之后 harvest/run 都会用它。")
+        log("课程列表：")
+        for i, name in enumerate(courses, 1):
+            log(f"  {i}. {name}")
+        log("用 python3 答题.py cd -ls 查看，cd 序号/课程名 进入课程。")
     elif args.cmd == "scan":
         cmd_scan_retired()
+    elif args.cmd == "cd":
+        cmd_cd(args, cfg)
     elif args.cmd == "harvest":
         cmd_harvest(args, cfg)
     elif args.cmd == "run":

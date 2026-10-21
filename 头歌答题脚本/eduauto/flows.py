@@ -14,6 +14,8 @@ from eduauto.archive import Chapter, find_level, load_answers, write_back_answer
 from eduauto.util import die, fmt_secs, log, norm
 from eduauto.answers import answer_to_toml, read_saved_answer, read_test_result, wait_outcome
 from eduauto.browser import classroom_page, ensure_browser, ensure_login
+from eduauto.course import (choose_course, current_course, ensure_answers_file,
+                            find_answers_file, list_courses, open_course_list, select_course)
 from eduauto.code import answer_choice, choice_letters, close_file_menu, list_code_files, set_code, write_files
 from eduauto.workspace import ChapterEnterError, advance_level, card_progress_js, enter_chapter, is_passed_row, rewind_to_first, row_at, scrape_status, wait_index_change
 
@@ -201,13 +203,19 @@ def cmd_harvest(args, cfg: dict) -> None:
     · 档案里没有的章节：先补骨架；有已满分关卡再逐关采集；
     · 档案里已有、且已满分关卡的答案都齐了：整章跳过（-f 强制重采）。
     """
-    answers_path = Path(cfg["run"]["answers"])
+    browser = ensure_browser(cfg)
+    course = current_course(browser, cfg)
+    if course is None:
+        die("没有当前课程：先 python3 答题.py cd -ls，再 python3 答题.py cd 序号/课程名")
+    answers_path = course.answers or find_answers_file(cfg, course.code)
+    if answers_path is None:
+        die(f"课程「{course.name}」还没有答案档案：先 python3 答题.py cd {course.name}")
+    cfg["run"]["answers"] = str(answers_path)   # 内部错误提示复用
     chapters = load_answers(answers_path, missing_ok=True)
     todo: list[Chapter] | None = None
     if args.chapter:
         todo = resolve_chapter_args(chapters, args.chapter, strict=False)
-    browser = ensure_browser(cfg)
-    classroom = classroom_page(browser, cfg)
+    classroom = classroom_page(browser, cfg, url=course.classroom)
     ensure_login(browser, classroom.ws)
 
     if args.chapter:
@@ -220,7 +228,7 @@ def cmd_harvest(args, cfg: dict) -> None:
 
         unmatched = [pat for pat in args.chapter if not _in_archive(pat)]
         if unmatched:
-            classroom = classroom_page(browser, cfg, old=classroom)
+            classroom = classroom_page(browser, cfg, old=classroom, url=course.classroom)
             for card in list_classroom_cards(classroom):
                 cn = norm(card["name"])
                 if cn in covered:
@@ -238,7 +246,7 @@ def cmd_harvest(args, cfg: dict) -> None:
         if not targets:
             die("答案档案和课堂里都找不到指定章节。")
     else:
-        classroom = classroom_page(browser, cfg, old=classroom)
+        classroom = classroom_page(browser, cfg, old=classroom, url=course.classroom)
         targets = []
         for c in list_classroom_cards(classroom):
             hits = _book_matches(chapters, c["name"])
@@ -264,7 +272,7 @@ def cmd_harvest(args, cfg: dict) -> None:
         target = None
         page = None
         if ch is None or not ch.homework_id:
-            classroom = classroom_page(browser, cfg, old=classroom)
+            classroom = classroom_page(browser, cfg, old=classroom, url=course.classroom)
             try:
                 target, ws = enter_chapter(browser, classroom, entry_name, on_fail="raise")
             except ChapterEnterError as e:
@@ -281,7 +289,7 @@ def cmd_harvest(args, cfg: dict) -> None:
             hid = ch.homework_id
 
         # 详情表格：这章有哪些关、哪些已满分
-        classroom = classroom_page(browser, cfg, old=classroom)
+        classroom = classroom_page(browser, cfg, old=classroom, url=course.classroom)
         if card is None:
             # 显式指定档案章节时，先等卡片渲染出来并唯一匹配，避免课堂进度读成 0
             card = _match_card(list_classroom_cards(classroom), name)
@@ -298,7 +306,7 @@ def cmd_harvest(args, cfg: dict) -> None:
                 "以下以详情页实读为准")
         expect = prog.get("total") or (card or {}).get("total")
         rows = scrape_status(browser, classroom,
-                             cfg["edge"]["classroom"] + f"/{hid}/detail?tabs=1",
+                             course.classroom + f"/{hid}/detail?tabs=1",
                              expect=expect)
         if not rows:
             if target:
@@ -357,7 +365,7 @@ def cmd_harvest(args, cfg: dict) -> None:
 
         # 进入章节（新章节已在里面了）
         if target is None:
-            classroom = classroom_page(browser, cfg, old=classroom)
+            classroom = classroom_page(browser, cfg, old=classroom, url=course.classroom)
             try:
                 target, ws = enter_chapter(browser, classroom, entry_name, on_fail="raise")
             except ChapterEnterError as e:
@@ -644,8 +652,43 @@ def resolve_chapter_args(chapters: list[Chapter], patterns: list[str],
     return result
 
 
+def cmd_cd(args, cfg: dict) -> None:
+    """选择课程：cd -ls 列课程，cd 序号/名称 进入课程起始页。"""
+    browser = ensure_browser(cfg)
+    page = open_course_list(browser, cfg)
+    ensure_login(browser, page.ws)
+    courses = list_courses(page)
+    if args.list_courses:
+        if not courses:
+            log("没有发现课程")
+        else:
+            log("课程列表：")
+            for i, name in enumerate(courses, 1):
+                log(f"  {i}. {name}")
+        return
+    if not courses:
+        die("没有发现课程")
+    name = choose_course(courses, args.target)
+    target, course = select_course(browser, page, name)
+    ensure_answers_file(cfg, course)
+    if page.target.get("id") and page.target["id"] != target.get("id"):
+        browser.close_target(page.target["id"])
+    log(f"✓ 已进入课程：{course.name}（{course.code}）")
+    log(f"  课程页：{course.classroom}")
+
+
 def cmd_run(args, cfg: dict) -> None:
-    chapters = load_answers(Path(cfg["run"]["answers"]))
+    browser = ensure_browser(cfg)
+    course = current_course(browser, cfg)
+    if course is None:
+        die("没有当前课程：先 python3 答题.py cd -ls，再 python3 答题.py cd 序号/课程名")
+    answers_path = course.answers or find_answers_file(cfg, course.code)
+    if answers_path is None:
+        die(f"课程「{course.name}」还没有答案档案：先 python3 答题.py cd {course.name}")
+    cfg["run"]["answers"] = str(answers_path)
+    chapters = load_answers(answers_path, missing_ok=True)
+    if not chapters:
+        die(f"课程「{course.name}」还没有章节骨架：先 python3 答题.py harvest")
     todo = resolve_chapter_args(chapters, args.chapter)
     if not todo:
         die("答案档案里找不到指定章节。")
@@ -661,8 +704,7 @@ def cmd_run(args, cfg: dict) -> None:
         except (EOFError, KeyboardInterrupt):
             die("已取消。")
 
-    browser = ensure_browser(cfg)
-    classroom = classroom_page(browser, cfg)
+    classroom = classroom_page(browser, cfg, url=course.classroom)
     ensure_login(browser, classroom.ws)
 
     results = {}
@@ -674,7 +716,7 @@ def cmd_run(args, cfg: dict) -> None:
             die(f"章节「{ch.name}」缺少 homework_id，请先 harvest。")
         log("  → 检查平台状态…")
         rows = scrape_status(browser, status_page,
-                             cfg["edge"]["classroom"] + f"/{ch.homework_id}/detail?tabs=1",
+                             course.classroom + f"/{ch.homework_id}/detail?tabs=1",
                              expect=len(ch.levels))
         if not rows:
             log("  ! 详情页没有读到关卡列表，跳过本章")

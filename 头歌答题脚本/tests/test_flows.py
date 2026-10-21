@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import eduauto.flows as flows  # noqa: E402
 from eduauto.archive import Chapter  # noqa: E402
+from eduauto.course import Course  # noqa: E402
 
 passed = failed = 0
 
@@ -38,8 +39,8 @@ class FakeBrowser:
     pass
 
 
-CFG = {"edge": {"classroom": "http://example"},
-       "run": {"answers": "unused.toml", "eval_timeout": 1, "level_timeout": 1}}
+CFG = {"edge": {"courses": "http://example"},
+       "run": {"answers_dir": "unused", "eval_timeout": 1, "level_timeout": 1}}
 
 
 def run_case(proc, rows=None):
@@ -47,10 +48,12 @@ def run_case(proc, rows=None):
                   "levels": [{"name": "L1", "answer": "A", "type": "choice"}]})
     saved = {}
     for name, value in {
-        "load_answers": lambda p: [ch],
+        "load_answers": lambda p, **k: [ch],
         "resolve_chapter_args": lambda chs, pats, strict=True: chs,
         "ensure_browser": lambda cfg: FakeBrowser(),
-        "classroom_page": lambda browser, cfg, old=None: FakePage(),
+        "current_course": lambda browser, cfg: Course(
+            "测试课程", "TEST", "http://example", __import__("pathlib").Path("unused.toml")),
+        "classroom_page": lambda browser, cfg, old=None, url=None: FakePage(),
         "ensure_login": lambda browser, ws=None: None,
         "scrape_status": lambda *a, **k: (rows if rows is not None else [
             {"name": "L1", "full": "10", "score": "0", "status": "未通过"}]),
@@ -169,10 +172,12 @@ def run_real_die_case():
     def body():
         return catch_exit(lambda: flows.cmd_run(Args(), CFG))
 
-    patches = {"load_answers": lambda p: [ch],
+    patches = {"load_answers": lambda p, **k: [ch],
                "resolve_chapter_args": lambda chs, pats, strict=True: chs,
                "ensure_browser": lambda cfg: FakeBrowser(),
-               "classroom_page": lambda browser, cfg, old=None: FakePage(),
+               "current_course": lambda browser, cfg: Course(
+                   "测试课程", "TEST", "http://example", Path("unused.toml")),
+               "classroom_page": lambda browser, cfg, old=None, url=None: FakePage(),
                "ensure_login": lambda browser, ws=None: None,
                "scrape_status": lambda *a, **k: [
                    {"name": "L1", "full": "10", "score": "0", "status": "未通过"}],
@@ -274,17 +279,19 @@ HARGS = type("HArgs", (), {"chapter": [], "force": False})
 def run_harvest_abort(tmp_dir: Path):
     arch = tmp_dir / "answers.toml"
     arch.write_text(HARVEST_FIX, encoding="utf-8")
-    hcfg = {"edge": {"classroom": "http://example"},
-            "run": {"answers": str(arch), "eval_timeout": 1, "level_timeout": 1}}
+    hcfg = {"edge": {"courses": "http://example"},
+            "run": {"answers_dir": str(tmp_dir / "answers"), "eval_timeout": 1, "level_timeout": 1}}
     browser = HarvestBrowser()
     ws = ScrapeWS([{"name": "L1", "full": "10", "score": "10", "status": "已通过"}],
                   {"done": 1, "total": 1, "name": "第一章"})
     patches = {
         "ensure_browser": lambda cfg: browser,
+        "current_course": lambda browser, cfg: Course(
+            "第一章", "abc", "https://cls.test/classrooms/abc/shixun_homework", arch),
         "ensure_login": lambda browser, ws=None: None,
         "list_classroom_cards": lambda page: [
             {"name": "第一章", "hasStart": True, "closed": False, "done": 1, "total": 1}],
-        "classroom_page": lambda b, cfg, old=None: FlowPage(
+        "classroom_page": lambda b, cfg, old=None, url=None: FlowPage(
             ws, {"id": "cls-1", "url": "https://cls.test/classrooms/abc/shixun_homework"}),
         "enter_chapter": lambda b, classroom, name, timeout=20, on_fail="die": (
             {"id": "chap-1", "url": "https://cls.test/tasks/99/555/1"}, None),

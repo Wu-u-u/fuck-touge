@@ -49,10 +49,10 @@ check("_book_lookup 找不到返回 None", _book_lookup([ch], "完全不存在�
 # 配置里的相对答案路径按配置文件所在目录解析
 _cfgdir = Path(tempfile.mkdtemp())
 _cfgfile = _cfgdir / "c.toml"
-_cfgfile.write_text('[run]\nanswers = "rel.toml"\n', encoding="utf-8")
+_cfgfile.write_text('[run]\nanswers_dir = "rel-answers"\n', encoding="utf-8")
 _cfg = load_config(_cfgfile)
-check("answers 相对配置目录", _cfg["run"]["answers"] == str(_cfgdir / "rel.toml"),
-      _cfg["run"]["answers"])
+check("answers_dir 相对配置目录", _cfg["run"]["answers_dir"] == str(_cfgdir / "rel-answers"),
+      _cfg["run"]["answers_dir"])
 
 # Chapter 必须保留 homework_id（run/harvest 依赖）
 _ch0 = Chapter({"name": "测试章", "homework_id": "123", "levels": []})
@@ -191,7 +191,7 @@ check("profile 拒绝非字符串", _cfg_rejected("[edge]\nprofile = 3\n"))
 check("profile 拒绝空串", _cfg_rejected('[edge]\nprofile = ""\n'))
 check("extension 拒绝非字符串", _cfg_rejected("[edge]\nextension = [\"x\"]\n"))
 check("extension 拒绝空串", _cfg_rejected('[edge]\nextension = ""\n'))
-check("classroom 拒绝布尔", _cfg_rejected("[edge]\nclassroom = true\n"))
+check("courses 拒绝布尔", _cfg_rejected("[edge]\ncourses = true\n"))
 
 # profile / extension 相对路径按配置文件所在目录解析
 _rel_dir = Path(tempfile.mkdtemp())

@@ -49,11 +49,12 @@
 
 ```bash
 cd 头歌答题脚本
-python3 答题.py browser            # 启动专用副本浏览器，登录一次头歌
-python3 答题.py harvest            # 扫描章节并采集答案（缺骨架自动补，已截止章节自动跳过）
-# 首次运行会自动创建 answers.toml 骨架，之后可手工补答案
-# 编辑 answers.toml 填答案（代码用三单引号包住完整文件；选择题填字母）
-python3 答题.py run -y             # 开跑：自动跳过已满分关卡，失败暂停（开跑前会列出每关答案状态）
+python3 答题.py browser            # 启动副本浏览器并打开课程列表
+python3 答题.py cd -ls             # 列出课程和序号
+python3 答题.py cd 1               # 进入课程（也可写课程名片段）
+python3 答题.py harvest            # 只处理当前课程：补骨架/采集答案
+# 课程答案在 answers/<课程名>-<课程码>.toml，第一次 cd 自动创建
+python3 答题.py run -y             # 只处理当前课程：自动跳过已满分关卡
 # 章节参数直接跟在命令后，如：run -y 五 七 / harvest 八
 ```
 
