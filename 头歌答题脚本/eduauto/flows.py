@@ -85,8 +85,7 @@ def harvest_levels(page: Page, passed: set, ch: "Chapter | None", force: bool,
             if not force and lv is not None and not lv.answer_empty():
                 log(f"  · 第{idx}关「{st.get('name')}」已有答案，跳过采集（-f 可强制重采）")
             else:
-                hint = lv.multi if lv is not None else None
-                kind, value, note = read_saved_answer(page, st, multi_hint=hint)
+                kind, value, note = read_saved_answer(page, st)
                 if kind:
                     try:
                         multi_flag = False if kind == "code" else (True if kind == "files" else None)

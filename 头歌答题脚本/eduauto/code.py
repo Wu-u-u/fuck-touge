@@ -163,8 +163,10 @@ def close_file_menu(page: Page) -> None:
             continue
         page.ws.mouse_click(pos["x"], pos["y"])
         time.sleep(0.3)
-    log("    ！「代码文件」下拉收不起来（移开鼠标和点击触发器都无效）")
-    raise RuntimeError("「代码文件」下拉无法收起，已停止（遮罩会吞掉后续点击）")
+    # 下拉收起检测存在抖动（平台 re-render/鼠标位置），这里不再中断流程：
+    # 记录告警并返回 False，调用方继续；真正被遮罩吞点击时后续步骤会自行报错。
+    log("    ！「代码文件」下拉收不起来（移开鼠标和点击触发器都无效），继续尝试后续步骤")
+    return False
 
 
 def list_code_files(page: Page) -> tuple[list[str], str]:

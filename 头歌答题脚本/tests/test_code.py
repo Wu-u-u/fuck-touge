@@ -260,7 +260,7 @@ TPL = "// 请在此填写代码\npublic class Demo {}\n"
 EDITOR_OK = "class Main { public static void main(String[] a) { System.out.println(1); } }"
 
 
-def run_rsa(st, record="unset", editor="unset", paths=("Main.java",), hint=None):
+def run_rsa(st, record="unset", editor="unset", paths=("Main.java",)):
     """mock 掉页面交互，跑 read_saved_answer；返回 (结果, 各函数调用计数)。"""
     nums = {"close": 0, "rec": 0, "editor": 0, "multi": 0, "list": 0}
 
@@ -291,7 +291,7 @@ def run_rsa(st, record="unset", editor="unset", paths=("Main.java",), hint=None)
             mock.patch.object(answers, "list_code_files", _list), \
             mock.patch.object(answers, "read_saved_files", _multi), \
             contextlib.redirect_stdout(io.StringIO()):
-        return answers.read_saved_answer(FakePage(FakeWS()), st, multi_hint=hint), nums
+        return answers.read_saved_answer(FakePage(FakeWS()), st), nums
 
 
 S1 = {"hasEditor": True, "models": 1}
@@ -319,9 +319,9 @@ r, n = run_rsa(S1, record="raise", editor=EDITOR_OK)
 check("单文件：评测记录读取异常回退编辑器",
       r[0] == "code" and r[1] == EDITOR_OK and "评测记录也没读到" in r[2], str(r))
 
-r, n = run_rsa(S1, record=None, editor=EDITOR_OK, hint=False)
-check("单文件提示 multi=False：跳过文件下拉检测",
-      r[0] == "code" and r[1] == EDITOR_OK and n["list"] == 0, str(n))
+r, n = run_rsa(S1, record=None, editor=EDITOR_OK, paths=("a.java", "b.java"))
+check("档案 multi 过期时仍检测到多文件",
+      r[0] == "files" and n["multi"] == 1, str(r))
 
 r, n = run_rsa(S1, record=REC)               # 不碰编辑器
 check("单文件：真实记录可用即使用，绝不落回占位编辑器",
@@ -343,13 +343,12 @@ r, n = run_rsa(S1, paths=("a.java", "b.java"))
 check("多文件路径不变：走 read_saved_files", r == ("files", [], "多文件")
       and n["multi"] == 1 and n["close"] == 0 and n["rec"] == 0, str(n))
 
-# ── 6. close_file_menu：收不起来必须报错 ──────────────────────────
-with fast_sleep(), contextlib.redirect_stdout(io.StringIO()):
-    try:
-        code.close_file_menu(FakePage(FakeWS(items=[_item("a.py")])))
-        check("三轮收不起来 → RuntimeError", False, "没有抛错")
-    except RuntimeError as e:
-        check("三轮收不起来 → RuntimeError", "无法收起" in str(e) and "遮罩" in str(e), str(e))
+# ── 6. close_file_menu：收不起来告警但继续 ────────────────────────
+_buf = io.StringIO()
+with fast_sleep(), contextlib.redirect_stdout(_buf):
+    _ret = code.close_file_menu(FakePage(FakeWS(items=[_item("a.py")])))
+check("三轮收不起来 → 告警并返回 False",
+      _ret is False and "收不起来" in _buf.getvalue(), _buf.getvalue())
 
 with fast_sleep(), contextlib.redirect_stdout(io.StringIO()):
     ws5 = FakeWS(items=[_item("a.py")])
