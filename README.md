@@ -4,7 +4,7 @@
 
 | 组件 | 形态 | 作用 |
 |---|---|---|
-| **Fuck头歌** | Edge / Chromium 浏览器扩展（MV3） | 解锁粘贴/复制、阻止头歌篡改剪贴板、答对自动「下一关」、编辑器美化（主题/字体/光标）+ 页面深色皮肤 |
+| **Fuck头歌** | Edge / Chromium 浏览器扩展（MV3，TypeScript + esbuild） | 解锁粘贴/复制、阻止头歌篡改剪贴板、答对自动「下一关」、编辑器美化（主题/字体/光标）+ 页面深色皮肤 |
 | **头歌答题脚本** | Python 半自动答题器（零第三方依赖） | 按「标准答案档案」自动填答案、点评测，自动跳过已满分关卡、整章刷完自动换章；支持自动采集已做完的答案、多代码文件关卡（v0.9）、多账号档案槽 |
 
 仅供学习交流，**禁止倒卖与盈利**。使用本工具产生的一切后果由使用者自负。
@@ -15,11 +15,11 @@
 
 ```
 .
-├── Fuck头歌/          # 浏览器扩展（加载解压缩的扩展即可用）
-│   ├── manifest.json
-│   ├── 允许粘贴.js     # 核心逻辑：剪贴板保护 + 自动下一关 + 编辑器增强 + 页面皮肤
-│   ├── popup.html/js  # 扩展弹窗
-│   └── fonts/         # 内置 Maple Mono 字体（OFL 协议）
+├── Fuck头歌/          # 扩展源码（TypeScript + esbuild）与构建脚本
+│   ├── src/          # 源码：content / features / shared / ui / popup / api
+│   ├── tests/unit/   # Vitest 单测
+│   ├── build.mjs     # 构建脚本（输出 dist/，不入库）
+│   └── dist/         # 构建产物（Edge 加载这个文件夹）
 ├── 头歌答题脚本/       # Python 自动答题器
 │   ├── 答题.py         # CLI 入口（browser / harvest / run）
 │   ├── eduauto/       # 逻辑模块：配置 / 浏览器 / 关卡 / 编辑器 / 答案 / 流程
@@ -37,8 +37,10 @@
 
 ### 一、浏览器扩展（Fuck头歌）
 
-1. 下载本仓库（或到 **Releases** 下载最新的 `FuckTouge-v0.9.22.zip` 答题脚本包 / `FuckTouge-v2.4.7.zip` 扩展包）；
-2. Edge → 扩展 → 管理扩展 → 打开「开发人员选项」→「加载解压缩的扩展」→ 选择 `Fuck头歌` 文件夹；
+1. 构建（需要 Node.js ≥ 20）：`cd Fuck头歌 && npm ci && npm run build`，产物在 `Fuck头歌/dist/`；
+   也可以直接下载 **Releases** 里的 `FuckTouge-v2.5.0.zip`（已构建好，解压即用）。
+2. Edge → 扩展 → 管理扩展 → 打开「开发人员选项」→「加载解压缩的扩展」→ 选择 `Fuck头歌/dist` 文件夹
+   （用 zip 的话，选择解压后的 `Fuck头歌` 文件夹）；
 3. 打开头歌页面刷新即生效。
 
 功能：解除粘贴/复制限制、拦截头歌往剪贴板写空格、答对自动点「下一关/最后一关/完成」、Catppuccin / GitHub 高对比主题、Maple Mono 字体、光标动画、页面皮肤（选择题等无编辑器页面也保持深色）。
@@ -86,4 +88,4 @@ python3 答题.py run -y             # 开跑：自动跳过已满分关卡，�
 
 ## License
 
-代码采用 MIT 协议；`Fuck头歌/fonts/` 下的 Maple Mono 字体遵循其自身 OFL 协议（见 `fonts/LICENSE.txt`）。
+代码采用 MIT 协议；`Fuck头歌/src/assets/fonts/` 下的 Maple Mono 字体遵循其自身 OFL 协议（构建后位于 `dist/fonts/LICENSE.txt`）。

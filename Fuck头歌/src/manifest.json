@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Fuck 头歌",
-  "version": "2.4.7",
+  "version": "2.5.0",
   "description": "仅作用于头歌：允许粘贴/复制、阻止剪贴板被篡改、答对自动下一关，支持部分美化功能；不影响其他网页，可一直开启。\n仅用于学习，禁止倒卖与盈利 by Wuuu。\n可能因头歌更新失效，可联系作者跟进。",
   "icons": {
     "16": "icon16.png",
@@ -17,24 +17,39 @@
       "128": "icon128.png"
     }
   },
-  "permissions": ["scripting", "activeTab"],
+  "permissions": [
+    "scripting",
+    "activeTab"
+  ],
   "web_accessible_resources": [
     {
-      "resources": ["fonts/*"],
-      "matches": ["*://*.educoder.net/*"]
+      "resources": [
+        "fonts/*"
+      ],
+      "matches": [
+        "*://*.educoder.net/*"
+      ]
     }
   ],
   "content_scripts": [
     {
-      "matches": ["*://*.educoder.net/*"],
-      "js": ["允许粘贴.js"],
+      "matches": [
+        "*://*.educoder.net/*"
+      ],
+      "js": [
+        "允许粘贴.js"
+      ],
       "run_at": "document_start",
       "world": "MAIN",
       "all_frames": true
     },
     {
-      "matches": ["*://*.educoder.net/*"],
-      "js": ["fonts.js"],
+      "matches": [
+        "*://*.educoder.net/*"
+      ],
+      "js": [
+        "fonts.js"
+      ],
       "run_at": "document_start",
       "all_frames": true
     }
