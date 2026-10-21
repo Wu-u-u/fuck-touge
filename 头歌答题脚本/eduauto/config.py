@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 import json
 import math
+
+try:
+    import fcntl
+except ImportError:  # Windows 等没有 fcntl：退化为无锁
+    fcntl = None
 import os
 import re
 import time
@@ -185,7 +191,30 @@ def apply_current_profile(cfg: dict) -> str:
     return ""
 
 
-def setup_slot(cfg: dict, arg: str | None) -> tuple[str, str, str]:
+@contextmanager
+def state_lock():
+    """state.json 的跨进程读-改-写锁（同一进程可重入外部调用）。"""
+    if fcntl is None:
+        yield
+        return
+    lock_path = STATE_FILE.with_name(STATE_FILE.name + ".lock")
+    with open(lock_path, "a+") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
+def update_state(**updates) -> None:
+    """加锁读取-合并-原子写回（只改传入的字段，不覆盖别的进程更新）。"""
+    with state_lock():
+        state = load_state()
+        state.update(updates)
+        save_state(state)
+
+
+def _setup_slot_locked(cfg: dict, arg: str | None) -> tuple[str, str, str]:
     """解析 browser 的槽位参数并记住，返回 (槽位名, 档案路径, 备注)。
 
       browser 1       记住并切到 1 号档案（1 号默认就是 config 里的档案）
@@ -253,12 +282,18 @@ def setup_slot(cfg: dict, arg: str | None) -> tuple[str, str, str]:
     return n, prof, note
 
 
+def setup_slot(cfg: dict, arg: str | None) -> tuple[str, str, str]:
+    with state_lock():
+        return _setup_slot_locked(cfg, arg)
+
+
 def remember_name(slot: str, name: str) -> None:
     """把账号名记进 state.json 的 names 映射（供 browser -ls 显示）。"""
     if not slot or not name:
         return
-    state = load_state()
-    names = state.setdefault("names", {})
-    if names.get(slot) != name:
-        names[slot] = name
-        save_state(state)
+    with state_lock():
+        state = load_state()
+        names = state.setdefault("names", {})
+        if names.get(slot) != name:
+            names[slot] = name
+            save_state(state)

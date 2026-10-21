@@ -9,7 +9,7 @@ import time
 import cdp
 from eduauto.page import Page
 from eduauto.util import die, log
-from eduauto.config import load_state, remember_name, save_state
+from eduauto.config import load_state, remember_name, save_state, update_state
 
 def port_alive(port: int) -> bool:
     try:
@@ -123,10 +123,8 @@ def ensure_browser(cfg: dict) -> cdp.Browser:
         need_launch = True
     if need_launch:
         launch_edge(cfg)
-    state = load_state()
-    state["running"] = cur
-    state["running_profile"] = os.path.expanduser(str(cfg["edge"]["profile"]))
-    save_state(state)
+    update_state(running=cur,
+                 running_profile=os.path.expanduser(str(cfg["edge"]["profile"])))
     browser = connect_browser(port)
     ensure_window_size(browser)
     try:

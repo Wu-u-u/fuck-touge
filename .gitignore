@@ -10,6 +10,7 @@ install-zen-edge.sh
 
 # 脚本运行时产物
 头歌答题脚本/state.json
+头歌答题脚本/state.json.lock
 头歌答题脚本/answers.toml
 **/__pycache__/
 *.pyc
