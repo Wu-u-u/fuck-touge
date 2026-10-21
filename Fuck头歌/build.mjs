@@ -17,6 +17,21 @@ if (manifest.version !== pkg.version) {
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 
+// 支持 `import css from "./x.css?raw"`（Vite/Vitest 原生；esbuild 用 text loader 等价实现）
+const rawCssPlugin = {
+  name: "raw-css",
+  setup(buildApi) {
+    buildApi.onResolve({ filter: /\?raw$/ }, (args) => ({
+      path: resolve(args.resolveDir, args.path.slice(0, -4)),
+      namespace: "raw-css",
+    }));
+    buildApi.onLoad({ filter: /.*/, namespace: "raw-css" }, (args) => ({
+      contents: readFileSync(args.path, "utf8"),
+      loader: "text",
+    }));
+  },
+};
+
 await build({
   entryPoints: {
     "允许粘贴": join(root, "src/content/main.ts"),
@@ -33,6 +48,7 @@ await build({
   legalComments: "inline",
   banner: { js: "//! Fuck头歌 — 由 src/ 构建生成，请勿直接编辑 dist" },
   logLevel: "info",
+  plugins: [rawCssPlugin],
 });
 
 // 静态资源

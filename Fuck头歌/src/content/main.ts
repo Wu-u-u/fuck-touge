@@ -12,6 +12,9 @@ import { createEditorManager } from "../features/editor";
 import { createThemeController } from "../features/theme/apply";
 import { normalizeThemeName, THEME_CHOICES } from "../features/theme/themes";
 import { createTokenizerController } from "../features/theme/tokenizer";
+import { createCursorController } from "../features/cursor";
+import { FONT_OPTIONS, createFontController, shouldAskFont } from "../features/font";
+import { createSkinController } from "../features/theme/skin";
 import { createFontPrompt } from "../ui/prompt";
 import { toast } from "../ui/toast";
 
@@ -33,12 +36,6 @@ import { toast } from "../ui/toast";
   const UI_FONT_KEY = "fuckTougeFont";         // 字体开关（首次询问）
   const UI_FONT_ASKED = "fuckTougeFontAsked";  // 字体是否已询问
   const UI_CURSOR_KEY = "fuckTougeCursor";     // 光标平滑动画（默认关）
-  const UI_OPTIONS = {
-    fontFamily: "'Maple Mono NF CN', 'Maple Mono Web', 'Maple Mono', monospace",
-    fontLigatures: true,
-    bracketPairColorization: { enabled: true },
-    guides: { bracketPairs: true },
-  };
   let themeOn = true, fontOn = false, fontAsked = false, themeName = "catppuccin", cursorOn = false;
   try {
     const old = localStorage.getItem("fuckTougeUI");   // 旧版单一开关 → 平滑迁移（迁移后即删，否则会永远覆盖新开关）
@@ -73,206 +70,32 @@ import { toast } from "../ui/toast";
     tokenizer,
   });
 
-  // 读取原值：字体项用于恢复默认；光标项单独存（闪烁样式 + 平滑动画），避免两类设置互相覆盖
-  const readOrigOptions = ed => {
-    try {
-      const EO = window.Monaco?.editor?.EditorOption;
-      if (!EO) return { font: {}, cursor: null };
-      return {
-        font: {
-          fontFamily: ed.getOption(EO.fontFamily),
-          fontLigatures: ed.getOption(EO.fontLigatures),
-          bracketPairColorization: ed.getOption(EO.bracketPairColorization),
-        },
-        cursor: {   // 备份原光标行为：光标开关关闭时按原值还原，而不是把 cursorBlinking 永远留在 smooth
-          blinking: EO.cursorBlinking ? ed.getOption(EO.cursorBlinking) : undefined,
-          caret: EO.cursorSmoothCaretAnimation ? ed.getOption(EO.cursorSmoothCaretAnimation) : undefined,
-        },
-      };
-    } catch (e) { return { font: {}, cursor: null }; }
-  };
+  // 字体 / 光标控制器（模块化）
+  const fontController = createFontController({
+    getEditors: () => editorManager.getEditors(),
+    isFontOn: () => fontOn,
+    getMonaco: () => window.Monaco,
+  });
+  const applyFont = () => fontController.apply();
+
+  const cursorController = createCursorController({
+    getEditors: () => editorManager.getEditors(),
+    isCursorOn: () => cursorOn,
+    getMonaco: () => window.Monaco,
+  });
+  const applyCursor = () => cursorController.apply();
 
   const applyTheme = () => themeController.apply();
 
-  const applyFont = () => {
-    editorManager.getEditors().forEach(({ ed, orig, disposed }) => {
-      if (disposed) return;                    // 已销毁的编辑器不再碰
-      try { ed.updateOptions(fontOn ? UI_OPTIONS : orig); } catch (e) {}
-    });
-    if (fontOn) { try { document.fonts?.ready?.then(() => window.Monaco?.editor?.remeasureFonts?.()); } catch (e) {} }
-  };
-
-  // 光标手感：开启 = 柔和闪烁 + 平滑移动（此版本只有开/关，打字时也会滑）；
-  // 关闭 = 按 readOrigOptions 备份的原值还原（以前强制 smooth 且从不还原，会一直顶掉页面自己的光标设置）
-  const cursorOptions = orig => {
-    const EO = window.Monaco?.editor?.EditorOption;
-    if (!orig || !EO?.cursorBlinking) return {};
-    const opts = { cursorBlinking: cursorOn ? "smooth" : orig.blinking };
-    if (EO.cursorSmoothCaretAnimation) opts.cursorSmoothCaretAnimation = cursorOn ? true : orig.caret;
-    return opts;
-  };
-
-  const applyCursor = () => {
-    editorManager.getEditors().forEach(({ ed, cursorOrig, disposed }) => {
-      if (disposed) return;                    // 已销毁的编辑器不再碰
-      try { ed.updateOptions(cursorOptions(cursorOrig)); } catch (e) {}
-    });
-  };
-
-  /* ── 页面皮肤：把平台的浅色骨架（含左侧任务区）换成主题深色 ──
-     无编辑器的页面（选择题等）同样生效；随 主题/主题名/字体 开关即时切换 */
-  const SKIN_CSS = `
-html[data-ft-skin] { color-scheme: dark; background: var(--ft-bg) !important; }
-html[data-ft-skin="catppuccin"] {
-  --ft-bg: #1e1e2e; --ft-panel: #181825; --ft-panel2: #11111b; --ft-border: #313244;
-  --ft-text: #cdd6f4; --ft-dim: #a6adc8; --ft-link: #89b4fa; --ft-accent: #89b4fa; --ft-accent-fg: #1e1e2e;
-  --ft-sel: rgba(137, 180, 250, .35); --ft-hover: rgba(255, 255, 255, .05);
-  --ft-code-bg: #11111b; --ft-code-border: #313244; --ft-code-text: #cdd6f4;
-  --ft-kw: #cba6f7; --ft-typ: #f9e2af; --ft-str: #a6e3a1; --ft-com: #6c7086; --ft-num: #fab387; --ft-fun: #89b4fa; --ft-pun: #9399b2;
-}
-html[data-ft-skin="github"] {
-  --ft-bg: #0a0c10; --ft-panel: #0f1216; --ft-panel2: #0a0c10; --ft-border: #2b323b;
-  --ft-text: #f0f3f6; --ft-dim: #bdc4cc; --ft-link: #71b7ff; --ft-accent: #71b7ff; --ft-accent-fg: #0a0c10;
-  --ft-sel: rgba(113, 183, 255, .35); --ft-hover: rgba(255, 255, 255, .06);
-  --ft-code-bg: #12151b; --ft-code-border: #2b323b; --ft-code-text: #f0f3f6;
-  --ft-kw: #ff9492; --ft-typ: #ffb757; --ft-str: #addcff; --ft-com: #bdc4cc; --ft-num: #91cbff; --ft-fun: #dbb7ff; --ft-pun: #bdc4cc;
-}
-html[data-ft-skin] ::selection { background: var(--ft-sel); }
-html[data-ft-skin] body { background: var(--ft-bg) !important; color: var(--ft-text); }
-html[data-ft-skin] .task-header-container { background: var(--ft-panel2) !important; }
-html[data-ft-skin] .task-header { background: var(--ft-panel) !important; color: var(--ft-text); }
-html[data-ft-skin] .task-header :is(h1, h2, h3) { color: var(--ft-text); }
-html[data-ft-skin] [class*="tab-nav"] { background: var(--ft-panel) !important; border-color: var(--ft-border); }
-html[data-ft-skin] [class*="tab-nav"] a { color: var(--ft-dim); }
-html[data-ft-skin] [class*="tab-nav"] a:hover, html[data-ft-skin] [class*="tab-nav"] a[class*="active"] { color: var(--ft-text); }
-html[data-ft-skin] .left-panel { background: var(--ft-panel) !important; color: var(--ft-text); }
-html[data-ft-skin] .left-panel :is(h1, h2, h3, h4, h5, h6) { color: var(--ft-text); }
-html[data-ft-skin] .left-panel :is(p, li, td, th, dl, dd) { color: var(--ft-text); }
-html[data-ft-skin] .left-panel a { color: var(--ft-link); }
-html[data-ft-skin] .left-panel hr { border-color: var(--ft-border); background: var(--ft-border); }
-html[data-ft-skin] .left-panel :is(table, th, td) { border-color: var(--ft-border); }
-html[data-ft-skin] .left-panel th { background: var(--ft-code-bg); }
-html[data-ft-skin] .left-panel blockquote { color: var(--ft-dim); border-left-color: var(--ft-border); }
-html[data-ft-skin] :is(.right-panel, [class*="code-area-container"]) { background: var(--ft-bg) !important; color: var(--ft-text); }
-html[data-ft-skin] :is([class*="test-set-container"], [class*="action-container"]) { background: var(--ft-panel2) !important; color: var(--ft-text); }
-html[data-ft-skin] ul.choose-container { background: transparent !important; }
-html[data-ft-skin] [class*="resize-y-bar"] { background: var(--ft-border) !important; }
-html[data-ft-skin] [class*="scrollbarTrack"] { background: transparent !important; }
-html[data-ft-skin] [class*="scrollbarThumb"] { background: var(--ft-border) !important; }
-html[data-ft-skin] [class*="test-header"] { background: var(--ft-panel2) !important; }
-html[data-ft-skin] [class*="test-case-item"] { background: var(--ft-panel) !important; }
-html[data-ft-skin] [class*="choose-game-item"] { background: var(--ft-panel2) !important; }
-html[data-ft-skin] [class*="ghost-link"] { background: transparent !important; }
-html[data-ft-skin] .right-panel :is(h1, h2, h3, h4, h5, h6, p, li) { color: var(--ft-text); }
-html[data-ft-skin] .right-panel a { color: var(--ft-link); }
-html[data-ft-skin] ul.choose-container :is(p, span, div) { color: var(--ft-text); }
-html[data-ft-skin] ul.choose-container p.order { color: var(--ft-dim); }
-html[data-ft-skin] .ant-radio-wrapper { color: var(--ft-text); }
-html[data-ft-skin] .ant-radio-inner { background: transparent; border-color: var(--ft-border); }
-html[data-ft-skin] .ant-radio-wrapper:hover .ant-radio-inner { border-color: var(--ft-accent); }
-html[data-ft-skin] .ant-radio-wrapper-checked .ant-radio-inner { border-color: var(--ft-accent); }
-html[data-ft-skin] .ant-radio-checked .ant-radio-inner::after { background: var(--ft-accent); }
-html[data-ft-skin] :is([class*="mdBody"], .markdown-body) :is(p, li, td, th, h1, h2, h3, h4, h5, h6) { color: var(--ft-text); }
-html[data-ft-skin] :is([class*="mdBody"], .markdown-body) a { color: var(--ft-link); }
-html[data-ft-skin] :is([class*="mdBody"], .markdown-body) :is(table, th, td) { border-color: var(--ft-border); }
-html[data-ft-skin] :is([class*="mdBody"], .markdown-body) th { background: var(--ft-code-bg); }
-html[data-ft-skin] pre.prettyprint, html[data-ft-skin] :is([class*="mdBody"], .markdown-body) pre {
-  background: var(--ft-code-bg) !important; color: var(--ft-code-text) !important;
-  border: 1px solid var(--ft-code-border) !important; border-radius: 6px;
-}
-html[data-ft-skin] pre.prettyprint code { background: transparent !important; border: 0 !important; padding: 0; color: inherit; }
-html[data-ft-skin] :is(.left-panel, [class*="mdBody"], .markdown-body) code {
-  background: var(--ft-code-bg); color: var(--ft-code-text); border: 1px solid var(--ft-code-border); border-radius: 4px; padding: 1px 5px;
-}
-html[data-ft-skin] .prettyprint :is(.kwd, .tag) { color: var(--ft-kw); }
-html[data-ft-skin] .prettyprint .typ { color: var(--ft-typ); }
-html[data-ft-skin] .prettyprint :is(.str, .atv) { color: var(--ft-str); }
-html[data-ft-skin] .prettyprint .com { color: var(--ft-com); font-style: italic; }
-html[data-ft-skin] .prettyprint :is(.dec, .atn) { color: var(--ft-fun); }
-html[data-ft-skin] .prettyprint .lit { color: var(--ft-num); }
-html[data-ft-skin] .prettyprint .pln { color: var(--ft-code-text); }
-html[data-ft-skin] .prettyprint :is(.pun, .opn, .clo) { color: var(--ft-pun); }
-html[data-ft-skin] [class*="btn-run"] { background: var(--ft-accent) !important; border-color: var(--ft-accent) !important; color: var(--ft-accent-fg) !important; }
-html[data-ft-skin] [class*="btn-run"][disabled] { opacity: .55; }
-html[data-ft-skin] [class*="ghost-link"] { color: var(--ft-link) !important; border-color: var(--ft-link) !important; }
-html[data-ft-skin] pre.prettyprint ol.linenums li { background: transparent; }
-html[data-ft-skin] .ant-btn { background: var(--ft-panel); border-color: var(--ft-border); color: var(--ft-text); }
-html[data-ft-skin] .ant-btn:hover { background: var(--ft-code-bg); border-color: var(--ft-accent); color: var(--ft-accent); }
-html[data-ft-skin] [class*="tabs___"] { background: var(--ft-panel) !important; border-color: var(--ft-border); }
-html[data-ft-skin] [class*="tabs___"] :is(div, span, a, button) { color: var(--ft-text); }
-html[data-ft-skin] .ant-table { background: transparent; color: var(--ft-text); }
-html[data-ft-skin] .ant-table-thead > tr > th { background: var(--ft-panel) !important; color: var(--ft-text) !important; border-color: var(--ft-border) !important; }
-html[data-ft-skin] .ant-table-tbody > tr > td { border-color: var(--ft-border); color: var(--ft-text); }
-html[data-ft-skin] tr.ant-table-placeholder { background: transparent !important; }
-html[data-ft-skin] .ant-table-placeholder > td, html[data-ft-skin] .ant-table-placeholder:hover > td { background: transparent !important; color: var(--ft-dim); }
-html[data-ft-skin] :is(.ant-skeleton-avatar, .ant-skeleton-title, .ant-skeleton-paragraph > li) { background: rgba(255, 255, 255, .08) !important; }
-html[data-ft-skin] [class*="content-wrapper"] div[style*="background: rgb(255, 255, 255)"] { background: transparent !important; }
-html[data-ft-skin] .ant-table-tbody > tr:hover > td { background: var(--ft-hover) !important; }
-html[data-ft-skin] .ant-empty-description { color: var(--ft-dim); }
-html[data-ft-skin] .ant-pagination-item { background: transparent; border-color: var(--ft-border); }
-html[data-ft-skin] .ant-pagination-item > a { color: var(--ft-text); }
-html[data-ft-skin] .ant-pagination-item-active { background: var(--ft-accent); border-color: var(--ft-accent); }
-html[data-ft-skin] .ant-pagination-item-active > a { color: var(--ft-accent-fg); }
-html[data-ft-skin] .ant-pagination-item-link { background: transparent; border-color: var(--ft-border); color: var(--ft-text); }
-html[data-ft-skin] .ant-pagination-disabled .ant-pagination-item-link { color: var(--ft-dim); opacity: .5; }
-html[data-ft-font] :is(pre, code, kbd, samp, ol.linenums),
-html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .markdown-body, [class*="task-header"],
-  [class*="task-header-container"], [class*="tab-nav"], [class*="action-container"], [class*="test-set-container"],
-  [class*="choose-container"], [class*="content-wrapper"]) :is(p, li, dd, dt, td, th, blockquote, h1, h2, h3, h4, h5, h6,
-  a, strong, em, b, label, button, span:not([class*="icon"]):not(.anticon)) { font-family: 'Maple Mono NF CN', 'Maple Mono Web', 'Maple Mono', Consolas, 'Courier New', monospace !important; }
-`;
-
-  const isAnswerPage = () => /^\/tasks\/[^/]+\/[^/]+\/[^/]+/.test(location.pathname);   // 答题页（…/tasks/课程/关卡组/关卡）
-
-  const HEAD_WAIT_MS = 5000;   // 等 <head> 的上限：等不到再退回 documentElement
-  let skinStyle = null;        // 在途（还没挂上）的样式节点；挂上/放弃后置回 null，页面删掉时可重建
-  const attachSkinStyle = () => {
-    const pending = skinStyle;
-    skinStyle = null;
-    if (!pending) return;
-    try {
-      const root = document.head || document.documentElement;
-      if (root && !pending.isConnected) root.appendChild(pending);
-    } catch (e) { /* 挂载失败就放弃，下次 applySkin 发现缺样式会重建 */ }
-  };
-  // 皮肤样式：document_start 时 <head> 可能还没出现，直接挂 documentElement 虽然也生效，
-  // 但页面骨架载入后容易被整体替换掉——所以等 head 出现（MutationObserver，另设超时上限），
-  // 上限 HEAD_WAIT_MS 内没等到再退回 documentElement，保证样式最终一定挂上
-  const injectSkinStyle = () => {
-    if (skinStyle || $("#ft-skin-style")) return;   // 已挂上 / 已在途就不重复注入
-    const style = document.createElement("style");
-    style.id = "ft-skin-style";
-    style.textContent = SKIN_CSS;
-    skinStyle = style;
-    if (document.head) { attachSkinStyle(); return; }
-    let mo = null;
-    const cap = setTimeout(() => {
-      try { mo?.disconnect(); } catch (e) {}
-      attachSkinStyle();
-    }, HEAD_WAIT_MS);
-    try {
-      mo = new MutationObserver(() => {
-        if (!document.head) return;
-        clearTimeout(cap);
-        try { mo.disconnect(); } catch (e) {}
-        attachSkinStyle();
-      });
-      mo.observe(document, { childList: true, subtree: true });
-    } catch (e) {
-      clearTimeout(cap);
-      attachSkinStyle();
-    }
-  };
-  const applySkin = () => {
-    const el = document.documentElement;
-    if (!el) { setTimeout(applySkin, 10); return; }   // document_start 早期可能还没有 <html>
-    const on = isAnswerPage();                        // 皮肤只作用于答题页，主页/目录保持平台原样
-    themeOn && on ? el.setAttribute("data-ft-skin", themeName === "github" ? "github" : "catppuccin")
-                  : el.removeAttribute("data-ft-skin");
-    fontOn && on ? el.setAttribute("data-ft-font", "") : el.removeAttribute("data-ft-font");
-    if (on && (themeOn || fontOn)) injectSkinStyle();   // 去重/等 head/超时兜底都在这里面
-  };
+  /* ── 页面皮肤（模块化） ── */
+  const skinController = createSkinController({
+    isThemeOn: () => themeOn,
+    getThemeName: () => themeName,
+    isFontOn: () => fontOn,
+  });
+  const applySkin = () => skinController.apply();
   applySkin();
+
   // 单页应用内切换界面（主页 ↔ 答题页等）时同步开关
   const watchLocation = () => {
     try {
@@ -347,7 +170,7 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
 
   // 首次使用询问（只问一次）+ 弹窗 API（模块化，依赖显式传入）
   const fontPrompt = createFontPrompt({
-    shouldAsk: () => !fontAsked && !fontOn,
+    shouldAsk: () => shouldAskFont(fontAsked, fontOn),
     setFont: setFontState,
   });
   const uiState = () => ({ theme: themeOn, font: fontOn, themeName, cursor: cursorOn });
@@ -379,11 +202,10 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
         const el = $(".monaco-editor");
         if (el) themeController.observeEditorTheme(el);
       }
-      const orig = readOrigOptions(entry.ed);
-      entry.orig = orig.font;
-      entry.cursorOrig = orig.cursor;
-      if (fontOn) { try { entry.ed.updateOptions(UI_OPTIONS); } catch (e) {} }
-      try { entry.ed.updateOptions(cursorOptions(orig.cursor)); } catch (e) {}
+      entry.orig = fontController.readOptions(entry.ed);
+      entry.cursorOrig = cursorController.readOptions(entry.ed);
+      if (fontOn) { try { entry.ed.updateOptions(FONT_OPTIONS); } catch (e) {} }
+      try { entry.ed.updateOptions(cursorController.options(entry.cursorOrig)); } catch (e) {}
     },
     onMonacoHooked: (M) => themeController.onAttached(M),
   });
