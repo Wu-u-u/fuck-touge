@@ -81,12 +81,27 @@ class ChapterEnterError(RuntimeError):
     """进入章节失败（没找到可点的动作按钮，或点击后没有新标签页）。"""
 
 
+def wait_cards(page: Page, timeout: float = 10) -> bool:
+    """等课堂章节卡片渲染出来（SPA 异步；新开的课堂页常常先空白）。"""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            if page.ws.eval("document.querySelectorAll('[class*=\"listItem\"]').length > 0"):
+                return True
+        except cdp.CDPError:
+            break
+        time.sleep(0.25)
+    return False
+
+
 def enter_chapter(browser: cdp.Browser, classroom: Page, chapter_name: str,
                   timeout: float = 20, on_fail: str = "die") -> tuple[dict, cdp.WS]:
     """在课堂页点某章的「开始学习」，返回（新标签页 target, 其会话）。
 
     课堂列表刷新时有 ant-spin 遮罩会挡住点击，这里会等遮罩消失并校验落点，失败自动重试。
     """
+    if not wait_cards(classroom, 10):
+        log("  ! 课堂卡片 10 秒内没有渲染出来，仍尝试查找…")
     before = {t["id"] for t in browser.pages()}
     last_reason = ""
     for attempt in range(4):

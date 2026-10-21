@@ -9,6 +9,7 @@ import io  # noqa: E402
 import json  # noqa: E402
 import tempfile  # noqa: E402
 import threading  # noqa: E402
+from unittest import mock  # noqa: E402
 
 import eduauto.config as config  # noqa: E402
 from eduauto.answers import answer_to_toml, looks_like_template  # noqa: E402
@@ -264,6 +265,16 @@ try:
     _st = load_state()
     check("state current 类型错误只删除该字段",
           _st.get("slots") == {"1": "/p1"} and "current" not in _st, str(_st))
+
+    # 瞬时读取失败：不能把完好的 state 隔离掉
+    config.STATE_FILE.write_text(json.dumps({"slots": {"1": "/p1"}, "current": "1"}),
+                                 encoding="utf-8")
+    _bad = config.STATE_FILE.with_name("state.json.bad")
+    _bad.unlink(missing_ok=True)
+    with mock.patch("pathlib.Path.read_text", side_effect=OSError("busy")):
+        _st3 = load_state()
+    check("state 瞬时读取失败不隔离",
+          _st3 == {} and config.STATE_FILE.exists() and not _bad.exists())
 
     # state 锁：两个线程并发 update_state 不能互相覆盖
     thread_state = _state_dir / "thread-state.json"

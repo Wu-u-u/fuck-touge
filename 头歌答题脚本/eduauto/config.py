@@ -134,7 +134,9 @@ def load_state() -> dict:
     except json.JSONDecodeError as e:
         return _quarantine_state(f"JSON 语法错误：{e}")
     except OSError as e:
-        return _quarantine_state(f"读取失败：{e}")
+        # 瞬时读取失败（权限/并发替换间隙）不要隔离整份 state，避免误丢槽位记忆
+        log(f"  ! state.json 读取失败（{e}），本次使用空状态，原文件保留")
+        return {}
     if not isinstance(data, dict):
         return _quarantine_state("顶层不是对象")
     # running 记录「正在运行的浏览器是哪个槽位名」，是字符串不是对象；
