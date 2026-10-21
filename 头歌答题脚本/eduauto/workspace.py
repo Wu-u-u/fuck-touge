@@ -242,17 +242,26 @@ def scrape_status(browser: cdp.Browser, classroom: Page, detail_url: str,
     deadline = t0 + (40 if expect else 30)
     while time.time() < deadline:
         try:
-            if classroom.ws.eval("!!document.querySelector('.ant-spin-spinning')"):
-                time.sleep(0.4)
-                continue
-            n = classroom.ws.eval("document.querySelectorAll('.ant-table-row').length")
-            ready = bool(n) and bool(classroom.ws.eval(
-                "[...document.querySelectorAll('.ant-table-row')].every(tr => {"
-                "  const td = tr.querySelectorAll('td');"
-                "  return td.length >= 5 && (td[4].innerText || '').trim().length > 0;})"
-            ))
+            state = classroom.ws.eval_json(r"""
+JSON.stringify((() => {
+  const spin = !!document.querySelector('.ant-spin-spinning');
+  const rows = [...document.querySelectorAll('.ant-table-row')];
+  const ready = rows.length > 0 && rows.every(tr => {
+    const td = tr.querySelectorAll('td');
+    return td.length >= 5 && (td[4].innerText || '').trim().length > 0;
+  });
+  return {spin, n: rows.length, ready};
+})())
+""") or {}
         except cdp.CDPError:
-            n, ready = last, False
+            state = {"spin": False, "n": last, "ready": False}
+        if not isinstance(state, dict):
+            state = {}
+        if state.get("spin"):
+            time.sleep(0.4)
+            continue
+        n = int(state.get("n") or 0)
+        ready = bool(state.get("ready"))
         if n:
             if n == last:
                 stable += 1

@@ -260,9 +260,9 @@ TPL = "// 请在此填写代码\npublic class Demo {}\n"
 EDITOR_OK = "class Main { public static void main(String[] a) { System.out.println(1); } }"
 
 
-def run_rsa(st, record="unset", editor="unset", paths=("Main.java",)):
+def run_rsa(st, record="unset", editor="unset", paths=("Main.java",), hint=None):
     """mock 掉页面交互，跑 read_saved_answer；返回 (结果, 各函数调用计数)。"""
-    nums = {"close": 0, "rec": 0, "editor": 0, "multi": 0}
+    nums = {"close": 0, "rec": 0, "editor": 0, "multi": 0, "list": 0}
 
     def _close(pg):
         nums["close"] += 1
@@ -278,6 +278,7 @@ def run_rsa(st, record="unset", editor="unset", paths=("Main.java",)):
         return None if editor == "unset" else editor
 
     def _list(pg):
+        nums["list"] += 1
         return (list(paths), "")
 
     def _multi(pg, ps):
@@ -290,7 +291,7 @@ def run_rsa(st, record="unset", editor="unset", paths=("Main.java",)):
             mock.patch.object(answers, "list_code_files", _list), \
             mock.patch.object(answers, "read_saved_files", _multi), \
             contextlib.redirect_stdout(io.StringIO()):
-        return answers.read_saved_answer(FakePage(FakeWS()), st), nums
+        return answers.read_saved_answer(FakePage(FakeWS()), st, multi_hint=hint), nums
 
 
 S1 = {"hasEditor": True, "models": 1}
@@ -317,6 +318,10 @@ check("单文件：记录与编辑器都无效 → None（不采模板）",
 r, n = run_rsa(S1, record="raise", editor=EDITOR_OK)
 check("单文件：评测记录读取异常回退编辑器",
       r[0] == "code" and r[1] == EDITOR_OK and "评测记录也没读到" in r[2], str(r))
+
+r, n = run_rsa(S1, record=None, editor=EDITOR_OK, hint=False)
+check("单文件提示 multi=False：跳过文件下拉检测",
+      r[0] == "code" and r[1] == EDITOR_OK and n["list"] == 0, str(n))
 
 r, n = run_rsa(S1, record=REC)               # 不碰编辑器
 check("单文件：真实记录可用即使用，绝不落回占位编辑器",

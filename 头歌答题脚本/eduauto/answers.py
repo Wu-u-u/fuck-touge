@@ -244,7 +244,8 @@ def looks_like_template(code: str) -> bool:
     return hits >= 1 and (hits >= 2 or len(text) < 400)
 
 
-def read_saved_answer(page: Page, st: dict) -> tuple[str | None, str | None, str]:
+def read_saved_answer(page: Page, st: dict,
+                      multi_hint: bool | None = None) -> tuple[str | None, str | None, str]:
     """读取当前关卡服务器上已保存的答案。
 
     返回 (kind, value, note)：kind = 'code'（完整代码）或 'choice'（每题字母列表）；
@@ -257,10 +258,15 @@ def read_saved_answer(page: Page, st: dict) -> tuple[str | None, str | None, str
     多文件关走 read_saved_files，路径不变。
     """
     if st.get("hasEditor"):
-        paths, _ = list_code_files(page)          # 单文件关卡也会有 1 项
-        if len(paths) > 1:
-            return read_saved_files(page, paths)  # 多文件：逐个点开读
-        close_file_menu(page)
+        # 档案已知是单文件关（multi=False）时不再展开「代码文件」下拉：
+        # 省一次 hover/点击往返；多文件或未知仍按原逻辑检测。
+        if multi_hint is False:
+            paths = []
+        else:
+            paths, _ = list_code_files(page)      # 单文件关卡也会有 1 项
+            if len(paths) > 1:
+                return read_saved_files(page, paths)  # 多文件：逐个点开读
+            close_file_menu(page)
         rec_src = ""
         if st.get("models", 0) == 1:
             try:

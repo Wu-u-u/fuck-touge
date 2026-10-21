@@ -9,6 +9,7 @@ import os
 import re
 import time
 import tomllib
+import uuid
 
 from eduauto.util import die, log
 
@@ -159,7 +160,7 @@ def load_state() -> dict:
 
 
 def save_state(state: dict) -> None:
-    tmp = STATE_FILE.with_name(STATE_FILE.name + ".tmp")
+    tmp = STATE_FILE.with_name(f"{STATE_FILE.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
     try:
         tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp, STATE_FILE)

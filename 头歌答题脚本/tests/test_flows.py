@@ -42,7 +42,7 @@ CFG = {"edge": {"classroom": "http://example"},
        "run": {"answers": "unused.toml", "eval_timeout": 1, "level_timeout": 1}}
 
 
-def run_case(proc):
+def run_case(proc, rows=None):
     ch = Chapter({"name": "测试章", "homework_id": "123",
                   "levels": [{"name": "L1", "answer": "A", "type": "choice"}]})
     saved = {}
@@ -52,8 +52,8 @@ def run_case(proc):
         "ensure_browser": lambda cfg: FakeBrowser(),
         "classroom_page": lambda browser, cfg, old=None: FakePage(),
         "ensure_login": lambda browser, ws=None: None,
-        "scrape_status": lambda *a, **k: [
-            {"name": "L1", "full": "10", "score": "0", "status": "未通过"}],
+        "scrape_status": lambda *a, **k: (rows if rows is not None else [
+            {"name": "L1", "full": "10", "score": "0", "status": "未通过"}]),
         "process_chapter": proc,
     }.items():
         saved[name] = getattr(flows, name)
@@ -115,6 +115,10 @@ check("run 中止仍打印汇总", code == 2 and "汇总" in out and "已中止"
 def runtime_error(*a, **k):
     raise RuntimeError("下拉收不起来")
 
+
+code, out = run_case(ok, rows=[{"name": "别的关", "full": "10", "score": "0", "status": "未通过"}])
+check("run 详情表关卡名不一致跳过", code == 2 and "关卡名与档案不一致" in out
+      and "失败 1 关" in out, f"code={code}")
 
 code, out = run_case(runtime_error)
 check("run 捕获 RuntimeError 并汇总", code == 2 and "汇总" in out
@@ -223,6 +227,9 @@ class ScrapeWS:
         return None
 
     def eval_json(self, expr):
+        if "spin" in expr and "ant-table-row" in expr:
+            return {"spin": False, "n": len(self.rows),
+                    "ready": all((r.get("status") or "").strip() for r in self.rows)}
         if "ant-table-row" in expr:
             return [dict(r) for r in self.rows]
         if "findCard" in expr:
@@ -276,7 +283,7 @@ def run_harvest_abort(tmp_dir: Path):
         "Page": FlowPage,
         "rewind_to_first": lambda page, timeout=60: (
             {"index": 1, "name": "L1", "hasNext": True, "hasPrev": False}, True),
-        "read_saved_answer": lambda page, st: ("code", "print(88)", "8 字符"),
+        "read_saved_answer": lambda page, st, **k: ("code", "print(88)", "8 字符"),
         "advance_level": lambda page, old, timeout=60: {"index": old},
     }
 

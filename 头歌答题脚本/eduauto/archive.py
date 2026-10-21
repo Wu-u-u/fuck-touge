@@ -4,6 +4,7 @@ import json
 import os
 import re
 import tomllib
+import uuid
 from pathlib import Path
 
 from .util import die, log, norm
@@ -137,7 +138,7 @@ def _find_raw_chapter(chapters: list[dict], name: str) -> dict | None:
 
 def _atomic_write(path: Path, text: str) -> None:
     """先写临时文件再 os.replace，避免中途失败把档案截断。"""
-    tmp = path.with_name(path.name + ".tmp")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
     try:
         tmp.write_text(text, encoding="utf-8")
         os.replace(tmp, path)

@@ -85,7 +85,8 @@ def harvest_levels(page: Page, passed: set, ch: "Chapter | None", force: bool,
             if not force and lv is not None and not lv.answer_empty():
                 log(f"  · 第{idx}关「{st.get('name')}」已有答案，跳过采集（-f 可强制重采）")
             else:
-                kind, value, note = read_saved_answer(page, st)
+                hint = lv.multi if lv is not None else None
+                kind, value, note = read_saved_answer(page, st, multi_hint=hint)
                 if kind:
                     try:
                         multi_flag = False if kind == "code" else (True if kind == "files" else None)
@@ -158,6 +159,27 @@ def _open_levels_from_detail(browser: cdp.Browser, target: dict, page: Page):
             target = nxt[0]
             return target, Page(browser.attach(target), target), True
     return target, page, False
+
+
+def _match_card(cards: list[dict], name: str) -> dict | None:
+    """在课堂卡片里唯一匹配一个章节名（完全相等优先，其次双向子串）。"""
+    n = norm(name)
+    exact = [c for c in cards if norm(str(c.get("name") or "")) == n]
+    fuzzy = [c for c in cards
+             if n and (n in norm(str(c.get("name") or ""))
+                       or norm(str(c.get("name") or "")) in n)]
+    hits = exact or fuzzy
+    return hits[0] if len(hits) == 1 else None
+
+
+def _rows_match_levels(rows: list[dict], ch: Chapter) -> bool:
+    """详情表关卡名是否与档案一致（防止复用标签页时读到上一章旧表）。"""
+    if len(rows) != len(ch.levels):
+        return False
+    for row, lv in zip(rows, ch.levels):
+        if norm(str(row.get("name") or "")) != norm(lv.name):
+            return False
+    return True
 
 
 def cmd_harvest(args, cfg: dict) -> None:
@@ -249,7 +271,17 @@ def cmd_harvest(args, cfg: dict) -> None:
 
         # 详情表格：这章有哪些关、哪些已满分
         classroom = classroom_page(browser, cfg, old=classroom)
-        prog = classroom.ws.eval_json(card_progress_js(name)) or {}
+        if card is None:
+            # 显式指定档案章节时，先等卡片渲染出来并唯一匹配，避免课堂进度读成 0
+            card = _match_card(list_classroom_cards(classroom), name)
+            if card and card.get("closed"):
+                log("  ! 已截止（只能查看作品）——跳过，不建骨架、不采集")
+                continue
+        if card is not None:
+            prog = {"done": card.get("done", 0), "total": card.get("total", 0),
+                    "name": card.get("name", "")}
+        else:
+            prog = classroom.ws.eval_json(card_progress_js(name)) or {}
         if prog.get("reason"):
             log(f"  ! 未能唯一定位课堂卡片（{prog['reason']}），课堂进度读数不可靠，"
                 "以下以详情页实读为准")
@@ -261,6 +293,11 @@ def cmd_harvest(args, cfg: dict) -> None:
             if target:
                 browser.close_target(target["id"])
             log("  ! 详情页没有读到关卡列表，跳过")
+            continue
+        if ch is not None and not _rows_match_levels(rows, ch):
+            if target:
+                browser.close_target(target["id"])
+            log("  ! 详情表关卡名与档案不一致（可能读到了上一章的旧表），跳过本章")
             continue
         if expect and len(rows) < expect:
             # 表格截断（加载慢/分页没拉全）：按残表建骨架/采集会静默丢关卡
@@ -620,6 +657,10 @@ def cmd_run(args, cfg: dict) -> None:
         if len(rows) != len(ch.levels):
             log(f"  ! 平台关卡数（{len(rows)}）与档案（{len(ch.levels)}）不一致，"
                 "请先 harvest 补骨架；跳过本章")
+            results[ch.name] = {"done": 0, "skipped": 0, "failed": 1}
+            return
+        if not _rows_match_levels(rows, ch):
+            log("  ! 详情表关卡名与档案不一致（可能读到了上一章的旧表），跳过本章")
             results[ch.name] = {"done": 0, "skipped": 0, "failed": 1}
             return
         to_run = [lv for i, lv in enumerate(ch.levels, 1)
