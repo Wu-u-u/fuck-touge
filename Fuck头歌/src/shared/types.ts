@@ -34,17 +34,26 @@ export interface MonacoEditorLike {
   getOption(option: unknown): unknown;
   focus?(): void;
   dispose?(): void;
+  getModels?(): MonacoModelLike[];
+  onDidCreateEditor?(listener: (editor: MonacoEditorLike) => void): unknown;
+  onDidCreateModel?(listener: (model: MonacoModelLike) => void): unknown;
+  onDidDispose?(listener: () => void): unknown;
+  defineTheme?(name: string, data: unknown): void;
+  setTheme?(name: string): void;
+  __ftOrigSetTheme?: (name: string) => unknown;
+  __ftThemesDefined?: boolean;
+  __ftDarkChecked?: boolean;
+}
+
+/** Monaco languages 命名空间的最小接口 */
+export interface MonacoLanguagesLike {
+  setMonarchTokensProvider?(languageId: string, def: unknown): unknown;
 }
 
 /** 页面注入的 window.Monaco 的最小接口 */
 export interface MonacoLike {
-  editor?: {
-    getModels?(): MonacoModelLike[];
-    onDidCreateEditor?(listener: (editor: MonacoEditorLike) => void): unknown;
-    onDidCreateModel?(listener: (model: MonacoModelLike) => void): unknown;
-    setTheme?(theme: string): void;
-    defineTheme?(name: string, data: unknown): void;
-  };
+  editor?: MonacoEditorLike;
+  languages?: MonacoLanguagesLike;
 }
 
 /** 对外（popup）暴露的设置：不含内部的 fontAsked */
