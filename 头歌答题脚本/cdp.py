@@ -93,6 +93,16 @@ class WS:
             raise CDPError(f"WebSocket 读取失败（标签页可能已关闭）: {e}") from e
 
     def _recv_json_inner(self) -> dict:
+        """收一整帧（可能分片）；对端关闭/网络断开时把 ConnectionError
+        统一包装成 CDPError（标签页关闭/浏览器退出时不再裸 traceback）。"""
+        try:
+            return self._recv_frame()
+        except ConnectionError as e:
+            self.closed = True
+            raise CDPError(
+                f"WebSocket 连接已断开（标签页可能已关闭，或浏览器已退出）: {e}") from e
+
+    def _recv_frame(self) -> dict:
         msg = b""
         while True:
             b1 = self._recv_exact(1)[0]

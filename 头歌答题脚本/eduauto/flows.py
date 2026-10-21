@@ -56,9 +56,15 @@ JSON.stringify([...document.querySelectorAll('[class*="listItem"]')].map(c => {
     return cards
 
 
-def harvest_levels(page: Page, passed: set, ch: "Chapter | None", force: bool) -> dict:
-    """在章节页里走一遍关卡，采集 passed 集合里关卡的答案。"""
-    collected: dict = {}
+def harvest_levels(page: Page, passed: set, ch: "Chapter | None", force: bool,
+                   collected: "dict | None" = None) -> dict:
+    """在章节页里走一遍关卡，采集 passed 集合里关卡的答案。
+
+    collected 可传外部 dict（cmd_harvest 这样用）：本章中途 die 退出时，
+    已采到的答案仍在那个 dict 里，外层还能写回档案，不再随异常丢掉。
+    """
+    if collected is None:
+        collected = {}
     st, reached_first = rewind_to_first(page)
     if not reached_first:
         idx = st.get("index")
@@ -98,7 +104,9 @@ def harvest_levels(page: Page, passed: set, ch: "Chapter | None", force: bool) -
 
 
 def _write_skeleton(answers_path: Path, name: str, hid: str, rows: list[dict],
-                    collected: "dict | None" = None) -> None:
+                    collected: "dict | None" = None) -> bool:
+    """写入骨架；返回档案文件是否真的变化（用来避免虚报“已补骨架”）。"""
+    before = answers_path.read_bytes() if answers_path.exists() else None
     levels = []
     for i, r in enumerate(rows, 1):
         lv: dict = {"name": r["name"]}
@@ -107,6 +115,8 @@ def _write_skeleton(answers_path: Path, name: str, hid: str, rows: list[dict],
             lv["multi"] = c["multi"]
         levels.append(lv)
     write_scan_skeleton(answers_path, [{"name": name, "homework_id": hid, "levels": levels}])
+    after = answers_path.read_bytes() if answers_path.exists() else None
+    return before != after
 
 
 
@@ -226,6 +236,9 @@ def cmd_harvest(args, cfg: dict) -> None:
         # 详情表格：这章有哪些关、哪些已满分
         classroom = classroom_page(browser, cfg, old=classroom)
         prog = classroom.ws.eval_json(card_progress_js(name)) or {}
+        if prog.get("reason"):
+            log(f"  ! 未能唯一定位课堂卡片（{prog['reason']}），课堂进度读数不可靠，"
+                "以下以详情页实读为准")
         expect = prog.get("total") or (card or {}).get("total")
         rows = scrape_status(browser, classroom,
                              cfg["edge"]["classroom"] + f"/{hid}/detail?tabs=1",
@@ -235,18 +248,29 @@ def cmd_harvest(args, cfg: dict) -> None:
                 browser.close_target(target["id"])
             log("  ! 详情页没有读到关卡列表，跳过")
             continue
+        if expect and len(rows) < expect:
+            # 表格截断（加载慢/分页没拉全）：按残表建骨架/采集会静默丢关卡
+            if target:
+                browser.close_target(target["id"])
+            log(f"  ! 详情页只读到 {len(rows)} 行（课堂卡片显示共 {expect} 关），"
+                "表格可能没加载完，跳过本章（不建骨架、不采集），稍后重试")
+            continue
         passed = {i for i, r in enumerate(rows, 1) if is_passed_row(r)}
 
         # 骨架先行：新章节先落盘（采集中途失败也不会丢关卡结构）
         if ch is None:
-            _write_skeleton(answers_path, key, hid, rows)
-            log("  ✓ 已补骨架")
+            if _write_skeleton(answers_path, key, hid, rows):
+                log("  ✓ 已补骨架")
+            else:
+                log("  · 档案里已有本章骨架，未重复写入")
         elif len(ch.levels) != len(rows):
-            _write_skeleton(answers_path, key, hid, rows)
-            log("  · 档案关卡数与平台不一致，已补骨架")
+            if _write_skeleton(answers_path, key, hid, rows):
+                log("  · 档案关卡数与平台不一致，已补骨架")
+            else:
+                log("  · 档案关卡数与平台不一致，未能自动改动，请手动核对")
         if ch is not None and not ch.homework_id:
-            _write_skeleton(answers_path, key, hid, rows)
-            log("  · 已补写 homework_id")
+            if _write_skeleton(answers_path, key, hid, rows):
+                log("  · 已补写 homework_id")
 
         if not passed:
             log("  → 没有已满分的关卡，跳过")
@@ -284,8 +308,11 @@ def cmd_harvest(args, cfg: dict) -> None:
             continue
 
         collected: dict = {}
+        aborted: "SystemExit | None" = None
         try:
-            collected = harvest_levels(page, passed, ch, args.force)
+            harvest_levels(page, passed, ch, args.force, collected)
+        except SystemExit as e:
+            aborted = e            # 中止也要保留已采的回答案，先写回再 re-raise
         finally:
             try:
                 browser.close_target(target["id"])
@@ -299,6 +326,11 @@ def cmd_harvest(args, cfg: dict) -> None:
                 all_changes[key] = collected
             else:
                 log("  ! 采到答案但档案没有可写回的关卡，请检查章节/关卡是否对齐")
+        if aborted is not None:
+            if collected:
+                log(f"  ! 采集中止：已把中止前采到的 {len(collected)} 关答案写回档案，"
+                    "没有丢；继续跑到这里为止")
+            raise aborted
 
     total = {n: len(v) for n, v in all_changes.items() if v}
     if total:
@@ -315,24 +347,30 @@ def cmd_scan_retired() -> None:
 
 
 def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
-                    ch: Chapter, status: list[dict]) -> dict:
+                    ch: Chapter, status: list[dict],
+                    stats: "dict | None" = None) -> dict:
     """跑完一章。返回统计 {done, skipped, failed}。
+
+    stats 可传外部汇总里已就位的 dict（cmd_run 这样用）：本章中途 die 退出时，
+    已累计的作答/跳过数会留在那个 dict 里随之带回，不再丢失。
 
     注意：正常结束才关掉本章标签页；中途失败（die）保留页面给用户排查。
     """
-    stats = {"done": 0, "skipped": 0, "failed": 0}
+    if stats is None:
+        stats = {"done": 0, "skipped": 0, "failed": 0}
     try:
         target, ws = enter_chapter(browser, classroom, ch.name, on_fail="raise")
     except ChapterEnterError as e:
+        # 整章没跑起来：按失败 1 关计（记成 skipped 会把「关数」单位用错）
         log(f"  ! 无法进入本章（{e}），跳过")
-        stats["skipped"] += 1
+        stats["failed"] += 1
         return stats
     page = Page(ws)
     ok = False
     try:
         target, page, entered = _open_levels_from_detail(browser, target, page)
         if not entered:
-            stats["skipped"] += 1
+            stats["failed"] += 1
             log("  ! 详情页上没找到进入关卡的按钮，跳过本章")
             browser.close_target(target["id"])
             return stats
@@ -580,12 +618,16 @@ def cmd_run(args, cfg: dict) -> None:
         # 只有真的要跑时，才开一个干净的课堂页去点「开始学习」
         entry_classroom = classroom_page(browser, cfg)
         t_ch = time.time()
+        stats = {"done": 0, "skipped": 0, "failed": 0}
+        results[ch.name] = stats      # 先就位：本章中途 die 时已作答数不丢
         try:
-            results[ch.name] = process_chapter(browser, entry_classroom, cfg, ch, rows)
-            results[ch.name]["secs"] = time.time() - t_ch
+            ret = process_chapter(browser, entry_classroom, cfg, ch, rows, stats=stats)
         finally:
             if entry_classroom.target.get("id"):
                 browser.close_target(entry_classroom.target["id"])
+        if isinstance(ret, dict) and ret is not stats:
+            stats.update(ret)          # 替身实现/旧式实现直接返回统计时并入
+        stats["secs"] = time.time() - t_ch
 
 
     abort_code = 0
@@ -593,7 +635,12 @@ def cmd_run(args, cfg: dict) -> None:
         try:
             run_one(ch)
         except SystemExit as e:
-            results.setdefault(ch.name, {"done": 0, "skipped": 0, "failed": 1, "aborted": True})
+            # die 的章节按失败 1 关+中止计入汇总；已就位的 stats 保留部分进度
+            s = results.get(ch.name) or {"done": 0, "skipped": 0, "failed": 0}
+            if not s.get("failed"):
+                s["failed"] = 1
+            s["aborted"] = True
+            results[ch.name] = s
             abort_code = int(e.code or 2)
             break
 
@@ -604,6 +651,12 @@ def cmd_run(args, cfg: dict) -> None:
     if abort_code:
         log(f"\n已中止（总用时 {fmt_secs(time.time() - t0)}）。浏览器保持打开，可自行检查。")
         sys.exit(abort_code)
+    failed_chs = [n for n, s in results.items() if s.get("failed", 0) > 0]
+    if failed_chs:
+        # 软失败：整轮跑完但有章节没跑成，不能谎报完美收官
+        log(f"\n完成（有 {len(failed_chs)} 章失败，总用时 {fmt_secs(time.time() - t0)}）。"
+            "浏览器保持打开，可自行检查。")
+        sys.exit(2)
     log(f"\n完成（总用时 {fmt_secs(time.time() - t0)}）。浏览器保持打开，可自行检查。")
 
 

@@ -89,6 +89,17 @@ def load_config(path: Path) -> dict:
         if not math.isfinite(value) or value <= 0:
             die(f"配置文件格式错误：run.{key} 必须是大于 0 的有限数字（当前 {raw!r}）。")
         cfg["run"][key] = value
+    # edge 的路径/URL 三项必须是字符串；profile/extension 若是相对路径，
+    # 按配置文件所在目录解析（和使用中的 run.answers 同一规则）。
+    for key in ("profile", "extension", "classroom"):
+        value = cfg["edge"].get(key)
+        if not isinstance(value, str) or not value.strip():
+            die(f"配置文件格式错误：edge.{key} 必须是非空字符串（当前 {value!r}）。")
+    base = cfg_path.resolve().parent
+    for key in ("profile", "extension"):
+        value = cfg["edge"][key]
+        if not os.path.isabs(os.path.expanduser(value)):
+            cfg["edge"][key] = str(base / value)
     # apply_current_profile() 会把 edge.profile 改成当前槽的路径，browser 1
     # 需要原始 config 档案作为「1 号槽」的默认值，先在这里留一份。
     cfg["edge"]["default_profile"] = cfg["edge"]["profile"]
@@ -119,13 +130,19 @@ def load_state() -> dict:
         return _quarantine_state(f"读取失败：{e}")
     if not isinstance(data, dict):
         return _quarantine_state("顶层不是对象")
-    for key in ("slots", "names", "running"):
+    # running 记录「正在运行的浏览器是哪个槽位名」，是字符串不是对象；
+    # 类型/值不对只删字段，绝不能按 dict 重置（否则 browser -ls 的「运行中」会失联）。
+    for key in ("slots", "names"):
         value = data.get(key)
         if value is None:
             data[key] = {}
         elif not isinstance(value, dict):
             log(f"  ! state.json 的 {key} 不是对象，已重置该字段")
             data[key] = {}
+    running = data.get("running")
+    if running is not None and (not isinstance(running, str) or not running.strip()):
+        log(f"  ! state.json 的 running 不是槽位名字符串，已忽略：{running!r}")
+        data.pop("running", None)
     for field in ("slots", "names"):
         clean = {}
         for key, value in data[field].items():

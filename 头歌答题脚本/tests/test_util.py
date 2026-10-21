@@ -175,6 +175,38 @@ check("合法超时转为 float", isinstance(_valid["run"]["eval_timeout"], floa
       and _valid["run"]["eval_timeout"] == 180.0)
 
 
+# ── edge 字符串边界与相对路径解析 ────────────────────────────────
+check("profile 拒绝非字符串", _cfg_rejected("[edge]\nprofile = 3\n"))
+check("profile 拒绝空串", _cfg_rejected('[edge]\nprofile = ""\n'))
+check("extension 拒绝非字符串", _cfg_rejected("[edge]\nextension = [\"x\"]\n"))
+check("extension 拒绝空串", _cfg_rejected('[edge]\nextension = ""\n'))
+check("classroom 拒绝布尔", _cfg_rejected("[edge]\nclassroom = true\n"))
+
+# profile / extension 相对路径按配置文件所在目录解析
+_rel_dir = Path(tempfile.mkdtemp())
+_rel_cfg = _rel_dir / "c.toml"
+_rel_cfg.write_text('[edge]\nprofile = "profiles/dbg"\nextension = "Fuck头歌"\n',
+                    encoding="utf-8")
+_rel = load_config(_rel_cfg)
+check("profile 相对配置目录解析",
+      _rel["edge"]["profile"] == str(_rel_dir / "profiles" / "dbg"),
+      _rel["edge"]["profile"])
+check("extension 相对配置目录解析",
+      _rel["edge"]["extension"] == str(_rel_dir / "Fuck头歌"),
+      _rel["edge"]["extension"])
+check("default_profile 也取解析后的 profile",
+      _rel["edge"]["default_profile"] == str(_rel_dir / "profiles" / "dbg"))
+
+# 绝对路径原样保留（不被改写）
+_abs_dir = Path(tempfile.mkdtemp())
+_abs_cfg = _abs_dir / "c.toml"
+_abs_val = str(_abs_dir / "abs-ext")
+_abs_cfg.write_text(f"[edge]\nextension = {_abs_val!r}\n", encoding="utf-8")
+_abs = load_config(_abs_cfg)
+check("extension 绝对路径原样保留", _abs["edge"]["extension"] == _abs_val,
+      _abs["edge"]["extension"])
+
+
 # ── state.json 健壮性（monkeypatch STATE_FILE） ─────────────────
 _state_dir = Path(tempfile.mkdtemp())
 _old_state_file = config.STATE_FILE
@@ -200,10 +232,22 @@ try:
     }), encoding="utf-8")
     _st = load_state()
     check("state 字段类型错误只重置该字段",
-          _st["slots"] == {} and _st["running"] == {}
+          _st["slots"] == {} and "running" not in _st
           and _st["names"] == {"1": "吴建祥"}
           and config.STATE_FILE.exists()
           and not config.STATE_FILE.with_name("state.json.bad").exists(), str(_st))
+
+    # running 是字符串槽位名（browser 在跑、browser -ls 靠它显示「运行中」）
+    config.STATE_FILE.write_text(json.dumps({"slots": {"2": "/p2"}, "running": "2"}),
+                                 encoding="utf-8")
+    _st = load_state()
+    check("running 字符串槽名原样保留", _st.get("running") == "2"
+          and _st.get("slots") == {"2": "/p2"}, str(_st))
+    config.STATE_FILE.write_text(json.dumps({"slots": {"1": "/p1"}, "running": 7}),
+                                 encoding="utf-8")
+    _st = load_state()
+    check("running 非字符串只忽略该字段",
+          _st.get("slots") == {"1": "/p1"} and "running" not in _st, str(_st))
 
     config.STATE_FILE.write_text(json.dumps({"slots": {"1": "/p1"}, "current": 5}),
                                  encoding="utf-8")

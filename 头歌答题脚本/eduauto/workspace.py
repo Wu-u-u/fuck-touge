@@ -193,12 +193,18 @@ def status_of(page: Page, text: str) -> str | None:
 
 
 def card_progress_js(name: str) -> str:
-    """按名字片段找课堂卡片，返回 {done, total, name}（name 为卡片完整标题）。"""
+    """按名字片段找课堂卡片，返回 {done, total, name}（name 为卡片完整标题）。
+
+    与 card_pos_js 保持一致：命中多张同分卡片（ambiguous）时不猜，
+    返回 {done: 0, total: 0, name: ''} 并带 reason，调用方提示用户。"""
     return r"""
 JSON.stringify((function(){
 __CARD_MATCH__
-  const card = findCard(norm(__NAME__)).card;
-  if (!card) return {done: 0, total: 0, name: ''};
+  const found = findCard(norm(__NAME__));
+  if (!found.card) return {done: 0, total: 0, name: '', reason: 'card-not-found'};
+  if (found.ties > 1) return {done: 0, total: 0, name: '',
+                              reason: 'ambiguous', ties: found.ties};
+  const card = found.card;
   const m = (card.innerText||'').match(/(\d+)\s*\/\s*(\d+)/);
   const t = (card.innerText||'').split('\n').map(s=>s.trim()).filter(Boolean);
   return {done: m ? +m[1] : 0, total: m ? +m[2] : 0, name: t[1] || ''};
@@ -211,14 +217,20 @@ def scrape_status(browser: cdp.Browser, classroom: Page, detail_url: str,
                   expect: int | None = None) -> list[dict]:
     """打开章节详情页，按顺序返回 [{'name','full','score','status'}, ...]。"""
     classroom.ws.call("Page.navigate", {"url": detail_url})
-    # 复用标签页时，导航提交前旧表格仍是有效 DOM：先等 URL 真正切到目标详情页
+    # 复用标签页时，导航提交前旧表格仍是有效 DOM：先等 URL 真正切到目标详情页。
+    # 必须吃 wait_for 的返回值——落地失败时旧表格很可能就是别的章节的，
+    # 继续读只会拿到脏数据（v0.9.15 修复：原来只等不等结果）。
     m = re.search(r"/shixun_homework/(\d+)/detail", detail_url)
     if m:
-        classroom.ws.wait_for(
+        landed = classroom.ws.wait_for(
             f"location.href.includes('/shixun_homework/{m.group(1)}/detail')"
             " && document.readyState === 'complete'",
             timeout=20,
         )
+        if not landed:
+            log("  ! 详情页没有落地（URL 没在 20 秒内切到目标详情页），"
+                "不读表格以免拿到别的章节的旧数据")
+            return []
     ok = classroom.ws.wait_for(
         "!!document.querySelector('.ant-table-row')", timeout=45
     )
