@@ -276,6 +276,15 @@ try:
     check("state 瞬时读取失败不隔离",
           _st3 == {} and config.STATE_FILE.exists() and not _bad.exists())
 
+    # 读取失败时 update_state 不能拿空状态覆盖原文件
+    config.STATE_FILE.write_text(json.dumps({"slots": {"1": "/p1"}, "current": "1"}),
+                                 encoding="utf-8")
+    _before = config.STATE_FILE.read_text(encoding="utf-8")
+    with mock.patch("pathlib.Path.read_text", side_effect=OSError("busy")):
+        config.update_state(running="2")
+    check("state 读取失败不覆盖原文件",
+          config.STATE_FILE.read_text(encoding="utf-8") == _before)
+
     # state 锁：两个线程并发 update_state 不能互相覆盖
     thread_state = _state_dir / "thread-state.json"
     _saved_state = config.STATE_FILE

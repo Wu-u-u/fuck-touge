@@ -1,11 +1,11 @@
-// Fuck 头歌 v2.4.6 —— 仅作用于头歌：
+// Fuck 头歌 v2.4.7 —— 仅作用于头歌：
 //   ① 允许粘贴/复制，并阻止网页篡改剪贴板
 //   ② 答对后自动点掉“恭喜通过”弹层里的「下一关」/「最后一关」/「完成」
 //   ③ 编辑器增强：主题（Catppuccin / GitHub 高对比）+ Maple Mono 字体 + 光标动画（默认关）
 //   ④ 页面皮肤：仅答题页面内，选择题等无编辑器页面也换成主题深色（主题开启时）
 (() => {
   "use strict";
-  try { window.__fuckTouge = "2.4.6"; } catch (e) {}
+  try { window.__fuckTouge = "2.4.7"; } catch (e) {}
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -1165,8 +1165,12 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
   const isUserEditKey = e => {
     const key = e.key || "";
     const k = key.toLowerCase();
-    if (e.ctrlKey || e.metaKey) return k === "z" || k === "x";   // 撤销 / 重做 / 剪切
-    if (e.altKey) return false;
+    if (e.ctrlKey || e.metaKey) {
+      // 撤销/剪切，以及 Monaco 常用删词/删行和弦（Ctrl+Backspace、Ctrl+Shift+K）
+      return k === "z" || k === "x" || k === "backspace" || k === "delete"
+        || (k === "k" && e.shiftKey);
+    }
+    if (e.altKey) return k === "backspace" || k === "delete";   // Mac 删词
     if (key === "Backspace" || key === "Delete" || key === "Enter" || key === "Tab") return true;
     return key.length === 1;                            // 可打印输入
   };

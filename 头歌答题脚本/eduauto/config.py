@@ -124,7 +124,7 @@ def _quarantine_state(reason: str) -> dict:
     return {}
 
 
-def load_state() -> dict:
+def _load_state_checked() -> dict | None:
     if not STATE_FILE.exists():
         return {}
     try:
@@ -134,9 +134,10 @@ def load_state() -> dict:
     except json.JSONDecodeError as e:
         return _quarantine_state(f"JSON 语法错误：{e}")
     except OSError as e:
-        # 瞬时读取失败（权限/并发替换间隙）不要隔离整份 state，避免误丢槽位记忆
-        log(f"  ! state.json 读取失败（{e}），本次使用空状态，原文件保留")
-        return {}
+        # 瞬时读取失败（权限/并发替换间隙）不要隔离整份 state；
+        # 返回 None 让写路径拒绝覆盖，避免用空状态把槽位记忆清空。
+        log(f"  ! state.json 读取失败（{e}），本次不读状态，原文件保留")
+        return None
     if not isinstance(data, dict):
         return _quarantine_state("顶层不是对象")
     # running 记录「正在运行的浏览器是哪个槽位名」，是字符串不是对象；
@@ -165,6 +166,12 @@ def load_state() -> dict:
         log(f"  ! state.json 的 current 无效，已忽略：{cur!r}")
         data.pop("current", None)
     return data
+
+
+def load_state() -> dict:
+    """只读入口：读失败时返回空状态（写路径请用 _load_state_checked 拒绝覆盖）。"""
+    data = _load_state_checked()
+    return data if data is not None else {}
 
 
 def save_state(state: dict) -> None:
@@ -200,18 +207,39 @@ def state_lock():
         yield
         return
     lock_path = STATE_FILE.with_name(STATE_FILE.name + ".lock")
-    with open(lock_path, "a+") as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
+    try:
+        f = open(lock_path, "a+")
+    except OSError as e:
+        log(f"  ! state 锁文件打不开（{e}），本次不加锁继续")
+        yield
+        return
+    locked = False
+    try:
+        deadline = time.time() + 5
+        while True:
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+                break
+            except OSError:
+                if time.time() >= deadline:
+                    log("  ! state 锁等待超时，本次不加锁继续")
+                    break
+                time.sleep(0.05)
+        yield
+    finally:
+        if locked:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        f.close()
 
 
 def update_state(**updates) -> None:
     """加锁读取-合并-原子写回（只改传入的字段，不覆盖别的进程更新）。"""
     with state_lock():
-        state = load_state()
+        state = _load_state_checked()
+        if state is None:
+            log("  ! state.json 读取失败，跳过本次状态更新（不覆盖原文件）")
+            return
         state.update(updates)
         save_state(state)
 
@@ -224,7 +252,9 @@ def _setup_slot_locked(cfg: dict, arg: str | None) -> tuple[str, str, str]:
       browser new     每次都开一个全新档案（本次记住为 new，下次再全新）
       browser 1new    清除 1 号的记忆，换成全新档案（旧档案不删）
     """
-    state = load_state()
+    state = _load_state_checked()
+    if state is None:
+        die("state.json 读取失败，无法切换档案槽；请检查文件权限/磁盘后重试。")
     slots = state.setdefault("slots", {})
 
     if arg is None:
@@ -294,7 +324,9 @@ def remember_name(slot: str, name: str) -> None:
     if not slot or not name:
         return
     with state_lock():
-        state = load_state()
+        state = _load_state_checked()
+        if state is None:
+            return
         names = state.setdefault("names", {})
         if names.get(slot) != name:
             names[slot] = name

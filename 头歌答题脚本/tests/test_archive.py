@@ -595,5 +595,15 @@ _n = write_back_answers(emptyf, {"空files": {1: {"answer": _payload, "multi": T
 _d = tomllib.loads(emptyf.read_text())
 check("files=[] 占位可写多文件", _n == 1 and len(_d["chapters"][0]["levels"][0].get("files", [])) == 2)
 
+
+# 16. 表头带行尾注释/括号内空白是合法 TOML，不能被结构校验误拒
+hdr = Path(tmp) / "hdr.toml"
+hdr.write_text(
+    '[[chapters]]  # 第八章\nname = "注释表头章"\n\n'
+    '[[ chapters.levels ]]  # 关卡\nname = "L1"\nanswer = ""\n', encoding="utf-8")
+nh = write_back_answers(hdr, {"注释表头章": {1: 'answer = "H"'}}, force=False)
+check("带注释的合法表头可写回",
+      nh == 1 and tomllib.loads(hdr.read_text())["chapters"][0]["levels"][0].get("answer") == "H")
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

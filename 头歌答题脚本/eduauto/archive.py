@@ -34,19 +34,23 @@ def _raw_level_empty(raw: dict) -> bool:
     return _value_empty(raw.get("answer"))
 
 
+_CH_HDR = re.compile(r"^\[\[\s*chapters\s*\]\]\s*(?:#.*)?$")
+_LV_HDR = re.compile(r"^\[\[\s*chapters\.levels\s*\]\]\s*(?:#.*)?$")
+
+
 def _chapter_spans(lines: list[str]) -> list[dict]:
     """按 [[chapters]] 切块，返回 [{start, end, name}]（end 为下一章起始）。
 
     每个章头都算一章：name 找不到时不丢弃该章（否则章头若隔了长注释，
     后面的排序会静默错位），只是不参与名字比较，并 log 提示。
     """
-    starts = [i for i, line in enumerate(lines) if line.strip() == "[[chapters]]"]
+    starts = [i for i, line in enumerate(lines) if _CH_HDR.match(line.strip())]
     spans = []
     for bi, s in enumerate(starts):
         e = starts[bi + 1] if bi + 1 < len(starts) else len(lines)
         name = None
         for k in range(s + 1, e):
-            if lines[k].strip().startswith("[[chapters.levels]]"):
+            if _LV_HDR.match(lines[k].strip()):
                 break
             name = _parse_name_line(lines[k])
             if name is not None:
@@ -384,7 +388,7 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
                 # 避免命中关卡答案里的同名文本。
                 hdr_end = span["end"]
                 for k in range(span["start"] + 1, span["end"]):
-                    if src[k].strip() == "[[chapters.levels]]":
+                    if _LV_HDR.match(src[k].strip()):
                         hdr_end = k
                         break
                 replaced = False
@@ -733,10 +737,10 @@ def write_back_answers(path: Path, changes: dict[str, dict[int, object]], force:
 
     for i, line in enumerate(lines):
         s = line.strip()
-        if s == "[[chapters]]":
+        if _CH_HDR.match(s):
             close_chapter(i)
             cur_ch = {"start": i, "levels": [], "name": None}
-        elif s == "[[chapters.levels]]":
+        elif _LV_HDR.match(s):
             close_level(i)
             cur_lv = {"start": i, "name": None}
         else:

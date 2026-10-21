@@ -122,6 +122,14 @@ def _write_skeleton(answers_path: Path, name: str, hid: str, rows: list[dict],
 
 
 
+def _reload_chapter(answers_path: Path, name: str) -> "Chapter | None":
+    """补骨架后重新加载章节，避免内存里的旧 levels 漏掉新增关卡。"""
+    for c in load_answers(answers_path, missing_ok=True):
+        if norm(c.name) == norm(name):
+            return c
+    return None
+
+
 def _open_levels_from_detail(browser: cdp.Browser, target: dict, page: Page):
     """进入章节若落在详情页，点「查看实战/继续挑战/进入实训」进关卡。
 
@@ -320,11 +328,13 @@ def cmd_harvest(args, cfg: dict) -> None:
         elif len(ch.levels) != len(rows):
             if _write_skeleton(answers_path, key, hid, rows):
                 log("  · 档案关卡数与平台不一致，已补骨架")
+                ch = _reload_chapter(answers_path, key) or ch
             else:
                 log("  · 档案关卡数与平台不一致，未能自动改动，请手动核对")
         if ch is not None and not ch.homework_id:
             if _write_skeleton(answers_path, key, hid, rows):
                 log("  · 已补写 homework_id")
+                ch = _reload_chapter(answers_path, key) or ch
 
         if not passed:
             log("  → 没有已满分的关卡，跳过")
