@@ -322,6 +322,24 @@ class PlaywrightBrowser:
             if _page_closed(page):
                 self._forget(page)
 
+    def _pump(self) -> None:
+        """处理 Playwright 同步 API 已排队但尚未派发的协议事件。
+
+        同步 API 只在调用其 API 时处理事件；调用方轮询 ``pages()`` 时如果
+        只做 ``time.sleep``，新建标签页的 Target 事件不会被处理，
+        ``context.pages`` 里就永远看不到新页（D3 实测：详情页点「查看实战」
+        打开的新标签页要等下一次页面求值才出现，导致误判成“没打开”）。
+        这里用一个 0 延时的公开 API 触发事件泵；失败不影响页面枚举。
+        """
+        try:
+            for ctx in self.browser.contexts:
+                pages = list(ctx.pages)
+                if pages:
+                    pages[0].wait_for_timeout(0)
+                    return
+        except Exception:
+            pass
+
     def _iter_pages(self):
         seen = set()
         try:
@@ -372,6 +390,7 @@ class PlaywrightBrowser:
     # ---------- 标签页 ----------
 
     def pages(self, url_substr: str | None = None) -> list[dict]:
+        self._pump()                 # 先派发新标签页事件，再枚举
         self._refresh()
         out = []
         for page in self._iter_pages():

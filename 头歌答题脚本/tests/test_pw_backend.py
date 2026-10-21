@@ -96,6 +96,7 @@ class FakePage:
         self.keyboard = FakeKeyboard()
         self.closed = False
         self.context = None
+        self.pumps = 0
 
     def is_closed(self):
         return self.closed
@@ -115,6 +116,9 @@ class FakePage:
 
     def bring_to_front(self):
         self.brought_to_front += 1
+
+    def wait_for_timeout(self, ms):
+        self.pumps += 1
 
     def title(self):
         return self.title_text
@@ -181,6 +185,50 @@ check("find_page 无匹配返回 None", pb.find_page("example.com") is None)
 only_tasks = pb.pages("/tasks/")
 check("pages(url_substr) 过滤", [p["id"] for p in only_tasks] == [pages[1]["id"]],
       repr(only_tasks))
+
+# 同步 API 只在自己的调用里派发事件：pages() 必须先泵一次，否则轮询
+# 永远看不到「点按钮新开的标签页」（D3 真实 harvest 踩坑）。
+pumps_before = p1.pumps
+pb.pages()
+check("pages() 枚举前泵一次事件", p1.pumps == pumps_before + 1, repr(p1.pumps))
+
+pump_browser = FakeBrowser([FakePage("https://www.educoder.net/classrooms/x")])
+pump_pb = pw_backend.PlaywrightBrowser(pump_browser, port=9222)
+new_page = FakePage("https://www.educoder.net/tasks/new")
+pump_page = pump_browser.contexts[0].pages[0]
+
+
+def _reveal_page(ms):
+    pump_page.pumps += 1
+    if new_page not in pump_browser.contexts[0].pages:
+        pump_browser.contexts[0].pages.append(new_page)
+
+
+pump_page.wait_for_timeout = _reveal_page
+revealed = pump_pb.pages()
+check("pages() 泵事件后能看到新开的标签页",
+      any(p["url"].endswith("/tasks/new") for p in revealed), repr(revealed))
+check("新标签页也能被 url 过滤命中",
+      [p["url"] for p in pump_pb.pages("/tasks/")] == [new_page.url],
+      repr(pump_pb.pages("/tasks/")))
+
+# 泵事件失败不能影响页面枚举（页面崩溃/已关闭时 wait_for_timeout 可能抛错）
+bad_browser = FakeBrowser([FakePage("https://www.educoder.net/a")])
+bad_pb = pw_backend.PlaywrightBrowser(bad_browser, port=9222)
+
+
+def _boom(_ms):
+    raise RuntimeError("页面已关闭")
+
+
+bad_browser.contexts[0].pages[0].wait_for_timeout = _boom
+check("泵事件抛错时 pages() 仍返回页面",
+      [p["url"] for p in bad_pb.pages()] == ["https://www.educoder.net/a"],
+      repr(bad_pb.pages()))
+
+# 没有任何页面时也不能因为泵事件而报错
+empty_pb = pw_backend.PlaywrightBrowser(FakeBrowser([]), port=9222)
+check("没有页面时 pages() 返回空列表", empty_pb.pages() == [], repr(empty_pb.pages()))
 
 # 页面导航后 pages()/find_page 仍能按新 URL 找到同一标签页
 nav_page = FakePage("https://www.educoder.net/a")
