@@ -440,16 +440,35 @@
     },
   });
 
+  // 我们自己的 tokenizer 定义（WeakSet 用来区分“平台传进来的 provider”与内置定义）
+  const ftJavaDefs = new WeakSet();
+  const javaDef = smart => {
+    const def = JAVA_MONARCH(smart);
+    ftJavaDefs.add(def);
+    return def;
+  };
+
   const installTokenizer = () => {
-    if (!themeOn) return;   // 主题关闭时不接管着色：装了我们这套 Java tokenizer 会顶掉平台自带高亮
+    if (!themeOn) return;   // 主题关闭时不接管着色
     try {
-      window.Monaco?.languages?.setMonarchTokensProvider?.("java", JAVA_MONARCH(true));
+      window.Monaco?.languages?.setMonarchTokensProvider?.("java", javaDef(true));
+    } catch (e) {}
+  };
+
+  // 主题 开→关：把 Java 着色还原成平台原 provider；拿不到原 provider 时退回基础规则，
+  // 不能把增强 tokenizer 留在页面上
+  const restoreTokenizer = () => {
+    if (themeOn) return;
+    try {
+      const L = window.Monaco?.languages;
+      if (!L) return;
+      L.setMonarchTokensProvider?.("java", L.__ftJavaPlatformDef || javaDef(false));
     } catch (e) {}
   };
 
   const applyTheme = () => {
     try { window.Monaco?.editor?.__ftOrigSetTheme?.(themeOn ? uiTheme(platformTheme) : platformTheme); } catch (e) {}
-    installTokenizer();   // 内部有 themeOn 判断，关主题时不会去动 setMonarchTokensProvider
+    if (themeOn) installTokenizer(); else restoreTokenizer();
   };
 
   const applyFont = () => {
@@ -700,6 +719,33 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     applyCursor();
   };
 
+  // 多标签页同步：别的标签改了开关 → 本页只更新内存并重新应用，不回写 localStorage（避免相互覆盖）
+  window.addEventListener("storage", e => {
+    try {
+      if (!e || !e.key) return;
+      const val = e.newValue;
+      if (e.key === UI_THEME_KEY) {
+        themeOn = val !== "off";
+        applyTheme();
+        applySkin();
+        if (themeOn) ensureDarkMode();
+      } else if (e.key === UI_THEME_NAME) {
+        if (THEME_CHOICES[val]) themeName = val;
+        if (themeOn) applyTheme();
+        applySkin();
+      } else if (e.key === UI_FONT_KEY) {
+        fontOn = val === "on";
+        applyFont();
+        applySkin();
+      } else if (e.key === UI_FONT_ASKED) {
+        fontAsked = val != null;
+      } else if (e.key === UI_CURSOR_KEY) {
+        cursorOn = val === "on";
+        applyCursor();
+      }
+    } catch (err) {}
+  });
+
   // 页面可能先创建编辑器、后暴露 window.Monaco —— 用 DOM 的 React fiber 反查已有实例
   const findEditors = () => {
     const found = [];
@@ -744,11 +790,16 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
       return origSetTheme(themeOn ? uiTheme(name) : name);
     };
 
-    if (!M.languages.__ftMonarchHooked) {   // 内置 Java 语法是异步装载的，会覆盖我们装的，这里全部接管
+    if (!M.languages.__ftMonarchHooked && typeof M.languages.setMonarchTokensProvider === "function") {
+      // 内置 Java 语法是异步装载的，会覆盖我们装的，这里全部接管
       M.languages.__ftMonarchHooked = true;
       const origMonarch = M.languages.setMonarchTokensProvider.bind(M.languages);
-      M.languages.setMonarchTokensProvider = (id, def) =>
-        origMonarch(id, id === "java" && themeOn ? JAVA_MONARCH(true) : def);
+      M.languages.__ftOrigMonarch = origMonarch;
+      M.languages.setMonarchTokensProvider = (id, def) => {
+        if (id !== "java") return origMonarch(id, def);
+        if (!ftJavaDefs.has(def)) M.languages.__ftJavaPlatformDef = def;   // 记下平台原 provider，关主题时还原
+        return origMonarch(id, themeOn ? javaDef(true) : def);
+      };
     }
 
     const registerEditor = ed => {
@@ -846,20 +897,73 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
      被拦时静默 resolve，避免页面出现 unhandledrejection */
   const isBlankText = t => {
     const s = String(t == null ? "" : t);
-    return !s.replace(/[\s\u200b-\u200d\u2060\ufeff]/g, "").length;      // 全是空白/零宽字符（含空串：清空剪贴板也是篡改）
+    // Unicode 属性：Cf = 零宽/方向控制/软连字符等格式字符（U+200E/200F/2061-2064/00AD/180E…），
+    // Zs = 各类空格；含空串（清空剪贴板也算篡改）
+    return !s.replace(/[\p{Cf}\p{Zs}\s]/gu, "").length;
   };
-  const clipItemsText = items => {
-    const out = [];
-    for (const it of items || []) {
-      try {
-        const t = it && typeof it.text === "string" ? it.text : null;
-        if (t !== null) out.push(t);
-      } catch (e) {}
-    }
-    return out;
+
+  // ClipboardItem 是否有可放行的内容：
+  // 空白 text/plain 但同一 item 还带 image/png 等非文本类型时，放行整次写入；纯空白文本仍然拦
+  const itemHasContent = it => {
+    try {
+      if (it && typeof it.text === "string") {
+        return Promise.resolve(!isBlankText(it.text));   // 测试替身/旧式对象
+      }
+      if (it && typeof it.getType === "function" && it.types) {
+        const types = [...it.types].map(t => String(t).split(";")[0].trim().toLowerCase()).filter(Boolean);
+        if (!types.length) return Promise.resolve(false);                     // 空 ClipboardItem
+        if (types.some(t => !t.startsWith("text/"))) return Promise.resolve(true);   // 图片等非文本 → 放行
+        const textType = types.includes("text/plain") ? "text/plain"
+                       : types.includes("text/html") ? "text/html" : "";
+        if (!textType) return Promise.resolve(true);                          // 其它类型 → 放行
+        return it.getType(textType).then(b => b.text())
+          .then(t => !isBlankText(t))
+          .catch(() => false);
+      }
+    } catch (e) {}
+    return Promise.resolve(false);
   };
+  const allowWrite = items => {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) return Promise.resolve(false);
+    return Promise.all(list.map(itemHasContent)).then(oks => oks.some(Boolean));
+  };
+
+  // 原型补丁：页面绕过实例直接用 Clipboard.prototype.writeText / write 时也拦得住。
+  // navigator.clipboard 缺失（部分权限策略/隐私模式）时也要装上，所以放在 cb 判断之外
+  const patchClipboardProto = () => {
+    try {
+      const proto = window.Clipboard && window.Clipboard.prototype;
+      if (!proto) return;
+      if (typeof proto.writeText === "function" && !proto.__ftWriteTextPatched) {
+        const pOrig = proto.writeText;
+        Object.defineProperty(proto, "writeText", {
+          configurable: true,
+          writable: true,
+          value: function (t) {
+            if (isBlankText(t)) return Promise.resolve();
+            return pOrig.apply(this, arguments);
+          },
+        });
+        try { proto.__ftWriteTextPatched = true; } catch (e) {}
+      }
+      if (typeof proto.write === "function" && !proto.__ftWritePatched) {
+        const pWrite = proto.write;
+        Object.defineProperty(proto, "write", {
+          configurable: true,
+          writable: true,
+          value: function (items) {
+            const self = this;
+            return allowWrite(items).then(ok => (ok ? pWrite.apply(self, arguments) : undefined));
+          },
+        });
+        try { proto.__ftWritePatched = true; } catch (e) {}
+      }
+    } catch (e) {}
+  };
+
   try {
-    const cb = navigator.clipboard;
+    const cb = (() => { try { return navigator.clipboard || null; } catch (e) { return null; } })();
     if (cb) {
       let origWriteText = null;
       try { origWriteText = cb.writeText.bind(cb); } catch (e) {}
@@ -871,76 +975,25 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
           value: t => (isBlankText(t) ? Promise.resolve() : origWriteText(t)),
         });
       } catch (e) {}
-      // 原型补丁：页面绕过实例直接用 Clipboard.prototype.writeText 时也拦得住（不可配置就跳过）
-      try {
-        const proto = window.Clipboard && window.Clipboard.prototype;
-        if (proto && typeof proto.writeText === "function") {
-          const pOrig = proto.writeText;
-          Object.defineProperty(proto, "writeText", {
-            configurable: true,
-            writable: true,
-            value: function (t) {
-              if (isBlankText(t)) return Promise.resolve();
-              return pOrig.apply(this, arguments);
-            },
-          });
-        }
-      } catch (e) {}
       // write（ClipboardItem）：允许正常文本/富文本/图片，拦截“空内容”（空白文本、空 ClipboardItem、空数组）
       try {
         if (typeof cb.write === "function") {
           const write = cb.write.bind(cb);
-          const itemHasContent = it => {
-            try {
-              if (it && typeof it.text === "string") {
-                return Promise.resolve(!isBlankText(it.text));   // 测试替身/旧式对象
-              }
-              if (it && typeof it.getType === "function" && it.types) {
-                const types = [...it.types];
-                if (!types.length) return Promise.resolve(false);            // 空 ClipboardItem
-                const textType = types.includes("text/plain") ? "text/plain"
-                               : types.includes("text/html") ? "text/html" : "";
-                if (!textType) return Promise.resolve(true);                 // 图片等非文本文档 → 放行
-                return it.getType(textType).then(b => b.text())
-                  .then(t => !isBlankText(t))
-                  .catch(() => false);
-              }
-            } catch (e) {}
-            return Promise.resolve(false);
-          };
-          const allowWrite = items => {
-            const list = Array.isArray(items) ? items : [];
-            if (!list.length) return Promise.resolve(false);
-            return Promise.all(list.map(itemHasContent)).then(oks => oks.some(Boolean));
-          };
           Object.defineProperty(cb, "write", {
             configurable: true,
             writable: true,
             value: items => allowWrite(items).then(ok => (ok ? write(items) : undefined)),
           });
-          // 原型补丁：页面绕过实例直接用 Clipboard.prototype.write 时也拦得住
-          try {
-            const proto = window.Clipboard && window.Clipboard.prototype;
-            if (proto && typeof proto.write === "function") {
-              const pWrite = proto.write;
-              Object.defineProperty(proto, "write", {
-                configurable: true,
-                writable: true,
-                value: function (items) {
-                  const self = this;
-                  return allowWrite(items).then(ok => (ok ? pWrite.apply(self, arguments) : undefined));
-                },
-              });
-            }
-          } catch (e) {}
         }
       } catch (e) {}
     }
+    patchClipboardProto();
   } catch (e) {}
 
   /* ── ② 粘贴回落保护：网页会删掉刚粘贴的内容，检测到删除后撤销回来 ── */
-  let watchUntil = 0, undoCount = 0, guardGen = 0;   // guardGen：取消保护时自增，让已排队的回插作废
-  const pasted = { start: -1, len: 0, text: "" };    // 最近一次粘贴：位置 + 长度 + 内容
+  let watchUntil = 0, undoCount = 0, guardGen = 0;   // guardGen：只有 cancelGuard 自增，让已排队的回插作废
+  const PASTED_MAX = 3;
+  const pasted = [];                                 // 最近几次粘贴（新的在前）：{ start, len, text }
 
   const snapshotModels = () => {
     try {
@@ -950,12 +1003,24 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     } catch (e) {}
   };
 
+  const rememberPaste = text => {
+    const t = text || "";
+    const head = pasted[0];
+    // 同一次粘贴会先来 keydown（无文本）再来 paste（有文本）：合并成一条，别把历史挤掉
+    if (head && head.start < 0 && !head.text) {
+      if (t) head.text = t;
+      return;
+    }
+    pasted.unshift({ start: -1, len: 0, text: t });
+    if (pasted.length > PASTED_MAX) pasted.length = PASTED_MAX;
+  };
+
   // 开启保护窗口（粘贴时调用）；text 为粘贴内容（拿不到就靠模型变更事件补）
+  // 注意：这里不能递增 guardGen —— 连续粘贴时，上一次已排队的回插不能被新粘贴作废
   const openGuard = text => {
     watchUntil = Date.now() + 300;
     undoCount = 0;
-    guardGen++;
-    pasted.start = -1; pasted.len = 0; pasted.text = text || "";
+    rememberPaste(text);
     snapshotModels();
   };
 
@@ -964,11 +1029,23 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     watchUntil = 0;
     undoCount = 3;              // 预算置满
     guardGen++;                 // 已排队的回插一并作废
-    pasted.start = -1; pasted.len = 0; pasted.text = "";
+    pasted.length = 0;
   };
 
-  // 用户剪切（含右键菜单）也要立刻放行，不能把剪切当成平台篡改回插
-  window.addEventListener("cut", () => cancelGuard(), true);
+  // 用户剪切/鼠标删除/右键菜单/输入法/输入事件都要立刻放行，
+  // 不能把用户自己的编辑当成平台篡改而回插
+  const cancelOnUserEdit = () => cancelGuard();
+  ["cut", "mousedown", "contextmenu", "compositionstart"].forEach(type => {
+    window.addEventListener(type, cancelOnUserEdit, true);
+    document.addEventListener(type, cancelOnUserEdit, true);
+  });
+  const cancelOnBeforeInput = e => {
+    const t = String(e?.inputType || "");
+    if (t === "insertFromPaste" || t === "insertFromPasteAsQuotation") return;   // 粘贴本身不算用户编辑
+    if (/^(?:delete|insert)/.test(t) || t === "historyUndo" || t === "historyRedo") cancelGuard();
+  };
+  window.addEventListener("beforeinput", cancelOnBeforeInput, true);
+  document.addEventListener("beforeinput", cancelOnBeforeInput, true);
 
   // before/after 的公共前后缀 → 差异范围（before 坐标）
   const diffRange = (before, after) => {
@@ -980,18 +1057,21 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     return { start: p, end: before.length - s };
   };
 
-  // 删除区间是否命中“刚粘贴的文本”（疑似平台篡改）
+  // 删除区间是否命中“刚粘贴的文本”（疑似平台篡改）；最近几次粘贴逐条比对
   const suspectTamper = (dStart, dEnd, removed) => {
     const len = dEnd - dStart;
-    if (len <= 0 || !pasted.text) return false;                 // 不知道粘贴内容 → 不回插（宁漏勿误伤）
-    if (pasted.start >= 0 && pasted.len > 0) {                   // ① 位置重合
-      const pEnd = pasted.start + pasted.len;
-      const ov = Math.min(dEnd, pEnd) - Math.max(dStart, pasted.start);
-      if (ov > 0 && ov / Math.min(len, pasted.len) >= 0.5) return true;
+    if (len <= 0) return false;
+    for (const p of pasted) {
+      if (!p.text) continue;                                    // 不知道粘贴内容 → 不回插（宁漏勿误伤）
+      if (p.start >= 0 && p.len > 0) {                           // ① 位置重合
+        const pEnd = p.start + p.len;
+        const ov = Math.min(dEnd, pEnd) - Math.max(dStart, p.start);
+        if (ov > 0 && ov / Math.min(len, p.len) >= 0.5) return true;
+      }
+      const short = removed.length <= p.text.length ? removed : p.text;
+      const long = removed.length <= p.text.length ? p.text : removed;
+      if (short.length >= 4 && long.includes(short)) return true; // ② 内容基本一致（单字符不算）
     }
-    const short = removed.length <= pasted.text.length ? removed : pasted.text;
-    const long = removed.length <= pasted.text.length ? pasted.text : removed;
-    if (short.length >= 4 && long.includes(short)) return true; // ② 内容基本一致（单字符不算）
     return false;
   };
 
@@ -1001,12 +1081,15 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     const after = m.getValue();
     m.__ftLastValue = after;                                     // 快照只在保护窗口内更新
 
-    if (pasted.start < 0) {                                     // 记录粘贴插入的位置与内容
-      const ins = e.changes.find(c => c.text);
-      if (ins) {
-        pasted.start = ins.rangeOffset;
-        pasted.len = ins.text.length;
-        if (!pasted.text) pasted.text = ins.text;
+    if (pasted.length) {                                         // 记录粘贴插入的位置与内容（填最新空槽）
+      const slot = pasted.find(p => p.start < 0);
+      if (slot) {
+        const ins = e.changes.find(c => c.text);
+        if (ins) {
+          slot.start = ins.rangeOffset;
+          slot.len = ins.text.length;
+          if (!slot.text) slot.text = ins.text;
+        }
       }
     }
 
@@ -1021,9 +1104,12 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     undoCount++;
     watchUntil = Date.now() + 300;                              // 已确认是篡改 → 延长窗口继续守
     const gen = guardGen;
+    const expected = after;                                     // 删除后的快照：回插前模型必须仍是它
     setTimeout(() => {
       if (gen !== guardGen) return;                             // 用户已编辑 → 作废
       try {
+        // 偏移已过期（模型又被改过）就放弃，绝不把内容插到错误位置
+        if (m.getValue() !== expected) return;
         // 合成 Ctrl+Z 不可靠（撤销栈可能为空/被平台清空）→ 直接把被删掉的文本插回去
         // 多段删除必须按偏移升序回插：每插回一段，后面各段的原始偏移正好被补回
         dels.filter(c => c.rangeOffset < dEnd && c.rangeOffset + c.rangeLength > dStart)
@@ -1231,17 +1317,19 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
   };
 
   /* ── ⑦ 选择题：手动点「评测」后等结果；只有平台弹庆祝弹层（=通过）才跳关，否则只提示 ── */
-  let choiceEval = 0;      // 评测开始时间戳（0 = 未在观察）
+  let choiceEval = null;   // { at: 评测开始时间戳, key: 关卡标识 }；null = 未在观察
 
   const resultBox = () => $$(".evaluate-result-container, [class*=\"evaluate-result\"]").find(visible) || null;
 
   const watchChoiceEval = () => {
     if (!choiceEval) return;
+    // 换关了 → 上一次评测的观察立即作废，不能在新关弹旧提示
+    if (levelKey() !== choiceEval.key) { choiceEval = null; return; }
     // 平台只在“通过”（含部分正确）时弹庆祝弹层，失败没有任何可判定信号；
     // 因此：看到弹层 → 交给弹层路径跳关；一段时间内没有弹层 → 视为未通过，只提示不跳关。
-    if (resultBox()) { choiceEval = 0; return; }
-    if (Date.now() - choiceEval > 3000) {
-      choiceEval = 0;
+    if (resultBox()) { choiceEval = null; return; }
+    if (Date.now() - choiceEval.at > 3000) {
+      choiceEval = null;
       toast("未检测到通过，已停止自动跳转");
       return;
     }
@@ -1251,7 +1339,7 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
   document.addEventListener("click", e => {
     const btn = e.target?.closest?.("button, [role=button], a");
     if (!btn || (btn.innerText || "").trim() !== "评测" || $(".monaco-editor")) return;   // 仅限选择题
-    choiceEval = Date.now();
+    choiceEval = { at: Date.now(), key: levelKey() };
     setTimeout(watchChoiceEval, 150);
   }, true);
 
