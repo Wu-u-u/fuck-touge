@@ -337,5 +337,14 @@ check("模板检测：正常长代码",
 check("模板检测：长代码单个 TODO 注释不误伤",
       not looks_like_template("# TODO: 优化\n" + "x = 1\n" * 100))
 
+# 源码仓库扩展根目录没有 manifest 时，load_config 应自动改用 dist/
+_ed = Path(tempfile.mkdtemp())
+(_ed / "dist").mkdir()
+(_ed / "dist" / "manifest.json").write_text("{}", encoding="utf-8")
+_ec = _ed / "ext.toml"
+_ec.write_text(f"[edge]\nextension = {json.dumps(str(_ed))}\n", encoding="utf-8")
+_ecfg = load_config(_ec)
+check("extension 自动指向 dist", _ecfg["edge"]["extension"] == str(_ed / "dist"))
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

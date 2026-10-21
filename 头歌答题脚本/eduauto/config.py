@@ -107,6 +107,13 @@ def load_config(path: Path) -> dict:
         value = cfg["edge"][key]
         if not os.path.isabs(os.path.expanduser(value)):
             cfg["edge"][key] = str(base / value)
+    # 源码仓库默认指向 Fuck头歌/ 根目录；v2.5.0 起构建产物在 dist/。
+    # release zip 的 Fuck头歌/ 根目录本身有 manifest，保持原路径。
+    ext_path = Path(os.path.expanduser(cfg["edge"]["extension"]))
+    if not (ext_path / "manifest.json").exists():
+        dist = ext_path / "dist"
+        if (dist / "manifest.json").exists():
+            cfg["edge"]["extension"] = str(dist)
     # apply_current_profile() 会把 edge.profile 改成当前槽的路径，browser 1
     # 需要原始 config 档案作为「1 号槽」的默认值，先在这里留一份。
     cfg["edge"]["default_profile"] = cfg["edge"]["profile"]
