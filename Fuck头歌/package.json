@@ -1,0 +1,18 @@
+{
+  "name": "fuck-touge-extension",
+  "version": "2.4.7",
+  "private": true,
+  "description": "Fuck 头歌浏览器扩展（TypeScript + esbuild 构建）",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "package": "node build.mjs --zip"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}
