@@ -26,7 +26,10 @@ import argparse
 import sys
 
 from eduauto.util import die, log
-from eduauto.browser import classroom_page, connect_browser, ensure_browser, ensure_login, port_alive, read_account_name
+from eduauto.browser import (
+    classroom_page, connect_configured, ensure_browser,
+    ensure_login, port_alive, read_account_name,
+)
 from eduauto.config import SLOT_RE, apply_current_profile, load_config, load_state, remember_name, setup_slot
 from eduauto.flows import cmd_harvest, cmd_run, cmd_scan_retired
 
@@ -46,7 +49,7 @@ def cmd_browser_list(cfg: dict) -> None:
     live = ""
     if alive:
         try:
-            browser = connect_browser(port, attempts=1)
+            browser = connect_configured(cfg, attempts=1)
             live = read_account_name(browser) or ""
             if live and current:
                 remember_name(current, live)

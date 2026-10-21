@@ -11,6 +11,15 @@ from eduauto.page import Page
 from eduauto.util import die, log
 from eduauto.config import load_state, remember_name, save_state, update_state
 
+def backend_name() -> str:
+    """当前浏览器后端：默认 ``cdp``，可用 ``EDUAUTO_BACKEND=playwright`` 切换。"""
+    return (os.environ.get("EDUAUTO_BACKEND") or "cdp").strip().lower()
+
+
+def playwright_backend() -> bool:
+    return backend_name() == "playwright"
+
+
 def port_alive(port: int) -> bool:
     try:
         cdp.http_json("/json/version", port, timeout=2)
@@ -20,7 +29,15 @@ def port_alive(port: int) -> bool:
 
 
 def stop_browser(port: int, timeout: float = 25) -> bool:
-    """请当前浏览器退出并等待端口释放。"""
+    """请当前浏览器退出并等待端口释放。
+
+    Playwright 后端接管的是用户共享的 Edge，绝不能通过 ``Browser.close``
+    误杀它；这里直接跳过关闭并返回 False（端口仍在）。
+    """
+    if playwright_backend():
+        log("  ! Playwright 模式不会关闭共享 Edge（已跳过关闭请求）；"
+            "如需切换档案请手动退出 Edge 后重试。")
+        return False
     try:
         browser = cdp.Browser(port)
         browser.close_browser()
@@ -75,6 +92,17 @@ def connect_browser(port: int, attempts: int = 20) -> cdp.Browser:
     die(f"连不上浏览器调试端口 {port}，请重试或先运行 python3 答题.py browser。")
 
 
+def connect_configured(cfg: dict, attempts: int = 20):
+    """按 ``EDUAUTO_BACKEND`` 连接**已经在运行**的浏览器（不启动、不关闭）。
+
+    供 ``browser -ls`` 等只读入口使用；默认仍是 ``connect_browser``。
+    """
+    if playwright_backend():
+        from eduauto import pw_backend
+        return pw_backend.connect_playwright(cfg)
+    return connect_browser(int(cfg["edge"]["port"]), attempts=attempts)
+
+
 def ensure_window_size(browser: cdp.Browser, min_w: int = 1400, min_h: int = 900) -> None:
     """窗口太小时最大化：头歌是宽布局，窗口窄会把按钮挤出视口导致点不到。"""
     pages = browser.pages()
@@ -94,7 +122,64 @@ def ensure_window_size(browser: cdp.Browser, min_w: int = 1400, min_h: int = 900
         pass
 
 
+def _ensure_browser_playwright(cfg: dict):
+    """Playwright 模式：只接管已运行的 Edge，不启动、不关闭共享浏览器。"""
+    from eduauto import pw_backend
+
+    port = int(cfg["edge"]["port"])
+    if not port_alive(port):
+        die(
+            f"Playwright 模式需要 Edge 已经启动并开放调试端口 {port}，当前连不上。\n"
+            "  请先用 cdp 模式启动一次（EDUAUTO_BACKEND=cdp python3 答题.py browser），\n"
+            "  或手动带 --remote-debugging-port 启动 Edge。\n"
+            "  Playwright 模式不会自动启动浏览器，也不会关闭共享 Edge。"
+        )
+
+    state = load_state()
+    cur = state.get("current") or "1"
+    running = state.get("running")
+    running_profile = state.get("running_profile")
+    cur_profile = os.path.expanduser(str(cfg["edge"]["profile"]))
+    same_profile = bool(running_profile) and \
+        os.path.expanduser(str(running_profile)) == cur_profile
+
+    if running and running != cur:
+        log(f"  ! Playwright 模式不切换档案槽：运行中的浏览器是「{running}」号，"
+            f"当前槽是「{cur}」号；继续复用现有浏览器"
+            "（如需切换请先手动退出 Edge，或用 cdp 模式运行 browser）。")
+    elif running_profile and not same_profile:
+        log("  ! Playwright 模式不关闭共享 Edge：运行中的档案与当前槽不一致，"
+            "继续复用现有浏览器（如需切换请先手动退出 Edge）。")
+    elif not running_profile:
+        log("  · Playwright 模式不启动/不切换档案，直接复用调试端口上的现有 Edge。")
+    else:
+        log(f"  ✓ 复用已打开的浏览器（档案槽「{cur}」）")
+
+    try:
+        browser = pw_backend.connect_playwright(cfg)
+    except cdp.CDPError as e:
+        die(f"Playwright 后端连接失败：{e}")
+
+    # 只有确认「运行中就是当前槽」时才更新状态；槽位不一致时保留原记录，
+    # 避免把实际在用的档案误写成目标槽，影响后续 cdp 模式的判断。
+    if not running and not running_profile:
+        update_state(running=cur, running_profile=cur_profile)
+    elif running == cur and same_profile:
+        update_state(running=cur, running_profile=cur_profile)
+
+    ensure_window_size(browser)
+    try:
+        ext = browser.ensure_extension(cfg["edge"]["extension"])
+        if ext:
+            log(f"  ✓ Fuck头歌 已加载（v{ext.get('version', '?')}）")
+    except RuntimeError as e:
+        log(f"  ! {e}（继续运行，脚本会自行兜底跳关）")
+    return browser
+
+
 def ensure_browser(cfg: dict) -> cdp.Browser:
+    if playwright_backend():
+        return _ensure_browser_playwright(cfg)
     port = int(cfg["edge"]["port"])
     state = load_state()
     cur = state.get("current") or "1"

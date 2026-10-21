@@ -1,8 +1,9 @@
-"""Playwright 后端适配器骨架（D1）。
+"""Playwright 后端适配器（D1 骨架，D2 接入 CLI）。
 
-默认答题路径仍然走 `cdp.py`，本模块只提供一个最小兼容层：
-把现有代码用到的 `WS` / `Browser` 调用面映射到 Playwright 的 Page / Browser
-对象上，用于验证 Playwright 能否接管已经运行的调试 Edge。
+默认答题路径仍然走 `cdp.py`；设置 ``EDUAUTO_BACKEND=playwright`` 时，
+``eduauto.browser.ensure_browser`` 会调用本模块接管已经运行的调试 Edge。
+本模块把现有代码用到的 `WS` / `Browser` 调用面映射到 Playwright 的
+Page / Browser 对象上。
 
 设计约束：
   · 不启动新浏览器、不重新登录：只通过 ``connect_over_cdp`` 接管已有调试 Edge；
@@ -16,10 +17,14 @@
 
 连接现有 Edge 不需要再执行 ``playwright install`` 下载浏览器内核。
 
-可选工厂（D1 尚未接入 ``答题.py`` 的默认 CLI 路径，默认行为不变）::
+用法（默认 cdp，行为不变）::
+
+    EDUAUTO_BACKEND=playwright python3 答题.py harvest
+
+也可以直接调用工厂::
 
     from eduauto.pw_backend import make_browser
-    browser = make_browser(cfg)      # 默认 cdp；设置 EDUAUTO_BACKEND=playwright 时走本模块
+    browser = make_browser(cfg)      # 默认 cdp；EDUAUTO_BACKEND=playwright 时走本模块
 """
 
 from __future__ import annotations
@@ -124,7 +129,7 @@ class PlaywrightWS:
     def call(self, method: str, params: dict | None = None) -> dict:
         """最小 CDP 方法映射。
 
-        只支持当前脚本确实用到的两个页面级方法；其余方法明确抛
+        只支持当前脚本确实用到的方法；其余方法明确抛
         ``NotImplementedError``，便于后续按需补齐。
         """
         params = params or {}
@@ -134,7 +139,7 @@ class PlaywrightWS:
                 raise PlaywrightBackendError("Page.navigate 缺少 url 参数")
             self._ensure_open()
             try:
-                self.page.goto(url)
+                self.page.goto(url, wait_until="domcontentloaded")
             except Exception as e:
                 raise PlaywrightBackendError(f"Page.navigate 失败: {e}") from e
             return {}
@@ -145,7 +150,39 @@ class PlaywrightWS:
             except Exception as e:
                 raise PlaywrightBackendError(f"Page.bringToFront 失败: {e}") from e
             return {}
+        if method == "Input.dispatchKeyEvent":
+            return self._dispatch_key(params)
         raise NotImplementedError(f"Playwright 后端未实现 CDP 方法：{method}")
+
+    def _dispatch_key(self, params: dict) -> dict:
+        """映射 ``Input.dispatchKeyEvent``；目前只支持 Escape（关代码弹窗兜底）。
+
+        其他按键明确抛 ``NotImplementedError``，避免静默吞掉调用方的按键逻辑。
+        """
+        key = params.get("key") or params.get("code")
+        if key != "Escape":
+            raise NotImplementedError(
+                f"Playwright 后端 Input.dispatchKeyEvent 暂不支持按键：{key!r}"
+                "（当前只实现 Escape）"
+            )
+        typ = params.get("type") or "keyDown"
+        self._ensure_open()
+        try:
+            if typ in ("keyDown", "rawKeyDown"):
+                self.page.keyboard.down("Escape")
+            elif typ == "keyUp":
+                self.page.keyboard.up("Escape")
+            elif typ == "char":
+                self.page.keyboard.press("Escape")
+            else:
+                raise PlaywrightBackendError(
+                    f"Input.dispatchKeyEvent 不支持的事件类型：{typ!r}"
+                )
+        except cdp.CDPError:
+            raise
+        except Exception as e:
+            raise PlaywrightBackendError(f"发送 Escape 失败: {e}") from e
+        return {}
 
     # ---------- 等待 ----------
 
@@ -185,6 +222,64 @@ class PlaywrightWS:
         self.closed = True
 
 
+class PlaywrightBrowserWS:
+    """浏览器级 ``cdp.WS`` 兼容壳，只实现窗口尺寸相关命令。
+
+    ``ensure_window_size`` 会调用 ``browser.ws.call("Browser.getWindowForTarget")``
+    和 ``Browser.setWindowBounds``。Playwright 的浏览器级 CDP 会话拿不到窗口
+    （实测报 “No web contents in the target”），这里改用页面的
+    ``context.new_cdp_session(page)`` 创建 CDP 会话，把 targetId 换成该页面后
+    转发；窗口命令失败时抛 ``PlaywrightBackendError``（调用方会捕获并跳过
+    最大化），不会影响主流程。
+    """
+
+    SUPPORTED = ("Browser.getWindowForTarget", "Browser.setWindowBounds")
+
+    def __init__(self, owner: "PlaywrightBrowser"):
+        self.owner = owner
+        self._sessions: dict[object, object] = {}
+
+    def _page_for(self, target_id):
+        page = self.owner._pages.get(target_id) if target_id else None
+        if page is not None and not _page_closed(page):
+            return page
+        for page in self.owner._iter_pages():
+            return page
+        return None
+
+    def _session_for(self, page):
+        session = self._sessions.get(page)
+        if session is not None:
+            return session
+        try:
+            session = page.context.new_cdp_session(page)
+        except Exception as e:
+            raise PlaywrightBackendError(f"创建页面 CDP 会话失败: {e}") from e
+        self._sessions[page] = session
+        return session
+
+    def call(self, method: str, params: dict | None = None) -> dict:
+        if method not in self.SUPPORTED:
+            raise NotImplementedError(f"Playwright 后端未实现浏览器级 CDP 方法：{method}")
+        params = dict(params or {})
+        page = self._page_for(params.pop("targetId", None))
+        if page is None:
+            raise PlaywrightBackendError("没有可用的页面，无法读取/设置窗口尺寸")
+        session = self._session_for(page)
+        try:
+            return session.send(method, params)
+        except Exception as e:
+            raise PlaywrightBackendError(f"{method} 失败: {e}") from e
+
+    def close(self) -> None:
+        sessions, self._sessions = self._sessions, {}
+        for session in sessions.values():
+            try:
+                session.detach()
+            except Exception:
+                pass
+
+
 class PlaywrightBrowser:
     """浏览器级适配器：管理标签页与 target id 映射。
 
@@ -203,6 +298,8 @@ class PlaywrightBrowser:
         self._ids: dict[object, str] = {}
         self._pages: dict[str, object] = {}
         self._next_id = 1
+        # 浏览器级兼容入口：只支持窗口尺寸查询/设置（ensure_window_size 用）。
+        self.ws = PlaywrightBrowserWS(self)
 
     # ---------- 内部 ----------
 
@@ -328,12 +425,17 @@ class PlaywrightBrowser:
     # ---------- 浏览器级兼容 ----------
 
     def extensions(self) -> list[dict]:
-        """骨架不查询扩展；返回空列表让调用方走兜底路径。"""
+        """Playwright 后端不查询扩展；返回空列表让调用方走兜底路径。"""
         return []
 
     def ensure_extension(self, path: str) -> dict | None:
-        """骨架不管理扩展：现有 Edge 里已加载的扩展会继续生效。"""
-        log("  · Playwright 后端骨架暂不管理扩展（沿用浏览器里已加载的扩展）")
+        """不管理扩展：现有 Edge 里已加载的扩展会继续生效。
+
+        明确返回 ``None`` 并记日志，绝不假装「已加载」；脚本会走自己的
+        「点弹层按钮 / 自行跳关」兜底路径。
+        """
+        log("  · Playwright 后端不管理扩展（沿用浏览器里已加载的扩展；"
+            "脚本会自行兜底跳关）")
         return None
 
     def close_browser(self) -> None:
@@ -345,6 +447,10 @@ class PlaywrightBrowser:
         if self.closed:
             return
         self.closed = True
+        try:
+            self.ws.close()
+        except Exception:
+            pass
         pw, self.playwright = self.playwright, None
         if pw is not None:
             try:
@@ -378,8 +484,8 @@ def connect_playwright(cfg: dict) -> PlaywrightBrowser:
             pass
         raise PlaywrightBackendError(
             f"无法通过 Playwright 接管调试端口 {port}：{e}\n"
-            "  请确认 Edge 已用 --remote-debugging-port 启动"
-            "（可先运行 python3 答题.py browser）。"
+            "  请确认 Edge 已用 --remote-debugging-port 启动；"
+            "可先运行 EDUAUTO_BACKEND=cdp python3 答题.py browser。"
         ) from e
     return PlaywrightBrowser(browser, playwright=pw, port=port, cdp_url=cdp_url)
 
