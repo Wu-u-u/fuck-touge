@@ -12,7 +12,7 @@ import cdp
 from eduauto.page import Page
 from eduauto.archive import Chapter, find_level, load_answers, write_back_answers, write_scan_skeleton
 from eduauto.util import die, fmt_secs, log, norm
-from eduauto.answers import answer_to_toml, read_saved_answer, wait_outcome
+from eduauto.answers import answer_to_toml, read_saved_answer, read_test_result, wait_outcome
 from eduauto.browser import classroom_page, ensure_browser, ensure_login
 from eduauto.code import answer_choice, choice_letters, close_file_menu, list_code_files, set_code, write_files
 from eduauto.workspace import ChapterEnterError, advance_level, card_progress_js, enter_chapter, is_passed_row, rewind_to_first, row_at, scrape_status, wait_index_change
@@ -550,7 +550,8 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
 
             fail0 = st.get("failMsgs", 0)
             ctx = {"index0": idx, "url0": st.get("url"), "fail0": fail0,
-                   "is_last": not st.get("hasNext")}
+                   "is_last": not st.get("hasNext"),
+                   "test_result0": (read_test_result(page) or {}).get("text")}
             log("    点「评测」…")
             if not page.click_eval():
                 stats["failed"] += 1
@@ -564,16 +565,25 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
             if outcome["kind"] == "timeout":
                 stats["failed"] += 1
                 die(f"第{idx}关「{lname}」等待评测结果超时，已暂停。")
+            if outcome["kind"] == "submitted":
+                # 选择题答案由用户确认正确；平台只显示「提交成功」面板，
+                # 不查详情页分数，直接进入下一关（避免白等详情表/60 秒跳转轮询）。
+                log("    ✓ 提交成功（选择题答案已确认，直接继续）")
+                outcome["kind"] = "last" if outcome.get("last") else "next"
+                outcome["submitted_panel"] = True
             stats["done"] += 1
             if outcome["kind"] == "last":
                 log("  → 本章最后一关已通过，本章结束"
                     f"（本关用时 {time.time() - t_level:.1f} 秒）")
                 break
-            # next：等待进入下一关
-            nxt = wait_index_change(page, idx, timeout=float(cfg["run"]["level_timeout"]))
-            if nxt.get("index") == idx:
-                log("  ! 评测通过但页面没有跳到下一关，尝试点工具栏「下一关」…")
+            # next：等待进入下一关；提交面板不会自动跳，直接点工具栏
+            if outcome.get("submitted_panel"):
                 nxt = advance_level(page, idx)
+            else:
+                nxt = wait_index_change(page, idx, timeout=float(cfg["run"]["level_timeout"]))
+                if nxt.get("index") == idx:
+                    log("  ! 评测通过但页面没有跳到下一关，尝试点工具栏「下一关」…")
+                    nxt = advance_level(page, idx)
             if nxt.get("index") == idx:
                 die(f"第{idx}关评测已通过，但页面无法进入下一关，已暂停。")
             st = nxt
@@ -695,7 +705,8 @@ def cmd_run(args, cfg: dict) -> None:
         stats = {"done": 0, "skipped": 0, "failed": 0}
         results[ch.name] = stats      # 先就位：本章中途 die 时已作答数不丢
         try:
-            ret = process_chapter(browser, entry_classroom, cfg, ch, rows, stats=stats)
+            ret = process_chapter(browser, entry_classroom, cfg, ch, rows,
+                                  stats=stats)
         finally:
             if entry_classroom.target.get("id"):
                 browser.close_target(entry_classroom.target["id"])

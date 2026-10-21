@@ -19,6 +19,34 @@ TOAST_LAST = "已经是最后一关了"
 FAIL_TEXT = "评测未通过"
 
 
+def read_test_result(page: Page) -> dict | None:
+    """读取平台新的「提交结果」面板（.test-result），没有则 None。
+
+    近期平台把选择题/提交结果改成页面内面板：class 含 success，
+    文本类似「当前状态已提交，将按照最新提交的答案计算成绩」。
+    这只能说明提交成功，不能直接当满分；调用方仍需查详情页分数复核。
+    """
+    ws = getattr(page, "ws", None)
+    if ws is None:
+        return None
+    try:
+        val = ws.eval_json(r"""
+JSON.stringify((function(){
+  const els = [...document.querySelectorAll('.test-result')];
+  const el = els.find(e => {
+    const r = e.getBoundingClientRect();
+    const s = getComputedStyle(e);
+    return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
+  });
+  if (!el) return null;
+  return {cls: String(el.className || ''), text: (el.innerText || '').trim().slice(0, 200)};
+})())
+""")
+    except cdp.CDPError:
+        return None
+    return val if isinstance(val, dict) and val.get("text") else None
+
+
 def wait_outcome(page: Page, ctx: dict, timeout: float) -> dict:
     """评测后等待结果。
 
@@ -43,7 +71,19 @@ def wait_outcome(page: Page, ctx: dict, timeout: float) -> dict:
         except cdp.CDPError:
             continue
         pr = probe_state(page.ws)
+        tr = read_test_result(page)
         toast_text = " ".join(list(pr.get("toasts", [])))
+        # 新平台「提交结果」面板：只认新出现且 success 的面板；
+        # 分数由调用方查详情页复核，不能仅凭面板当满分。
+        if (tr and "success" in str(tr.get("cls", ""))
+                and tr.get("text") != ctx.get("test_result0")):
+            has_next = bool(page.ws.eval(
+                "!!([...document.querySelectorAll('a,button')].find(e=>"
+                "(e.innerText||'').trim()==='下一关' && "
+                "e.getBoundingClientRect().width>0))"
+            ))
+            return {"kind": "submitted", "detail": tr["text"][:80],
+                    "last": not has_next}
         if TOAST_LAST in toast_text:
             return {"kind": "last", "detail": TOAST_LAST}
         if TOAST_NEXT in toast_text and not next_hint_at:
