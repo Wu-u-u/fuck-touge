@@ -1,11 +1,11 @@
-// Fuck 头歌 v2.4.5 —— 仅作用于头歌：
+// Fuck 头歌 v2.4.6 —— 仅作用于头歌：
 //   ① 允许粘贴/复制，并阻止网页篡改剪贴板
 //   ② 答对后自动点掉“恭喜通过”弹层里的「下一关」/「最后一关」/「完成」
 //   ③ 编辑器增强：主题（Catppuccin / GitHub 高对比）+ Maple Mono 字体 + 光标动画（默认关）
 //   ④ 页面皮肤：仅答题页面内，选择题等无编辑器页面也换成主题深色（主题开启时）
 (() => {
   "use strict";
-  try { window.__fuckTouge = "2.4.5"; } catch (e) {}
+  try { window.__fuckTouge = "2.4.6"; } catch (e) {}
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
