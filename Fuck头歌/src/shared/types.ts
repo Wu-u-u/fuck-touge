@@ -47,10 +47,13 @@ export interface MonacoLike {
   };
 }
 
+/** 对外（popup）暴露的设置：不含内部的 fontAsked */
+export type PublicSettings = Omit<FuckTougeSettings, "fontAsked">;
+
 /** 插件暴露给 popup 的页面 API */
 export interface FuckTougeUIApi {
-  get(): FuckTougeSettings;
-  set(patch: Partial<FuckTougeSettings>): FuckTougeSettings;
+  get(): PublicSettings;
+  set(patch: Partial<PublicSettings>): PublicSettings;
 }
 
 declare global {

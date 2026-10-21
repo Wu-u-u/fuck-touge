@@ -4,6 +4,12 @@
 //   ② 答对后自动点掉“恭喜通过”弹层里的「下一关」/「最后一关」/「完成」
 //   ③ 编辑器增强：主题（Catppuccin / GitHub 高对比）+ Maple Mono 字体 + 光标动画（默认关）
 //   ④ 页面皮肤：仅答题页面内，选择题等无编辑器页面也换成主题深色（主题开启时）
+import { installUIApi } from "../api";
+import { installAttrCleaner } from "../features/attrs";
+import { installClipboardGuard } from "../features/clipboard";
+import { createFontPrompt } from "../ui/prompt";
+import { toast } from "../ui/toast";
+
 (() => {
   "use strict";
   try { window.__fuckTouge = "2.4.7"; } catch (e) {}
@@ -13,21 +19,6 @@
   const visible = el => {
     const r = el.getBoundingClientRect(), s = getComputedStyle(el);
     return r.width > 0 && r.height > 0 && s.display !== "none" && s.visibility !== "hidden";
-  };
-
-  /* ── 轻提示 ── */
-  const toast = msg => {
-    try {
-      const el = document.createElement("div");
-      el.textContent = msg;
-      el.style.cssText =
-        "position:fixed;top:26px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
-        "padding:10px 18px;border-radius:10px;background:rgba(17,17,17,.86);color:#fff;" +
-        "font-size:18px;line-height:1;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.35);" +
-        "transition:opacity .5s;";
-      (document.body || document.documentElement).appendChild(el);
-      setTimeout(() => { el.style.opacity = "0"; setTimeout(() => el.remove(), 600); }, 2600);
-    } catch (e) {}
   };
 
   /* ── 编辑器外观增强：类 VS Code 高对比主题 + Maple Mono 字体 ──
@@ -837,159 +828,22 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     }
   };
 
-  // 首次使用询问（只问一次）
-  const showUIPrompt = () => {
-    if ($(".fuck-touge-ui-prompt")) return;
-    const wrap = document.createElement("div");
-    wrap.className = "fuck-touge-ui-prompt";
-    wrap.style.cssText =
-      "position:fixed;right:16px;top:70px;z-index:2147483646;max-width:320px;" +
-      "background:#1e1e1e;color:#eee;border:1px solid #3a3a3a;border-radius:12px;" +
-      "padding:14px 16px;font-size:13px;line-height:1.6;box-shadow:0 10px 30px rgba(0,0,0,.45);";
-    wrap.innerHTML =
-      '<div style="font-weight:600;margin-bottom:6px;">Fuck 头歌 · 编辑器增强</div>' +
-      '<div style="opacity:.85;margin-bottom:10px;">检测到头歌编辑器：是否启用更舒适的 Maple Mono 字体？（主题已默认开启）</div>' +
-      '<div style="opacity:.6;font-size:12px;margin-bottom:12px;">提示：内置字体只替换英文/代码符号；想替换中文请自行安装 Maple Mono NF CN 字体</div>';
-    const mkBtn = (text, primary) => {
-      const b = document.createElement("button");
-      b.textContent = text;
-      b.style.cssText = "border:0;border-radius:8px;padding:6px 16px;font-size:13px;cursor:pointer;margin-right:8px;" +
-        (primary ? "background:#1677ff;color:#fff;" : "background:#333;color:#ddd;");
-      return b;
-    };
-    const done = on => {
-      setFontState(on);
-      wrap.remove();
-    };
-    const yes = mkBtn("启用", true), no = mkBtn("暂不", false);
-    yes.addEventListener("click", () => done(true));
-    no.addEventListener("click", () => done(false));
-    wrap.append(yes, no);
-    (document.body || document.documentElement).appendChild(wrap);
-  };
+  // 首次使用询问（只问一次）+ 弹窗 API（模块化，依赖显式传入）
+  const fontPrompt = createFontPrompt({
+    shouldAsk: () => !fontAsked && !fontOn,
+    setFont: setFontState,
+  });
+  const uiState = () => ({ theme: themeOn, font: fontOn, themeName, cursor: cursorOn });
+  installUIApi({
+    getState: uiState,
+    setThemeName,
+    setTheme: setThemeState,
+    setFont: setFontState,
+    setCursor: setCursorState,
+  });
 
-  const maybeAskUI = () => {
-    try {
-      if (fontAsked || fontOn) return;       // 字体问过一次 / 已开启就不再打扰
-      if (!$(".monaco-editor")) return;      // 只在有编辑器的页面询问
-      showUIPrompt();
-    } catch (e) {}
-  };
-
-  // 给扩展弹窗用的接口
-  try {
-    const uiState = () => ({ theme: themeOn, font: fontOn, themeName, cursor: cursorOn });
-    window.__fuckTougeUI = {
-      get: uiState,
-      set: next => {                 // 只处理传入的字段，避免误改其它状态
-        if (next && typeof next === "object") {
-          if ("themeName" in next) setThemeName(next.themeName);
-          if ("theme" in next) setThemeState(!!next.theme);
-          if ("font" in next) setFontState(!!next.font);
-          if ("cursor" in next) setCursorState(!!next.cursor);
-        }
-        return uiState();
-      },
-    };
-  } catch (e) {}
-
-  /* ── ① 剪贴板保护：头歌会在编辑器聚焦时往剪贴板写入一个空格/零宽字符 ──
-     只拦“全空白/零宽”的写入（那是平台的篡改动作），正常内容一律放行；
-     被拦时静默 resolve，避免页面出现 unhandledrejection */
-  const isBlankText = t => {
-    const s = String(t == null ? "" : t);
-    // Unicode 属性：Cf = 零宽/方向控制/软连字符等格式字符（U+200E/200F/2061-2064/00AD/180E…），
-    // Zs = 各类空格；含空串（清空剪贴板也算篡改）
-    return !s.replace(/[\p{Cf}\p{Zs}\s]/gu, "").length;
-  };
-
-  // ClipboardItem 是否有可放行的内容：
-  // 空白 text/plain 但同一 item 还带 image/png 等非文本类型时，放行整次写入；纯空白文本仍然拦
-  const itemHasContent = it => {
-    try {
-      if (it && typeof it.text === "string") {
-        return Promise.resolve(!isBlankText(it.text));   // 测试替身/旧式对象
-      }
-      if (it && typeof it.getType === "function" && it.types) {
-        const types = [...it.types].map(t => String(t).split(";")[0].trim().toLowerCase()).filter(Boolean);
-        if (!types.length) return Promise.resolve(false);                     // 空 ClipboardItem
-        if (types.some(t => !t.startsWith("text/"))) return Promise.resolve(true);   // 图片等非文本 → 放行
-        const textType = types.includes("text/plain") ? "text/plain"
-                       : types.includes("text/html") ? "text/html" : "";
-        if (!textType) return Promise.resolve(true);                          // 其它类型 → 放行
-        return it.getType(textType).then(b => b.text())
-          .then(t => !isBlankText(t))
-          .catch(() => false);
-      }
-    } catch (e) {}
-    return Promise.resolve(false);
-  };
-  const allowWrite = items => {
-    const list = Array.isArray(items) ? items : [];
-    if (!list.length) return Promise.resolve(false);
-    return Promise.all(list.map(itemHasContent)).then(oks => oks.some(Boolean));
-  };
-
-  // 原型补丁：页面绕过实例直接用 Clipboard.prototype.writeText / write 时也拦得住。
-  // navigator.clipboard 缺失（部分权限策略/隐私模式）时也要装上，所以放在 cb 判断之外
-  const patchClipboardProto = () => {
-    try {
-      const proto = window.Clipboard && window.Clipboard.prototype;
-      if (!proto) return;
-      if (typeof proto.writeText === "function" && !proto.__ftWriteTextPatched) {
-        const pOrig = proto.writeText;
-        Object.defineProperty(proto, "writeText", {
-          configurable: true,
-          writable: true,
-          value: function (t) {
-            if (isBlankText(t)) return Promise.resolve();
-            return pOrig.apply(this, arguments);
-          },
-        });
-        try { proto.__ftWriteTextPatched = true; } catch (e) {}
-      }
-      if (typeof proto.write === "function" && !proto.__ftWritePatched) {
-        const pWrite = proto.write;
-        Object.defineProperty(proto, "write", {
-          configurable: true,
-          writable: true,
-          value: function (items) {
-            const self = this;
-            return allowWrite(items).then(ok => (ok ? pWrite.apply(self, arguments) : undefined));
-          },
-        });
-        try { proto.__ftWritePatched = true; } catch (e) {}
-      }
-    } catch (e) {}
-  };
-
-  try {
-    const cb = (() => { try { return navigator.clipboard || null; } catch (e) { return null; } })();
-    if (cb) {
-      let origWriteText = null;
-      try { origWriteText = cb.writeText.bind(cb); } catch (e) {}
-      // 实例补丁（保留）
-      try {
-        if (origWriteText) Object.defineProperty(cb, "writeText", {
-          configurable: true,
-          writable: true,
-          value: t => (isBlankText(t) ? Promise.resolve() : origWriteText(t)),
-        });
-      } catch (e) {}
-      // write（ClipboardItem）：允许正常文本/富文本/图片，拦截“空内容”（空白文本、空 ClipboardItem、空数组）
-      try {
-        if (typeof cb.write === "function") {
-          const write = cb.write.bind(cb);
-          Object.defineProperty(cb, "write", {
-            configurable: true,
-            writable: true,
-            value: items => allowWrite(items).then(ok => (ok ? write(items) : undefined)),
-          });
-        }
-      } catch (e) {}
-    }
-    patchClipboardProto();
-  } catch (e) {}
+  /* ── ① 剪贴板保护（模块化） ── */
+  installClipboardGuard();
 
   /* ── ② 粘贴回落保护：网页会删掉刚粘贴的内容，检测到删除后撤销回来 ── */
   let watchUntil = 0, undoCount = 0, guardGen = 0;   // guardGen：只有 cancelGuard 自增，让已排队的回插作废
@@ -1197,30 +1051,8 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     if (document.activeElement?.closest?.(".monaco-editor")) e.preventDefault();
   }, true);
 
-  /* ── ⑤ 清理属性式拦截：只清 onpaste / oncopy / oncut ──
-     不再动 ondrop / oncontextmenu——平台用它们实现正常的拖放上传与右键菜单，去掉反而坏事；
-     也不再每秒全文档扫 5 个选择器（太重）。改为：启动清一次 + MutationObserver 增量跟进。
-     这三个都是事件处理 IDL 属性，无论页面写标记还是 el.onpaste=fn 赋值，都体现为属性变更，观察得到 */
-  const PASTE_ATTRS = ["onpaste", "oncopy", "oncut"];
-  const stripAttrs = root => {
-    [document, document.body].forEach(el => el && PASTE_ATTRS.forEach(a => { el[a] = null; }));
-    if (root && root.nodeType === 1) PASTE_ATTRS.forEach(a => { try { root.removeAttribute(a); } catch (e) {} });
-    $$(PASTE_ATTRS.map(a => `[${a}]`).join(","), root || document)
-      .forEach(el => PASTE_ATTRS.forEach(a => { try { el.removeAttribute(a); } catch (e) {} }));
-  };
-  try {
-    new MutationObserver(muts => muts.forEach(m => {
-      if (m.type === "attributes") {                    // 新挂上的拦截属性 → 立即摘除
-        const el = m.target;
-        if (el && PASTE_ATTRS.includes(m.attributeName)) el.removeAttribute(m.attributeName);
-      } else {
-        m.addedNodes?.forEach(n => { if (n.nodeType === 1) stripAttrs(n); });
-      }
-    })).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: PASTE_ATTRS });
-  } catch (e) {}
-  document.readyState === "loading"
-    ? document.addEventListener("DOMContentLoaded", () => stripAttrs(document))
-    : stripAttrs(document);
+  /* ── ⑤ 清理属性式拦截（模块化） ── */
+  installAttrCleaner();
 
   /* ── ⑥ 自动下一关 ──
      触发：出现可见的“通过”庆祝弹层（.evaluate-result-container；失败只会弹报错提示，不会出现它）
@@ -1360,5 +1192,5 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
     autoNextAt = now + 200;
     autoNext();
   }).observe(document, { childList: true, subtree: true });
-  setInterval(() => { autoNext(); maybeAskUI(); }, 1000);   // 属性清理交由上面的 MutationObserver，不再每秒全量扫
+  setInterval(() => { autoNext(); fontPrompt.maybeAsk(); }, 1000);   // 属性清理交由上面的 MutationObserver，不再每秒全量扫
 })();
