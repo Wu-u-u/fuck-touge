@@ -172,8 +172,12 @@ def _match_card(cards: list[dict], name: str) -> dict | None:
 
 
 def _rows_match_levels(rows: list[dict], ch: Chapter) -> bool:
-    """详情表关卡名是否与档案一致（防止复用标签页时读到上一章旧表）。"""
-    if len(rows) != len(ch.levels):
+    """详情表前缀是否与档案一致（防止复用标签页时读到上一章旧表）。
+
+    允许 rows 比档案多（平台新增了关卡，后续走补骨架）；rows 比档案短
+    或前 len(ch.levels) 个名字不一致则视为旧表/异常，拒绝。
+    """
+    if len(rows) < len(ch.levels):
         return False
     for row, lv in zip(rows, ch.levels):
         if norm(str(row.get("name") or "")) != norm(lv.name):

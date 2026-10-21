@@ -15,7 +15,7 @@ from eduauto.archive import Chapter  # noqa: E402
 from eduauto.code import answer_choice, choice_letters  # noqa: E402
 from eduauto.config import (apply_current_profile, load_config,  # noqa: E402
                             load_state, setup_slot)
-from eduauto.flows import _book_lookup, resolve_chapter_args  # noqa: E402
+from eduauto.flows import _book_lookup, _rows_match_levels, resolve_chapter_args  # noqa: E402
 from eduauto.util import fmt_secs  # noqa: E402
 
 passed = failed = 0
@@ -59,6 +59,11 @@ check("Chapter 保留 homework_id", _ch0.homework_id == "123")
 _c1 = Chapter({"name": "第一章 作业", "levels": []})
 _c2 = Chapter({"name": "第一章 作业 II", "levels": []})
 check("_book_lookup 多命中不猜", _book_lookup([_c1, _c2], "第一章") is None)
+
+_rp = Chapter({"name": "前缀章", "levels": [{"name": "L1"}, {"name": "L2"}]})
+check("详情表前缀允许新增关卡", _rows_match_levels([{"name": "L1"}, {"name": "L2"}, {"name": "L3"}], _rp))
+check("详情表短表拒绝", not _rows_match_levels([{"name": "L1"}], _rp))
+check("详情表前序名字不一致拒绝", not _rows_match_levels([{"name": "L2"}, {"name": "L1"}], _rp))
 
 # 章节匹配忽略空白
 _ch = Chapter({"name": "Java语言基础（五） - 循环结构基础", "levels": []})
