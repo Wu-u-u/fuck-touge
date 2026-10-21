@@ -43,6 +43,51 @@ JSON.stringify((function(){
 """
 
 
+# 激活路径 + 「该激活文件当前显示的 model uri」一次拿齐。
+# model 的反查走 React fiber：编辑器实例存在组件 ref 里，本平台 getEditors
+# 不存在（老版本 Monaco，见 脚本详细.md），用 允许粘贴.js 已实测过的 fiber 反查。
+# 多个可见编辑器对应不同 model 时保持 uri=null（不瞎猜，让兜底走失败路径）。
+FILE_ACTIVE_MODEL_JS = r"""
+JSON.stringify((function(){
+  const out = {path: null, uri: null};
+  const el = document.querySelector('[class*="pathActive"]');
+  if (el) out.path = (el.innerText || '').trim();
+  try {
+    const cands = [];
+    [...document.querySelectorAll('.monaco-editor')].forEach(ed => {
+      if (!(ed.getBoundingClientRect().width > 0)) return;
+      let node = ed;
+      while (node) {
+        const key = Object.keys(node).find(k => k.startsWith('__reactFiber$'));
+        if (!key) { node = node.parentElement; continue; }
+        let f = node[key], d = 0;
+        while (f && d < 80) {
+          let hook = f.memoizedState, h = 0;
+          while (hook && h < 50) {
+            const v = hook.memoizedState;
+            const inst = v && v.current && v.current.instance;
+            if (inst && typeof inst.getModel === 'function') {
+              try {
+                const m = inst.getModel();
+                if (m && m.uri) cands.push(String(m.uri.toString()));
+              } catch (e2) {}
+              return;
+            }
+            hook = hook.next; h++;
+          }
+          f = f.return; d++;
+        }
+        return;
+      }
+    });
+    const uniq = [...new Set(cands.filter(Boolean))];
+    if (uniq.length === 1) out.uri = uniq[0];
+  } catch (e) {}
+  return JSON.stringify(out);
+})())
+"""
+
+
 FILE_HIT_JS = r"""
 JSON.stringify((function(){
   const e = document.elementFromPoint(%s, %s);
@@ -98,7 +143,11 @@ def ensure_file_menu(page: Page, timeout: float = 5) -> list[dict]:
 
 
 def close_file_menu(page: Page) -> None:
-    """把「代码文件」下拉收起来（hover 触发，鼠标移开就会收）。"""
+    """把「代码文件」下拉收起来（hover 触发，鼠标移开就会收）。
+
+    收不起来必须报错停下：下拉会挡住遮罩后面的真实点击（「下一关」「评测」等），
+    静默放弃会出现"看起来关了、实际后面全被吞"的诡异连环失败。
+    """
     for _ in range(3):
         items = _file_items(page)
         if not any(it.get("visible") for it in items):
@@ -110,9 +159,12 @@ def close_file_menu(page: Page) -> None:
             return
         pos = page.ws.eval_json(FILE_TRIGGER_JS)     # 兜底：点一下触发器
         if not pos:
-            return
+            time.sleep(0.3)
+            continue
         page.ws.mouse_click(pos["x"], pos["y"])
         time.sleep(0.3)
+    log("    ！「代码文件」下拉收不起来（移开鼠标和点击触发器都无效）")
+    raise RuntimeError("「代码文件」下拉无法收起，已停止（遮罩会吞掉后续点击）")
 
 
 def list_code_files(page: Page) -> tuple[list[str], str]:
@@ -130,12 +182,32 @@ def list_code_files(page: Page) -> tuple[list[str], str]:
     return paths, active
 
 
-def _same_path(a: str, b: str) -> bool:
-    a = (a or "").strip().replace("\\", "/")
-    b = (b or "").strip().replace("\\", "/")
+def _norm_path(p: str) -> str:
+    """归一化路径文本：去首尾空白、统一斜杠（用于路径比较）。"""
+    return (p or "").strip().replace("\\", "/")
+
+
+def _same_path(a: str, b: str, items: list[dict] | None = None) -> bool:
+    """判断 a 是否就是目标文件 b。
+
+    传了当前下拉的 items 时：若与 b 同名 basename 的菜单项 ≥2 个，说明同名
+    兄弟文件存在歧义，此时必须**完整路径全等**才认为一致，绝不按 basename
+    兜底（否则真实点击会落到同名兄弟文件上）。不歧义时保留旧行为
+    （下拉显示的路径可能与档案路径不完全一致，basename 唯一时可以对应）。
+    """
+    a = _norm_path(a)
+    b = _norm_path(b)
     if not a or not b:
         return False
-    return a == b or a.rsplit("/", 1)[-1] == b.rsplit("/", 1)[-1]
+    if a == b:
+        return True
+    if items is not None:
+        base = b.rsplit("/", 1)[-1]
+        same_base = [it for it in items
+                     if _norm_path(str(it.get("path") or "")).rsplit("/", 1)[-1] == base]
+        if len(same_base) >= 2:
+            return False                     # 同名歧义：宁可不点也不能点错
+    return a.rsplit("/", 1)[-1] == b.rsplit("/", 1)[-1]
 
 
 def _find_item(items: list[dict], want: str) -> dict | None:
@@ -167,11 +239,51 @@ def _newest_uri(uris: list[str]) -> str | None:
     return max(uris, key=num)
 
 
-def click_code_file(page: Page, path: str, timeout: float = 5) -> str | None:
+def _resolve_active_model(page: Page, path: str,
+                          model_map: dict | None = None) -> str | None:
+    """没新建 model 的兜底：确认「当前激活文件」就是目标后，取它对应的 model。
+
+    平台点已激活的文件是无操作，此时编辑器显示的就是这个文件的 model。
+    依次确认：正在显示的 model（fiber 反查）→ 本流程内记录的 path→model 映射
+    → 唯一 model。激活路径必须与目标**完整路径全等**（不做 basename 兜底）；
+    哪条都确认不了就返回 None，让上层走失败路径 —— 绝不随便返回"最新的 model"，
+    那可能是别的文件的 model，会把别的文件内容当成这个文件读写。
+    """
+    want = _norm_path(path)
+    if not want:
+        return None
+    uris = _model_uris(page)
+    if not uris:
+        return None
+    st = page.ws.eval_json(FILE_ACTIVE_MODEL_JS) or {}
+    if _norm_path(str(st.get("path") or "")) != want:
+        return None                                  # 激活的不是目标文件
+    shown = st.get("uri")
+    if shown and shown in uris:                      # 编辑器正在显示的 model
+        if model_map is not None:
+            model_map[want] = shown
+        return shown
+    if model_map is not None and model_map.get(want) in uris:
+        return model_map[want]
+    if len(uris) == 1:                               # 唯一 model 必然就是激活文件的
+        if model_map is not None:
+            model_map[want] = uris[0]
+        return uris[0]
+    return None
+
+
+def click_code_file(page: Page, path: str, timeout: float = 5,
+                    model_map: dict | None = None) -> str | None:
     """展开下拉、真实点击某个文件项，返回该文件对应的 model uri。
 
-    点已激活的文件不会新建 model（正常），此时返回最新的 model；
-    点不动（既没新 model、激活标记也没变）会重试，最终失败返回 None。
+    点未激活的文件平台会新建 model（编号最大的新 model 就是刚点开的文件）；
+    点「当前已激活」的文件是无操作（不新建 model）：此时必须确认激活路径与
+    目标**完整路径全等**，再取该激活文件正在显示的 model（见
+    _resolve_active_model），确认不了返回 None。绝不拿「最新的 model」充数 ——
+    那可能是别的文件的 model，会读写错文件。
+    model_map 是本流程内的「路径 → model uri」记录（新建 model 时更新），
+    供兜底时确认对应关系；点不动（既没新 model、激活标记也对不上）会重试，
+    最终失败返回 None。
     """
     for _ in range(3):
         before = set(_model_uris(page))
@@ -188,8 +300,10 @@ def click_code_file(page: Page, path: str, timeout: float = 5) -> str | None:
         # 绝不使用上一次抓到的陈旧坐标去点（会点穿到编辑器上）。
         fresh = None
         pos_prev = None
+        vis_now: list[dict] = []
         for _ in range(8):
-            cur = _find_item([x for x in _file_items(page) if x.get("visible")], path)
+            vis_now = [x for x in _file_items(page) if x.get("visible")]
+            cur = _find_item(vis_now, path)
             if cur is None:
                 break
             if pos_prev is not None and abs(cur["x"] - pos_prev[0]) < 1.5 \
@@ -202,9 +316,11 @@ def click_code_file(page: Page, path: str, timeout: float = 5) -> str | None:
         if fresh is None:
             time.sleep(0.3)                 # 菜单收了，下一轮重新 ensure
             continue
-        # 点击前最后确认：该坐标下确实还是这个菜单项
+        # 点击前最后确认：该坐标下确实还是这个菜单项。当前下拉里同名 basename
+        # 的项 ≥2 时存在歧义，只认完整路径全等，绝不按 basename 兜底
+        #（否则会点错同名兄弟文件）；对不上就放弃本次点击重试。
         hit = page.ws.eval_json(FILE_HIT_JS % (fresh["x"], fresh["y"]))
-        if hit is None or not _same_path(hit, path):
+        if hit is None or not _same_path(hit, path, vis_now):
             time.sleep(0.3)
             continue
         page.ws.mouse_click(fresh["x"], fresh["y"])      # 必须真实点击
@@ -212,11 +328,14 @@ def click_code_file(page: Page, path: str, timeout: float = 5) -> str | None:
         while time.time() < deadline:
             new = [u for u in _model_uris(page) if u not in before]
             if new:
-                return _newest_uri(new)
+                uri = _newest_uri(new)
+                if model_map is not None:
+                    model_map[_norm_path(path)] = uri
+                return uri
             time.sleep(0.25)
-        active = page.ws.eval_json(FILE_ACTIVE_JS) or ""
-        if _same_path(active, path):
-            return _newest_uri(_model_uris(page))
+        uri = _resolve_active_model(page, path, model_map)
+        if uri:
+            return uri
         time.sleep(0.5)
     return None
 
@@ -272,9 +391,10 @@ def write_uri_code(page: Page, uri: str, code: str) -> int:
 def read_saved_files(page: Page, paths: list[str]) -> tuple[str | None, object, str]:
     """多文件关卡：逐个点开文件，从新 model 读代码（结束后收起下拉，避免遮罩）。"""
     out, notes = [], []
+    model_map: dict[str, str] = {}   # 本次采集流程内的「路径 → model」映射，供兜底确认
     try:
         for path in paths:
-            uri = click_code_file(page, path)
+            uri = click_code_file(page, path, model_map=model_map)
             if not uri:
                 return None, None, f"点开文件「{path}」失败（下拉菜单里没反应）"
             code = wait_uri_settled(page, uri)
@@ -308,6 +428,8 @@ def write_files(page: Page, live_paths: list[str], entries: list[dict]) -> None:
 
 
 def _write_files(page: Page, live_paths: list[str], entries: list[dict]) -> None:
+    model_map: dict[str, str] = {}   # 本次写入流程内的「路径 → model」映射，供兜底确认
+
     def _entry_for(live: str) -> dict | None:
         """优先完整路径；只有 basename 在档案和当前关卡里都唯一时才退回 basename。"""
         live_n = (live or "").strip().replace("\\", "/")
@@ -342,7 +464,7 @@ def _write_files(page: Page, live_paths: list[str], entries: list[dict]) -> None
                            + "（可用 harvest 重新采集）")
 
     for path, code in plan:
-        uri = click_code_file(page, path)
+        uri = click_code_file(page, path, model_map=model_map)
         if not uri:
             raise RuntimeError(f"点开文件「{path}」失败（下拉菜单里没反应）")
         wait_uri_settled(page, uri, timeout=6)    # 先等平台内容载入，防止写后被覆盖
@@ -351,12 +473,12 @@ def _write_files(page: Page, live_paths: list[str], entries: list[dict]) -> None
         time.sleep(0.3)                           # 让平台先消化这次修改再切文件
 
     for path, code in plan:
-        uri = click_code_file(page, path)
+        uri = click_code_file(page, path, model_map=model_map)
         if not uri:
             raise RuntimeError(f"同步核对时点开文件「{path}」失败")
         got = wait_uri_settled(page, uri, timeout=6)
         if (got or "").strip("\n") != code.strip("\n"):
-            uri = click_code_file(page, path)     # 补救一次
+            uri = click_code_file(page, path, model_map=model_map)     # 补救一次
             if not uri:
                 raise RuntimeError(f"文件「{path}」回读不一致后重写失败")
             write_uri_code(page, uri, code)

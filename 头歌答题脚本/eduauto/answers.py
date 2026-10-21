@@ -248,28 +248,33 @@ def read_saved_answer(page: Page, st: dict) -> tuple[str | None, str | None, str
 
     返回 (kind, value, note)：kind = 'code'（完整代码）或 'choice'（每题字母列表）；
     读不到则 kind=None。
+
+    单文件代码关（models == 1）**优先读评测记录**：平台可能不回显已提交的代码，
+    编辑器里只剩模板/示例（实测采成 public class Demo 这类占位），记录里的才是
+    真正提交过的答案。记录非空且不像模板就用记录；记录读不到/也像模板才回退
+    编辑器；编辑器也像模板或为空则放弃采集，绝不把占位代码写进档案。
+    多文件关走 read_saved_files，路径不变。
     """
     if st.get("hasEditor"):
         paths, _ = list_code_files(page)          # 单文件关卡也会有 1 项
         if len(paths) > 1:
             return read_saved_files(page, paths)  # 多文件：逐个点开读
         close_file_menu(page)
-        code = read_editor_code(page)             # 首选：直接读编辑器（默认就是对的）
-        src = "编辑器"
+        rec_src = ""
+        if st.get("models", 0) == 1:
+            rec = read_submitted_code(page)       # 单文件：优先读评测记录
+            if rec and rec.strip() and not looks_like_template(rec):
+                return "code", rec, f"{len(rec)} 字符（评测记录）"
+            rec_src = "评测记录没读到" if not (rec and rec.strip()) else "评测记录也像模板"
+        code = read_editor_code(page)             # 记录无效时回退：直接读编辑器
+        src = "编辑器" + (f"，{rec_src}" if rec_src else "")
         if not code or not code.strip() or looks_like_template(code):
             if st.get("models", 0) != 1:
                 if not code or not code.strip():
                     return None, None, f"编辑器没读到内容，且有 {st.get('models')} 个 model"
                 return None, None, "编辑器内容像模板，且无法读取评测记录"
-            rec = read_submitted_code(page)       # 回退：评测记录里的提交代码
-            if rec and rec.strip() and not looks_like_template(rec):
-                code, src = rec, "评测记录（编辑器像模板）"
-            elif not code or not code.strip():
-                return None, None, "编辑器是空的，记录里也没读到"
-            else:
-                return None, None, "编辑器内容像模板，评测记录也没读到"
-        if not code or not code.strip():
-            return None, None, "编辑器是空的，记录里也没读到"
+            return None, None, (f"编辑器内容像模板或为空（{rec_src}），"
+                                "放弃采集（防止把模板/占位代码写进档案）")
         return "code", code, f"{len(code)} 字符（{src}）"
     if st.get("choiceCount", 0) > 0:
         # 等服务器保存的选项回显
