@@ -56,6 +56,10 @@ check("answers 相对配置目录", _cfg["run"]["answers"] == str(_cfgdir / "rel
 _ch0 = Chapter({"name": "测试章", "homework_id": "123", "levels": []})
 check("Chapter 保留 homework_id", _ch0.homework_id == "123")
 
+_c1 = Chapter({"name": "第一章 作业", "levels": []})
+_c2 = Chapter({"name": "第一章 作业 II", "levels": []})
+check("_book_lookup 多命中不猜", _book_lookup([_c1, _c2], "第一章") is None)
+
 # 章节匹配忽略空白
 _ch = Chapter({"name": "Java语言基础（五） - 循环结构基础", "levels": []})
 _r = resolve_chapter_args([_ch], ["Java语言基础（五）-循环结构基础"], strict=False)

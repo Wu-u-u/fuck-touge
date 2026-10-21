@@ -17,17 +17,19 @@ from eduauto.browser import classroom_page, ensure_browser, ensure_login
 from eduauto.code import answer_choice, choice_letters, close_file_menu, list_code_files, set_code, write_files
 from eduauto.workspace import ChapterEnterError, advance_level, card_progress_js, enter_chapter, is_passed_row, rewind_to_first, row_at, scrape_status, wait_index_change
 
-def _book_lookup(chapters, name: str):
-    """在档案章节里模糊匹配一个卡片名（完全相等优先，其次双向子串）。"""
+def _book_matches(chapters, name: str) -> list:
+    """返回与卡片名匹配的档案章节：完全相等优先，其次双向子串。"""
     n = norm(name)
-    for c in chapters:
-        if norm(c.name) == n:
-            return c
-    for c in chapters:
-        cn = norm(c.name)
-        if n in cn or cn in n:
-            return c
-    return None
+    exact = [c for c in chapters if norm(c.name) == n]
+    if exact:
+        return exact
+    return [c for c in chapters if n and (n in norm(c.name) or norm(c.name) in n)]
+
+
+def _book_lookup(chapters, name: str):
+    """唯一匹配时返回章节；0 个或多个模糊命中都返回 None（多命中不猜）。"""
+    hits = _book_matches(chapters, name)
+    return hits[0] if len(hits) == 1 else None
 
 
 def list_classroom_cards(page: Page) -> list[dict]:
@@ -188,7 +190,13 @@ def cmd_harvest(args, cfg: dict) -> None:
             classroom = classroom_page(browser, cfg, old=classroom)
             for card in list_classroom_cards(classroom):
                 cn = norm(card["name"])
-                if cn in covered or _book_lookup(chapters, card["name"]) is not None:
+                if cn in covered:
+                    continue
+                hits = _book_matches(chapters, card["name"])
+                if len(hits) > 1:
+                    log(f"  ! 卡片「{card['name']}」匹配到多个档案章节，跳过")
+                    continue
+                if hits:
                     continue
                 if any(norm(x) in norm(card["name"]) or norm(card["name"]) in norm(x)
                        for x in unmatched):
@@ -198,8 +206,14 @@ def cmd_harvest(args, cfg: dict) -> None:
             die("答案档案和课堂里都找不到指定章节。")
     else:
         classroom = classroom_page(browser, cfg, old=classroom)
-        targets = [{"name": c["name"], "ch": _book_lookup(chapters, c["name"]), "card": c}
-                   for c in list_classroom_cards(classroom)]
+        targets = []
+        for c in list_classroom_cards(classroom):
+            hits = _book_matches(chapters, c["name"])
+            if len(hits) > 1:
+                log(f"  ! 卡片「{c['name']}」匹配到 {len(hits)} 个档案章节，"
+                    "无法确定对应关系，跳过（请把档案章节名区分清楚）")
+                continue
+            targets.append({"name": c["name"], "ch": hits[0] if hits else None, "card": c})
 
     all_changes: dict = {}
     for t in targets:
