@@ -1,0 +1,11 @@
+# 头歌答题脚本的可选依赖
+#
+# 核心脚本（答题.py / cdp.py / eduauto）仍然只用 Python 标准库；
+# 只有启用 D1 的 Playwright 后端时才需要下面的依赖。
+#
+# 安装：
+#   python3 -m pip install -r requirements.txt
+#
+# 说明：依赖版本按本机自用维护，不追求零依赖。连接已经运行的调试 Edge
+# （chromium.connect_over_cdp）不需要再执行 `playwright install` 下载内核。
+playwright>=1.40
