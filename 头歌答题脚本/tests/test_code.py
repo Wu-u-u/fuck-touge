@@ -269,6 +269,8 @@ def run_rsa(st, record="unset", editor="unset", paths=("Main.java",)):
 
     def _rec(pg):
         nums["rec"] += 1
+        if record == "raise":
+            raise RuntimeError("记录弹窗打不开")
         return None if record == "unset" else record
 
     def _editor(pg, timeout=8, need_stable=3):
@@ -311,6 +313,10 @@ check("单文件：记录也像模板时回退编辑器",
 r, n = run_rsa(S1, record=None, editor=TPL)
 check("单文件：记录与编辑器都无效 → None（不采模板）",
       r[0] is None and "像模板" in r[2], str(r))
+
+r, n = run_rsa(S1, record="raise", editor=EDITOR_OK)
+check("单文件：评测记录读取异常回退编辑器",
+      r[0] == "code" and r[1] == EDITOR_OK and "评测记录也没读到" in r[2], str(r))
 
 r, n = run_rsa(S1, record=REC)               # 不碰编辑器
 check("单文件：真实记录可用即使用，绝不落回占位编辑器",

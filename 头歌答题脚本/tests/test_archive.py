@@ -501,5 +501,20 @@ except SystemExit as e:
           getattr(e, "code", None) == 2 and archive25.read_text() == _src25,
           f"code={getattr(e, 'code', None)}")
 
+
+# 11. 名字不一致导致骨架 no-op 时，不应被结构校验误判为失败
+archive8 = Path(tmp) / "arch8.toml"
+write_scan_skeleton(archive8, [{"name": "旧名章", "homework_id": "1",
+                                "levels": [{"name": "旧一"}, {"name": "旧二"}]}])
+_before = archive8.read_bytes()
+try:
+    write_scan_skeleton(archive8, [{"name": "旧名章", "homework_id": "1",
+                                    "levels": [{"name": "新一"}, {"name": "新二"},
+                                               {"name": "新三"}]}])
+    _noop_ok = True
+except SystemExit:
+    _noop_ok = False
+check("骨架名字不一致时安全 no-op", _noop_ok and archive8.read_bytes() == _before)
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

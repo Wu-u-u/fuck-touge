@@ -1034,7 +1034,11 @@ html[data-ft-font] :is(body, .left-panel, .right-panel, [class*="mdBody"], .mark
 
   // 用户剪切/鼠标删除/右键菜单/输入法/输入事件都要立刻放行，
   // 不能把用户自己的编辑当成平台篡改而回插
-  const cancelOnUserEdit = () => cancelGuard();
+  const cancelOnUserEdit = e => {
+    // 插件自己派发的合成鼠标事件（isTrusted=false）不是用户编辑，不能自取消保护
+    if (e && e.isTrusted === false) return;
+    cancelGuard();
+  };
   ["cut", "mousedown", "contextmenu", "compositionstart"].forEach(type => {
     window.addEventListener(type, cancelOnUserEdit, true);
     document.addEventListener(type, cancelOnUserEdit, true);

@@ -309,6 +309,7 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
             out.extend(level_lines(lv))
         return "\n".join(out)
 
+    touched: list[dict] = []
     if not path.exists():
         header = (
             "# 头歌自动答题 · 标准答案档案（通用版）\n"
@@ -325,6 +326,7 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
         text = header + "\n".join(
             block(ch) for ch in sorted(scanned, key=lambda c: chapter_sort_key(c["name"]))
         )
+        touched = list(scanned)
     else:
         text = path.read_text(encoding="utf-8")
         try:
@@ -337,10 +339,12 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
             span = _find_chapter_span(spans, ch["name"])
             if span is None:
                 text = text.rstrip() + "\n\n" + block(ch) + "\n"
+                touched.append(ch)
                 continue
             raw = _find_raw_chapter(existing.get("chapters", []), span["name"] or ch["name"])
             if raw is None:
                 text = text.rstrip() + "\n\n" + block(ch) + "\n"
+                touched.append(ch)
                 continue
             # 回填 homework_id（只补空，不覆盖已有值）
             if ch.get("homework_id") and not str(raw.get("homework_id") or "").strip():
@@ -396,6 +400,7 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
                 insert = "\n" + insert
             src.insert(span["end"], insert)
             text = "".join(src)
+            touched.append(ch)
     old_names = _chapter_names(text)
     text = sort_chapter_blocks(text)
     new_names = _chapter_names(text)
@@ -405,7 +410,7 @@ def write_scan_skeleton(path: Path, scanned: list[dict]) -> None:
         parsed = tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:
         die(f"生成档案时 TOML 校验失败，未写入原文件：{e}")
-    _verify_scan_result(parsed, scanned)
+    _verify_scan_result(parsed, touched)
     _atomic_write(path, text)
 
 

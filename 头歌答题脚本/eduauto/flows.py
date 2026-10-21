@@ -313,6 +313,9 @@ def cmd_harvest(args, cfg: dict) -> None:
             harvest_levels(page, passed, ch, args.force, collected)
         except SystemExit as e:
             aborted = e            # 中止也要保留已采的回答案，先写回再 re-raise
+        except (RuntimeError, cdp.CDPError) as e:
+            aborted = SystemExit(2)
+            log(f"  ! 采集中止：{e}")
         finally:
             try:
                 browser.close_target(target["id"])
@@ -634,14 +637,16 @@ def cmd_run(args, cfg: dict) -> None:
     for ch in todo:
         try:
             run_one(ch)
-        except SystemExit as e:
+        except (SystemExit, RuntimeError) as e:
+            if isinstance(e, RuntimeError):
+                log(f"  ! 章节中止：{e}")
             # die 的章节按失败 1 关+中止计入汇总；已就位的 stats 保留部分进度
             s = results.get(ch.name) or {"done": 0, "skipped": 0, "failed": 0}
             if not s.get("failed"):
                 s["failed"] = 1
             s["aborted"] = True
             results[ch.name] = s
-            abort_code = int(e.code or 2)
+            abort_code = e.code if isinstance(e, SystemExit) and e.code else 2
             break
 
     log("\n══════ 汇总 ══════")

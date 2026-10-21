@@ -112,6 +112,14 @@ def soft_fail(*a, **k):
 code, out = run_case(abort)
 check("run 中止仍打印汇总", code == 2 and "汇总" in out and "已中止" in out
       and "失败 1 关" in out, f"code={code}")
+def runtime_error(*a, **k):
+    raise RuntimeError("下拉收不起来")
+
+
+code, out = run_case(runtime_error)
+check("run 捕获 RuntimeError 并汇总", code == 2 and "汇总" in out
+      and "章节中止" in out and "已中止" in out, f"code={code}")
+
 code, out = run_case(ok)
 check("run 成功正常汇总", code == 0 and "汇总" in out and "完成" in out
       and "作答 1 关" in out, f"code={code}")

@@ -8,6 +8,7 @@ import time
 import cdp
 from eduauto.page import Page, probe_state
 from eduauto.code import close_file_menu, list_code_files, read_saved_files
+from eduauto.util import log
 
 TOAST_NEXT = "已为您自动跳转至下一关"
 
@@ -262,10 +263,21 @@ def read_saved_answer(page: Page, st: dict) -> tuple[str | None, str | None, str
         close_file_menu(page)
         rec_src = ""
         if st.get("models", 0) == 1:
-            rec = read_submitted_code(page)       # 单文件：优先读评测记录
-            if rec and rec.strip() and not looks_like_template(rec):
-                return "code", rec, f"{len(rec)} 字符（评测记录）"
-            rec_src = "评测记录没读到" if not (rec and rec.strip()) else "评测记录也像模板"
+            try:
+                rec = read_submitted_code(page)   # 单文件：优先读评测记录
+            except (cdp.CDPError, RuntimeError) as e:
+                # 记录页签打不开/弹窗关不掉时不能拖垮整章：记录视为没读到，回退编辑器
+                rec = None
+                log(f"  ! 评测记录读取失败，回退编辑器：{e}")
+                try:
+                    close_code_modal(page)
+                except Exception:
+                    pass
+                rec_src = "评测记录也没读到"
+            else:
+                if rec and rec.strip() and not looks_like_template(rec):
+                    return "code", rec, f"{len(rec)} 字符（评测记录）"
+                rec_src = "评测记录没读到" if not (rec and rec.strip()) else "评测记录也像模板"
         code = read_editor_code(page)             # 记录无效时回退：直接读编辑器
         src = "编辑器" + (f"，{rec_src}" if rec_src else "")
         if not code or not code.strip() or looks_like_template(code):
