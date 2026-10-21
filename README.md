@@ -5,7 +5,7 @@
 | 组件 | 形态 | 作用 |
 |---|---|---|
 | **Fuck头歌** | Edge / Chromium 浏览器扩展（MV3，TypeScript + esbuild） | 解锁粘贴/复制、阻止头歌篡改剪贴板、答对自动「下一关」、编辑器美化（主题/字体/光标）+ 页面深色皮肤 |
-| **头歌答题脚本** | Python 半自动答题器（零第三方依赖） | 按「标准答案档案」自动填答案、点评测，自动跳过已满分关卡、整章刷完自动换章；支持自动采集已做完的答案、多代码文件关卡（v0.9）、多账号档案槽 |
+| **头歌答题脚本** | Python 半自动答题器（默认零依赖 CDP，可选 Playwright 后端） | 按「标准答案档案」自动填答案、点评测，自动跳过已满分关卡、整章刷完自动换章；支持自动采集已做完的答案、多代码文件关卡（v0.9）、多账号档案槽 |
 
 仅供学习交流，**禁止倒卖与盈利**。使用本工具产生的一切后果由使用者自负。
 
@@ -22,8 +22,8 @@
 │   └── dist/         # 构建产物（Edge 加载这个文件夹）
 ├── 头歌答题脚本/       # Python 自动答题器
 │   ├── 答题.py         # CLI 入口（browser / harvest / run）
-│   ├── eduauto/       # 逻辑模块：配置 / 浏览器 / 关卡 / 编辑器 / 答案 / 流程
-│   ├── cdp.py         # 零依赖 CDP 客户端
+│   ├── eduauto/       # 逻辑模块：后端接口 / 配置 / 浏览器 / 关卡 / 编辑器 / 答案 / 流程
+│   ├── cdp.py         # 零依赖 CDP 客户端（默认后端）
 │   ├── config.toml    # 配置
 │   ├── answers.toml   # 标准答案档案（章节顺序 + 每关答案）
 │   ├── 使用教程.txt    # 面向使用者的终端教程
@@ -56,6 +56,27 @@ python3 答题.py harvest            # 扫描章节并采集答案（缺骨架�
 python3 答题.py run -y             # 开跑：自动跳过已满分关卡，失败暂停（开跑前会列出每关答案状态）
 # 章节参数直接跟在命令后，如：run -y 五 七 / harvest 八
 ```
+
+#### 可选：Playwright 后端
+
+默认使用脚本自带的零依赖 CDP 客户端；**不设置任何环境变量时行为完全不变**。
+只有显式指定 `EDUAUTO_BACKEND=playwright` 才会切换到 Playwright，接管**已经启动**的调试 Edge：
+
+```bash
+python3 -m pip install -r requirements.txt   # playwright>=1.40，仅此模式需要
+
+EDUAUTO_BACKEND=playwright python3 答题.py browser -ls
+EDUAUTO_BACKEND=playwright python3 答题.py harvest
+EDUAUTO_BACKEND=playwright python3 答题.py run -y "章节名"
+```
+
+Playwright 模式的限制（与默认 cdp 的差异）：
+
+- **要求 Edge 已经启动**并开放调试端口（默认 9222）；脚本不会自动启动浏览器，也不会关闭共享 Edge。
+- **不自动切换档案槽**：直接复用当前运行中的 Edge。需要换槽时先手动退出 Edge，或用 cdp 模式运行 `browser N`。
+- **不管理扩展**：沿用浏览器里已加载的 Fuck头歌；未加载时脚本会走自己的跳关兜底。
+- **按键仅支持 Escape**（关代码弹窗兜底）；其他按键/未实现的 CDP 方法会明确报错，不会静默忽略。
+- 连接现有 Edge 不需要执行 `playwright install` 下载浏览器内核。
 
 更多命令与场景（采集已完成答案、多账号档案槽、失败续跑等）见
 `头歌答题脚本/使用教程.txt`；实现原理与平台踩坑见 `头歌答题脚本/脚本详细.md`。

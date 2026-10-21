@@ -5,6 +5,7 @@ import time
 
 import cdp
 
+from .backend import PageSessionLike
 from .util import log
 
 
@@ -95,7 +96,7 @@ PROBE_JS = r"""
 """
 
 
-def probe_state(ws: cdp.WS) -> dict:
+def probe_state(ws: PageSessionLike) -> dict:
     try:
         return ws.eval_json("JSON.stringify(window.__aaLog || {toasts: [], popups: 0})")
     except cdp.CDPError:
@@ -105,7 +106,7 @@ def probe_state(ws: cdp.WS) -> dict:
 class Page:
     """对某个页面会话的便捷封装（状态、点击、跳关等）。"""
 
-    def __init__(self, ws: cdp.WS, target: dict | None = None):
+    def __init__(self, ws: PageSessionLike, target: dict | None = None):
         self.ws = ws
         self.target = target or {}
 

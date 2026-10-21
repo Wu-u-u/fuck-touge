@@ -30,10 +30,10 @@ Page / Browser 对象上。
 from __future__ import annotations
 
 import json
-import os
 import time
 
 import cdp
+from eduauto import backend as backend_api
 from eduauto.util import log
 
 DEFAULT_PORT = 9222
@@ -512,17 +512,18 @@ def connect_playwright(cfg: dict) -> PlaywrightBrowser:
 # ---------- 可选工厂：默认路径仍是 cdp ----------
 
 def backend_name() -> str:
-    """读取 ``EDUAUTO_BACKEND``，未设置时返回 ``cdp``。"""
-    return (os.environ.get("EDUAUTO_BACKEND") or "cdp").strip().lower()
+    """读取 ``EDUAUTO_BACKEND``，未设置/空值返回 ``cdp``（与 CLI 同一实现）。"""
+    return backend_api.backend_name()
 
 
 def make_browser(cfg: dict):
     """按环境变量选择后端；默认 ``cdp.Browser``，行为与现在一致。"""
     name = backend_name()
-    if name in ("", "cdp"):
+    if name == backend_api.DEFAULT_BACKEND:
         return cdp.Browser(int(cfg["edge"]["port"]))
-    if name == "playwright":
+    if name == backend_api.PLAYWRIGHT_BACKEND:
         return connect_playwright(cfg)
     raise ValueError(
-        f"未知的 EDUAUTO_BACKEND：{name!r}（可选：cdp / playwright）"
+        f"未知的 EDUAUTO_BACKEND：{name!r}"
+        f"（可选：{' / '.join(backend_api.SUPPORTED_BACKENDS)}）"
     )

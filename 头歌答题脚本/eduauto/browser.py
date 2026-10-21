@@ -7,17 +7,28 @@ import subprocess
 import time
 
 import cdp
+from eduauto import backend
+from eduauto.backend import BrowserLike, PageSessionLike
 from eduauto.page import Page
 from eduauto.util import die, log
-from eduauto.config import load_state, remember_name, save_state, update_state
+from eduauto.config import load_state, remember_name, update_state
+
 
 def backend_name() -> str:
-    """当前浏览器后端：默认 ``cdp``，可用 ``EDUAUTO_BACKEND=playwright`` 切换。"""
-    return (os.environ.get("EDUAUTO_BACKEND") or "cdp").strip().lower()
+    """当前浏览器后端：默认 ``cdp``，只有显式 ``EDUAUTO_BACKEND=playwright`` 才切换。"""
+    return backend.backend_name()
 
 
 def playwright_backend() -> bool:
-    return backend_name() == "playwright"
+    return backend.is_playwright()
+
+
+def warn_unknown_backend() -> None:
+    """未知后端名回退 cdp，并明确提示，避免拼写错误被静默忽略。"""
+    name = backend.unknown_backend()
+    if name:
+        log(f"  ! 未知的 EDUAUTO_BACKEND={name!r}，已回退到默认 cdp"
+            "（可选：cdp / playwright）")
 
 
 def port_alive(port: int) -> bool:
@@ -92,18 +103,39 @@ def connect_browser(port: int, attempts: int = 20) -> cdp.Browser:
     die(f"连不上浏览器调试端口 {port}，请重试或先运行 python3 答题.py browser。")
 
 
-def connect_configured(cfg: dict, attempts: int = 20):
+def playwright_port_hint(port: int) -> str:
+    """Playwright 模式连不上调试端口时的统一提示（测试与文档共用措辞）。"""
+    return (
+        f"Playwright 模式需要 Edge 已经启动并开放调试端口 {port}，当前连不上。\n"
+        "  · 不会自动启动浏览器，也不会关闭共享 Edge；\n"
+        "  · 不自动切换档案槽（复用当前运行的 Edge）；\n"
+        "  · 不管理扩展（沿用浏览器里已加载的扩展）。\n"
+        "  请先用 cdp 模式启动一次：EDUAUTO_BACKEND=cdp python3 答题.py browser\n"
+        "  或手动带 --remote-debugging-port 启动 Edge。"
+    )
+
+
+def connect_configured(cfg: dict, attempts: int = 20) -> BrowserLike:
     """按 ``EDUAUTO_BACKEND`` 连接**已经在运行**的浏览器（不启动、不关闭）。
 
-    供 ``browser -ls`` 等只读入口使用；默认仍是 ``connect_browser``。
+    默认走 ``connect_browser``（cdp）；Playwright 模式只接管已开放的调试
+    Edge，要求 Edge 已启动，不切槽、不管理扩展。供 ``browser -ls`` 等
+    只读入口使用。
     """
+    warn_unknown_backend()
     if playwright_backend():
         from eduauto import pw_backend
-        return pw_backend.connect_playwright(cfg)
+        port = int(cfg["edge"]["port"])
+        if not port_alive(port):
+            die(playwright_port_hint(port))
+        try:
+            return pw_backend.connect_playwright(cfg)
+        except cdp.CDPError as e:
+            die(f"Playwright 后端连接失败：{e}")
     return connect_browser(int(cfg["edge"]["port"]), attempts=attempts)
 
 
-def ensure_window_size(browser: cdp.Browser, min_w: int = 1400, min_h: int = 900) -> None:
+def ensure_window_size(browser: BrowserLike, min_w: int = 1400, min_h: int = 900) -> None:
     """窗口太小时最大化：头歌是宽布局，窗口窄会把按钮挤出视口导致点不到。"""
     pages = browser.pages()
     if not pages:
@@ -122,18 +154,13 @@ def ensure_window_size(browser: cdp.Browser, min_w: int = 1400, min_h: int = 900
         pass
 
 
-def _ensure_browser_playwright(cfg: dict):
+def _ensure_browser_playwright(cfg: dict) -> BrowserLike:
     """Playwright 模式：只接管已运行的 Edge，不启动、不关闭共享浏览器。"""
     from eduauto import pw_backend
 
     port = int(cfg["edge"]["port"])
     if not port_alive(port):
-        die(
-            f"Playwright 模式需要 Edge 已经启动并开放调试端口 {port}，当前连不上。\n"
-            "  请先用 cdp 模式启动一次（EDUAUTO_BACKEND=cdp python3 答题.py browser），\n"
-            "  或手动带 --remote-debugging-port 启动 Edge。\n"
-            "  Playwright 模式不会自动启动浏览器，也不会关闭共享 Edge。"
-        )
+        die(playwright_port_hint(port))
 
     state = load_state()
     cur = state.get("current") or "1"
@@ -177,7 +204,14 @@ def _ensure_browser_playwright(cfg: dict):
     return browser
 
 
-def ensure_browser(cfg: dict) -> cdp.Browser:
+def ensure_browser(cfg: dict) -> BrowserLike:
+    """按 ``EDUAUTO_BACKEND`` 准备浏览器；默认 cdp，不设置环境变量行为不变。
+
+    · ``cdp``（默认）：可自动启动/关闭/切换副本浏览器，并自动加载扩展；
+    · ``playwright``（显式设置才生效）：只接管已在调试端口上运行的 Edge，
+      不自动启动、不关闭共享 Edge、不自动切换档案槽、不管理扩展。
+    """
+    warn_unknown_backend()
     if playwright_backend():
         return _ensure_browser_playwright(cfg)
     port = int(cfg["edge"]["port"])
@@ -221,7 +255,7 @@ def ensure_browser(cfg: dict) -> cdp.Browser:
     return browser
 
 
-def classroom_page(browser: cdp.Browser, cfg: dict, old: "Page | None" = None) -> "Page":
+def classroom_page(browser: BrowserLike, cfg: dict, old: "Page | None" = None) -> "Page":
     """开一个全新的课堂（实训作业列表）标签页；old 传入则顺手关掉旧页。
 
     实测：课堂页被导航去详情页再返回后，React 交互可能失效（点击无反应），
@@ -269,7 +303,7 @@ def account_name_js() -> str:
     )
 
 
-def read_account_name(browser: "cdp.Browser") -> str:
+def read_account_name(browser: BrowserLike) -> str:
     """遍历所有 educoder 标签，尽量读出当前登录账号名；找不到返回空串。"""
     try:
         targets = browser.pages()
@@ -295,14 +329,14 @@ def read_account_name(browser: "cdp.Browser") -> str:
     return ""
 
 
-def ensure_login(browser: "cdp.Browser", ws: cdp.WS, timeout: float = 600) -> None:
+def ensure_login(browser: BrowserLike, ws: PageSessionLike, timeout: float = 600) -> None:
     """确认头歌已登录；未登录则提示用户在窗口里登录并等待。
 
     关键：登录常常发生在别的标签页，原课堂标签的 DOM 不会自己更新——
     所以每一轮都会遍历所有 educoder 标签找登录信号；长时间没找到时，
     如果原标签是课堂页且不在前台，会周期性刷新它。登录成功后顺手记录账号名。
     """
-    def page_logged(w: cdp.WS) -> bool:
+    def page_logged(w: PageSessionLike) -> bool:
         try:
             return bool(w.eval(
                 "(function(){const t=(document.body&&document.body.innerText)||'';"
