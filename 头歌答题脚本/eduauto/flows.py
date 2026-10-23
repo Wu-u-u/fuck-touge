@@ -742,7 +742,7 @@ def cmd_run(args, cfg: dict) -> None:
             die(f"章节「{ch.name}」还有关卡没填答案：{'、'.join(missing)}\n"
                 f"  请填写后重新运行：{cfg['run']['answers']}")
         # 只有真的要跑时，才开一个干净的课堂页去点「开始学习」
-        entry_classroom = classroom_page(browser, cfg)
+        entry_classroom = classroom_page(browser, cfg, url=course.classroom)
         t_ch = time.time()
         stats = {"done": 0, "skipped": 0, "failed": 0}
         results[ch.name] = stats      # 先就位：本章中途 die 时已作答数不丢

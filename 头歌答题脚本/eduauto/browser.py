@@ -341,7 +341,10 @@ def ensure_login(browser: BrowserLike, ws: PageSessionLike, timeout: float = 600
     def page_logged(w: PageSessionLike) -> bool:
         try:
             return bool(w.eval(
-                "(function(){const t=(document.body&&document.body.innerText)||'';"
+                "(function(){"
+                "try{const v=JSON.parse(localStorage.getItem('userInfo')||'null');"
+                "if(v && ((v.real_name||v.username)||'').trim()) return true;}catch(e){}"
+                "const t=(document.body&&document.body.innerText)||'';"
                 "return !!(document.querySelector('.task-user-info')"
                 "|| t.includes('退出课堂')"
                 "|| (t.includes('个人主页') && t.includes('我的经验值')));})()"
