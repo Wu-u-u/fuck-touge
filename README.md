@@ -55,6 +55,7 @@ python3 答题.py cd 1               # 进入课程（也可写课程名片段�
 python3 答题.py harvest            # 只处理当前课程：补骨架/采集答案
 # 课程答案在 answers/<课程名>-<课程码>.toml，第一次 cd 自动创建
 python3 答题.py run -y             # 只处理当前课程：自动跳过已满分关卡
+python3 答题.py run -y -b 1 2 3    # 用当前课程，依次在 1/2/3 号槽位跑同一门课
 # 章节参数直接跟在命令后，如：run -y 五 七 / harvest 八
 ```
 

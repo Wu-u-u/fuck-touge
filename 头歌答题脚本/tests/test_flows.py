@@ -6,6 +6,7 @@ import sys
 import tempfile
 import tomllib
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import eduauto.flows as flows  # noqa: E402
@@ -319,6 +320,54 @@ check("harvest 中止：已采答案写回档案再退出",
       f"code={code} lv={_lv} closed={_hb.closed} out={out}")
 check("harvest 中止：die 原因与已写回日志仍在",
       "第1关采集后无法进入下一关" in out and "已写回：「L1」" in out, f"out={out}")
+
+# ---------- run -b/--batch：锁定当前课程，按槽位顺序切换 ----------
+class BatchPage:
+    def __init__(self, tid):
+        self.target = {"id": tid}
+        self.ws = None
+
+
+class BatchBrowser:
+    def __init__(self):
+        self.closed = []
+
+    def close_target(self, tid):
+        self.closed.append(tid)
+
+
+bargs = type("BArgs", (), {"chapter": [], "yes": True, "batch": [2, 1]})()
+bcourse = Course("测试课程", "TEST",
+                 "https://cls.test/classrooms/TEST/shixun_homework",
+                 Path("unused.toml"))
+bbrowser = BatchBrowser()
+bcalls = []
+
+
+def batch_run(args, cfg, browser, course):
+    bcalls.append(course.code)
+    return 0
+
+
+bpatches = {
+    "ensure_browser": lambda cfg: bbrowser,
+    "current_course": lambda browser, cfg: bcourse,
+    "open_course_list": lambda browser, cfg, old=None, url=None: BatchPage("list"),
+    "ensure_login": lambda browser, ws=None: None,
+    "list_courses": lambda page: ["测试课程"],
+    "select_course": lambda browser, page, name: (
+        {"id": "course"}, Course("测试课程", "TEST", bcourse.classroom,
+                                 Path("unused.toml"))),
+    "_run_selected_course": batch_run,
+}
+with mock.patch("eduauto.config.setup_slot",
+                side_effect=lambda cfg, s: (s, f"/tmp/profile-{s}", "")):
+    bcode, bout = with_patches(
+        bpatches, lambda: catch_exit(lambda: flows.cmd_run_batch(bargs, CFG)))
+check("批量 run 按 -b 参数顺序执行同一课程",
+      bcode == 0 and bcalls == ["TEST", "TEST"]
+      and "槽位 2：成功" in bout and "槽位 1：成功" in bout,
+      f"code={bcode} calls={bcalls} out={bout}")
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

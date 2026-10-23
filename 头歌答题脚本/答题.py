@@ -5,6 +5,7 @@
     python3 答题.py browser                    # 启动/检查专用副本浏览器（可加槽位：browser 1）
     python3 答题.py browser -ls                # 列出各档案槽登录的账号名（浏览器在跑时实时刷新）
     python3 答题.py run -y [章节...]           # 按答案档案自动答题（开跑前会列出每关答案状态）
+    python3 答题.py run -y -b 1 2 3            # 用当前课程，依次在 1/2/3 号槽位跑同一门课
     python3 答题.py harvest [章节...]          # 扫描并采集：自动补骨架，采集已满分关卡答案（-f 覆盖）
 
 章节参数是位置参数，可写多个、可以是名称片段（省略=全部章节），例如：
@@ -79,7 +80,7 @@ def cmd_browser_list(cfg: dict) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="头歌自动答题脚本（半自动）",
-        epilog="示例：python3 答题.py run -y 五 七 ｜ harvest 五 -f ｜ harvest（扫描并采集全部）",
+        epilog="示例：python3 答题.py run -y 五 七 ｜ run -y -b 1 2 3 ｜ harvest 五 -f ｜ harvest（扫描并采集全部）",
     )
     ap.add_argument("-c", "--config", default=str(HERE / "config.toml"), help="配置文件路径")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -112,6 +113,10 @@ def main() -> None:
     p_run = sub.add_parser("run", help="按答案档案自动答题（开跑前会列出每关答案状态）")
     add_chapter_args(p_run)
     p_run.add_argument("-y", "--yes", action="store_true", help="不询问直接开始")
+    p_run.add_argument(
+        "-b", "--batch", nargs="+", type=int, metavar="槽位",
+        help="批量槽位：用当前槽位的当前课程，依次切换到这些槽位跑同一门课，例如 -b 1 2 3",
+    )
 
     args = ap.parse_args()
     if hasattr(args, "chapters"):

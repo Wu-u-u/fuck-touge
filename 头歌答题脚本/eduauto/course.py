@@ -70,6 +70,22 @@ def find_answers_file(cfg: dict, code: str) -> Path | None:
     return _find_answers(cfg, code)
 
 
+def course_name_from_answers(path: Path | None, code: str) -> str:
+    """从档案文件反推课程原名（优先读 header，旧档案退回文件名）。"""
+    if path is None:
+        return ""
+    try:
+        head = path.read_text(encoding="utf-8", errors="replace")[:2000]
+        m = re.search(r"^#\s*课程：(.+?)（" + re.escape(code) + r"）", head, re.M)
+        if m:
+            return m.group(1).strip()
+    except OSError:
+        pass
+    stem = path.stem
+    suffix = f"-{code}"
+    return stem[:-len(suffix)] if stem.endswith(suffix) else stem
+
+
 def ensure_answers_file(cfg: dict, course: Course) -> Path:
     """第一次 cd 时创建该课程的空档案（有 header，无章节）。"""
     p = answers_file(cfg, course.name, course.code)
@@ -110,21 +126,61 @@ JSON.stringify((function(){
     return out
 
 
+def _active_course_tab(page: Page) -> str:
+    try:
+        return str(page.ws.eval(
+            "(()=>{const tabs=document.querySelector('[class*=\"tabs___\"]');"
+            "if(!tabs) return '';"
+            "const a=[...tabs.querySelectorAll('[class*=\"active\"]')]"
+            ".find(e=>(e.innerText||'').trim());"
+            "return a ? (a.innerText||'').trim() : '';})()"
+        ) or "")
+    except Exception:
+        return ""
+
+
+def _mine_tab_active(page: Page) -> bool:
+    return _active_course_tab(page) == "我的"
+
+
 def list_courses(page: Page) -> list[str]:
-    """在课堂列表页点「我的」，返回课程名（按页面顺序）。"""
+    """在课堂列表页点「我的」，返回我的课程名（按页面顺序）。
+
+    课程列表页也会以**后台标签页**打开；后台页收不到真实鼠标点击，
+    旧实现于是把「最新」的 16 门公开课当成「我的」返回。这里先切前台，
+    再以「我的」标签的 active 状态确认切换成功；不能确认就返回空列表，
+    不再把全量课程静默当成个人课程。
+    """
+    try:
+        page.ws.call("Page.bringToFront")   # 后台标签收不到真实点击，直接切前台
+        time.sleep(0.3)
+    except Exception:
+        pass
+
     before = _read_course_names(page)
-    page.click_expr(
-        "[...document.querySelectorAll('span,div,li,a,button')]"
-        ".find(e=>(e.innerText||'').trim()==='我的')"
-    )
+    was_mine = _mine_tab_active(page)
+    expr = ("[...document.querySelectorAll('span,div,li,a,button')]"
+            ".find(e=>(e.innerText||'').trim()==='我的')")
+    if not was_mine:
+        page.click_expr(expr)
+
     names = before
-    for _ in range(30):
+    for i in range(50):
         time.sleep(0.3)
         names = _read_course_names(page)
-        # 「我的」列表与「最新/最热」不同；等列表真正切换
-        if names and names != before:
-            break
-    return names
+        active = _active_course_tab(page)
+        if active == "我的":
+            # 已经是「我的」直接返回；从「最新/最热」切过来时，必须等
+            # 旧列表真正被替换，不能把切换瞬间的 16 门公开课当成个人课程。
+            if was_mine or (names and names != before):
+                return names
+        # 某些页面版本没有 active class，但列表确实已切换
+        if not was_mine and names and before and names != before:
+            return names
+        if i in (8, 18, 30):
+            page.click_expr(expr)
+    log("  ! 未能确认切到「我的」课程列表；请确认页面已登录后重试")
+    return []
 
 
 def choose_course(courses: list[str], target: str) -> str:
@@ -207,5 +263,10 @@ def current_course(browser, cfg: dict) -> Course | None:
         if course is None:
             continue
         course.answers = _find_answers(cfg, course.code)
+        # 任务页标题是章节名，课程页标题偶尔还是平台名；档案 header
+        # 保存了 cd 时的课程原名，优先用它做批量运行的课程匹配。
+        saved_name = course_name_from_answers(course.answers, course.code)
+        if saved_name:
+            course.name = saved_name
         return course
     return None

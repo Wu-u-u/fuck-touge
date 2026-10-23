@@ -689,11 +689,8 @@ def cmd_cd(args, cfg: dict) -> None:
     log(f"  课程页：{course.classroom}")
 
 
-def cmd_run(args, cfg: dict) -> None:
-    browser = ensure_browser(cfg)
-    course = current_course(browser, cfg)
-    if course is None:
-        die("没有当前课程：先 python3 答题.py cd -ls，再 python3 答题.py cd 序号/课程名")
+def _run_selected_course(args, cfg: dict, browser, course) -> int:
+    """在当前已选定的浏览器/课程上跑 run，返回退出码（0=成功，2=有失败）。"""
     answers_path = course.answers or find_answers_file(cfg, course.code)
     if answers_path is None:
         die(f"课程「{course.name}」还没有答案档案：先 python3 答题.py cd {course.name}")
@@ -793,14 +790,105 @@ def cmd_run(args, cfg: dict) -> None:
         log(f"  {name}：作答 {s['done']} 关，跳过 {s['skipped']} 关，失败 {s['failed']} 关{extra}")
     if abort_code:
         log(f"\n已中止（总用时 {fmt_secs(time.time() - t0)}）。浏览器保持打开，可自行检查。")
-        sys.exit(abort_code)
+        return abort_code
     failed_chs = [n for n, s in results.items() if s.get("failed", 0) > 0]
     if failed_chs:
         # 软失败：整轮跑完但有章节没跑成，不能谎报完美收官
         log(f"\n完成（有 {len(failed_chs)} 章失败，总用时 {fmt_secs(time.time() - t0)}）。"
             "浏览器保持打开，可自行检查。")
-        sys.exit(2)
+        return 2
     log(f"\n完成（总用时 {fmt_secs(time.time() - t0)}）。浏览器保持打开，可自行检查。")
+    return 0
+
+
+def cmd_run(args, cfg: dict) -> None:
+    """单槽 run；带 -b/--batch 时先锁定当前课程，再逐槽执行同一门课。"""
+    batch = getattr(args, "batch", None)
+    if batch:
+        cmd_run_batch(args, cfg)
+        return
+    browser = ensure_browser(cfg)
+    course = current_course(browser, cfg)
+    if course is None:
+        die("没有当前课程：先 python3 答题.py cd -ls，再 python3 答题.py cd 序号/课程名")
+    code = _run_selected_course(args, cfg, browser, course)
+    if code:
+        sys.exit(code)
+
+
+def cmd_run_batch(args, cfg: dict) -> None:
+    """在当前课程上执行 `run -b 槽位...`：每槽切档、进入同一课程并跑同一份档案。"""
+    slots: list[int] = []
+    for raw in args.batch:
+        n = int(raw)
+        if not (1 <= n <= 99):
+            die(f"批量槽位只支持 1-99：{raw}")
+        if n not in slots:
+            slots.append(n)
+
+    # 先用当前槽位的当前课程锁定目标；之后切换档案不会改变课程名/课程码。
+    browser = ensure_browser(cfg)
+    course = current_course(browser, cfg)
+    if course is None:
+        die("没有当前课程：先 python3 答题.py cd -ls，再 python3 答题.py cd 序号/课程名")
+    answers_path = course.answers or find_answers_file(cfg, course.code)
+    if answers_path is None:
+        die(f"课程「{course.name}」还没有答案档案：先 python3 答题.py cd {course.name}")
+    course.answers = answers_path
+
+    log(f"\n批量运行课程：{course.name}（{course.code}）")
+    log("目标槽位：" + "、".join(str(s) for s in slots))
+    if not args.yes:
+        try:
+            input("\n回车开始批量运行（Ctrl+C 取消）…")
+        except (EOFError, KeyboardInterrupt):
+            die("已取消。")
+        args.yes = True       # 批次只确认一次，后面每个槽不再重复等待
+
+    from eduauto.config import setup_slot
+
+    results: list[tuple[int, int]] = []
+    for slot in slots:
+        log(f"\n══════ 槽位 {slot} ══════")
+        code = 2
+        try:
+            _, profile, note = setup_slot(cfg, str(slot))
+            if note:
+                log(f"→ 档案槽『{slot}』：{note}")
+            cfg["edge"]["profile"] = profile
+            browser = ensure_browser(cfg)       # 会自动关掉旧档案并启动目标档案
+            page = open_course_list(browser, cfg)
+            ensure_login(browser, page.ws)
+            names = list_courses(page)
+            wanted = next((n for n in names if norm(n) == norm(course.name)), None)
+            if wanted is None:
+                log(f"  ! 槽位 {slot} 的「我的」课程里没有：{course.name}")
+                if page.target.get("id"):
+                    browser.close_target(page.target["id"])
+            else:
+                target, selected = select_course(browser, page, wanted)
+                if page.target.get("id") and page.target["id"] != target.get("id"):
+                    browser.close_target(page.target["id"])
+                if selected.code != course.code:
+                    log(f"  ! 槽位 {slot} 的同名课程码不同："
+                        f"{selected.code}（期望 {course.code}），跳过以免用错档案")
+                else:
+                    selected.answers = answers_path
+                    code = _run_selected_course(args, cfg, browser, selected)
+        except SystemExit as e:
+            code = e.code if isinstance(e.code, int) and e.code else 2
+        except (RuntimeError, cdp.CDPError, KeyboardInterrupt) as e:
+            log(f"  ! 槽位 {slot} 运行失败：{e}")
+            code = 2
+        results.append((slot, code))
+
+    log("\n══════ 批量汇总 ══════")
+    for slot, code in results:
+        log(f"  槽位 {slot}：{'成功' if code == 0 else '失败（退出码 %s）' % code}")
+    if any(code != 0 for _, code in results):
+        log("\n批量运行有槽位失败；浏览器停在最后一个槽位，可自行检查。")
+        sys.exit(2)
+    log("\n批量运行全部成功；浏览器停在最后一个槽位。")
 
 
 def print_archive_status(chapters: list) -> None:

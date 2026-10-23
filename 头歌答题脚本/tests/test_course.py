@@ -51,7 +51,7 @@ check("课程模糊选择", choose_course(["Java程序设计-2026秋", "数据�
 with __import__("tempfile").TemporaryDirectory() as td:
     cfg3 = {"run": {"answers_dir": str(Path(td))}}
     arch = Path(td) / "Java-ABC.toml"
-    arch.write_text("version = 1\n", encoding="utf-8")
+    arch.write_text("# 课程：Java程序设计-2026秋（ABC）\nversion = 1\n", encoding="utf-8")
     b = SimpleNamespace(pages=lambda: [
         {"id": "1", "url": "https://www.educoder.net/classrooms/ABC/shixun_homework",
          "title": "Java"},
@@ -59,6 +59,7 @@ with __import__("tempfile").TemporaryDirectory() as td:
     ])
     cc = current_course(b, cfg3)
     check("当前课程取最新课程页", cc and cc.code == "ABC" and cc.answers == arch)
+    check("当前课程名优先取档案 header", cc and cc.name == "Java程序设计-2026秋", repr(cc))
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
