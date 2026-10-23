@@ -112,6 +112,8 @@ if not port_alive(PORT):
 
 import cdp  # noqa: E402
 from eduauto import pw_backend  # noqa: E402
+from eduauto.flows import list_classroom_cards  # noqa: E402
+from eduauto.page import Page  # noqa: E402
 
 try:
     pb = pw_backend.connect_playwright({"edge": {"port": PORT}})
@@ -211,6 +213,30 @@ try:
                  lambda: ws.call("Input.dispatchKeyEvent",
                                  {"type": "keyDown", "key": "Enter"}),
                  "Enter")
+
+    # ---------- 课堂卡片标题：状态标签不能顶替章节名 ----------
+    ws.eval("""
+      document.body.insertAdjacentHTML('beforeend', `
+        <div class="listItem_test">
+          <div class="titleLeft_test">
+            <span>提交中</span><span>已开启补交</span>
+            <span class="name___test">第二章作业</span>
+          </div>
+          <aside>开始学习</aside><span>1/1</span>
+        </div>
+        <div class="listItem_test">
+          <div class="titleLeft_test">
+            <span>补交中</span><span class="name___test">第一章作业</span>
+          </div>
+          <aside>开始学习</aside><span>1/1</span>
+        </div>`);
+    """)
+    cards = list_classroom_cards(Page(ws, fixture_target))
+    check("课堂卡片标题跳过状态标签（已开启补交）",
+          any(c["name"] == "第二章作业" and c["done"] == 1 and c["total"] == 1
+              for c in cards), repr(cards))
+    check("课堂卡片标题跳过状态标签（补交中）",
+          any(c["name"] == "第一章作业" and c["hasStart"] for c in cards), repr(cards))
 
     # ---------- close_target：适配器与浏览器两层都不残留 ----------
     pb.close_target(fixture_target["id"])

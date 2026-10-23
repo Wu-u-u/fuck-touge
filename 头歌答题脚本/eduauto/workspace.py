@@ -22,7 +22,7 @@ PASS_STATUS = {"已通过", "已提交"}
 # 避免短标题误命中别的卡片。
 _CARD_MATCH_JS = r"""
   const norm = s => (s||'').replace(/[\s\u3000]+/g,'');
-  const NOISE = /^(开始学习|查看作品|已截止|继续学习|提交中|未开始|已完成)$/;
+  const NOISE = /^(开始学习|查看作品|已截止|继续学习|提交中|未开始|已完成|补交中|已开启补交)$/;
   const titleLines = c => (c.innerText||'').split('\n')
       .map(s => s.trim())
       .filter(s => s && !NOISE.test(s) && !/^\d+\s*\/\s*\d+$/.test(s));

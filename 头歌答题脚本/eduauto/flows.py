@@ -51,7 +51,11 @@ JSON.stringify([...document.querySelectorAll('[class*="listItem"]')].map(c => {
   const prog = (c.innerText||'').match(/(\d+)\s*\/\s*(\d+)/);
   const raw = c.innerText || '';
   const closed = raw.includes('已截止') || (raw.includes('查看作品') && !hasStart);
-  return {name: t[1] || '', hasStart, closed,
+  // 卡片标题前可能有多个状态标签（提交中 / 已开启补交 / 补交中），
+  // 不能固定取 t[1]；优先读标题节点，读不到再退回状态标签之后的首行。
+  const nameEl = c.querySelector('[class*="name___"]');
+  const name = ((nameEl && nameEl.innerText) || t[1] || '').trim();
+  return {name, hasStart, closed,
           done: prog ? +prog[1] : 0, total: prog ? +prog[2] : 0};
 }).filter(c => c.name))
 """) or []
@@ -140,6 +144,14 @@ def _open_levels_from_detail(browser: cdp.Browser, target: dict, page: Page):
     """
     if "/detail" not in (target["url"] or ""):
         return target, page, True
+    # 补交/已提交章节的详情页常以**后台标签页**打开；后台标签页收不到
+    # 真实鼠标点击，「查看实战」会一动不动。先切到前台再点。
+    try:
+        if page.ws.eval("document.visibilityState") != "visible":
+            page.ws.call("Page.bringToFront")
+            time.sleep(0.4)
+    except cdp.CDPError:
+        pass
     before = {p["id"] for p in browser.pages()}
     clicked = False
     deadline = time.time() + 15
