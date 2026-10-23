@@ -239,12 +239,12 @@ try:
 
     config.STATE_FILE.with_name("state.json.bad").unlink(missing_ok=True)
     config.STATE_FILE.write_text(json.dumps({
-        "slots": [], "names": {"1": "吴建祥", "2": 3}, "running": [],
+        "slots": [], "names": {"1": "账号A", "2": 3}, "running": [],
     }), encoding="utf-8")
     _st = load_state()
     check("state 字段类型错误只重置该字段",
           _st["slots"] == {} and "running" not in _st
-          and _st["names"] == {"1": "吴建祥"}
+          and _st["names"] == {"1": "账号A"}
           and config.STATE_FILE.exists()
           and not config.STATE_FILE.with_name("state.json.bad").exists(), str(_st))
 
