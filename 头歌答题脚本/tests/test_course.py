@@ -6,7 +6,8 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from eduauto.course import (Course, choose_course, current_course,  # noqa: E402
-                            ensure_answers_file, answers_file, parse_course_url)
+                            ensure_answers_file, answers_file, list_courses,
+                            parse_course_url)
 
 passed = failed = 0
 
@@ -46,6 +47,42 @@ with __import__("tempfile").TemporaryDirectory() as td:
 
 check("课程序号选择", choose_course(["A", "B"], "2") == "B")
 check("课程模糊选择", choose_course(["Java程序设计-2026秋", "数据结构"], "数据结构") == "数据结构")
+
+# 直接走个人主页 /users/<login>/classrooms，不依赖「我的」标签点击
+class PersonalWS:
+    def __init__(self):
+        self.urls = []
+
+    def eval(self, expr, await_promise=True):
+        if "localStorage.getItem('userInfo')" in expr:
+            return "tester"
+        if "个人主页" in expr:
+            return True
+        if "document.visibilityState" in expr:
+            return "visible"
+        return ""
+
+    def eval_json(self, expr):
+        return ["课程A", "课程B"]
+
+    def call(self, method, params=None):
+        if method == "Page.navigate":
+            self.urls.append((params or {}).get("url"))
+        return {}
+
+    def wait_for(self, expr, timeout=30, poll=0.4, desc=""):
+        return True
+
+class PersonalPage:
+    def __init__(self):
+        self.ws = PersonalWS()
+
+_personal = PersonalPage()
+_mine = list_courses(_personal)
+check("个人主页直连返回我的课程",
+      _mine == ["课程A", "课程B"]
+      and any("/users/tester/classrooms" in (u or "") for u in _personal.ws.urls),
+      repr((_mine, _personal.ws.urls)))
 
 # current_course：/json 顺序（新开的课程页在前）
 with __import__("tempfile").TemporaryDirectory() as td:

@@ -13,6 +13,7 @@ from eduauto.page import Page
 from eduauto.util import die, log
 
 COURSES_URL = "https://www.educoder.net/classrooms"
+USER_BASE = "https://www.educoder.net"
 CLASSROOM_BASE = "https://www.educoder.net/classrooms"
 
 _CLASSROOM_RE = re.compile(r"/classrooms/([A-Za-z0-9]+)(?:/|$)")
@@ -126,6 +127,48 @@ JSON.stringify((function(){
     return out
 
 
+def _account_login(page: Page) -> str:
+    """从登录态 localStorage 取用户 login（不是显示昵称）。"""
+    try:
+        login = str(page.ws.eval(
+            "(()=>{try{const u=JSON.parse(localStorage.getItem('userInfo')||'null');"
+            "return (u&&u.login)||''}catch(e){return ''}})()"
+        ) or "")
+    except Exception:
+        return ""
+    return login if re.fullmatch(r"[A-Za-z0-9_-]+", login) else ""
+
+
+def _user_classrooms_ready(page: Page) -> bool:
+    try:
+        return bool(page.ws.eval(
+            "(()=>{const t=(document.body&&document.body.innerText)||'';"
+            "return t.includes('个人主页') || t.includes('我的教学课堂');})()"
+        ))
+    except Exception:
+        return False
+
+
+def _user_classrooms_empty(page: Page) -> bool:
+    try:
+        return bool(page.ws.eval(
+            "(()=>{const t=(document.body&&document.body.innerText)||'';"
+            "return /暂无|还没有.*课堂|没有.*课堂|暂无数据/.test(t);})()"
+        ))
+    except Exception:
+        return False
+
+
+def _user_classrooms_forbidden(page: Page) -> bool:
+    try:
+        return bool(page.ws.eval(
+            "(()=>{const t=(document.body&&document.body.innerText)||'';"
+            "return t.includes('403') || t.includes('无权限') || t.includes('没有权限');})()"
+        ))
+    except Exception:
+        return False
+
+
 def _active_course_tab(page: Page) -> str:
     try:
         return str(page.ws.eval(
@@ -156,6 +199,32 @@ def list_courses(page: Page) -> list[str]:
         time.sleep(0.3)
     except Exception:
         pass
+
+    # 优先走个人主页：/users/<login>/classrooms 是平台自己的“我的课堂”页，
+    # 不依赖「最新/最热/我的」标签切换，也不会把公开课列表当成个人课程。
+    login = _account_login(page)
+    if login:
+        try:
+            page.ws.call("Page.navigate", {
+                "url": f"{USER_BASE}/users/{login}/classrooms",
+            })
+            page.ws.wait_for("document.readyState === 'complete'", timeout=40)
+            for _ in range(50):
+                if _user_classrooms_forbidden(page):
+                    break
+                if _user_classrooms_ready(page):
+                    names = _read_course_names(page)
+                    if names or _user_classrooms_empty(page):
+                        return names
+                time.sleep(0.3)
+        except Exception:
+            pass
+        # 个人页不可用（例如个别账号 403）时回到公开列表，再走「我的」标签兜底。
+        try:
+            page.ws.call("Page.navigate", {"url": COURSES_URL})
+            page.ws.wait_for("document.readyState === 'complete'", timeout=40)
+        except Exception:
+            pass
 
     before = _read_course_names(page)
     was_mine = _mine_tab_active(page)
