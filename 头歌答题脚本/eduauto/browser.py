@@ -11,7 +11,7 @@ from eduauto import backend
 from eduauto.backend import BrowserLike, PageSessionLike
 from eduauto.page import Page
 from eduauto.util import die, log
-from eduauto.config import load_state, remember_name, update_state
+from eduauto.config import load_state, remember_login, remember_name, update_state
 
 
 def backend_name() -> str:
@@ -331,6 +331,35 @@ def read_account_name(browser: BrowserLike) -> str:
     return ""
 
 
+def read_account_login(browser: BrowserLike) -> str:
+    """遍历 educoder 标签，读取 localStorage.userInfo.login（不是显示昵称）。"""
+    try:
+        targets = browser.pages()
+    except cdp.CDPError:
+        targets = []
+    for t in targets:
+        if "educoder.net" not in (t.get("url") or ""):
+            continue
+        w = None
+        try:
+            w = browser.attach(t)
+            login = str(w.eval(
+                "(()=>{try{const u=JSON.parse(localStorage.getItem('userInfo')||'null');"
+                "return (u&&u.login)||''}catch(e){return ''}})()"
+            ) or "").strip()
+            if login:
+                return login
+        except cdp.CDPError:
+            continue
+        finally:
+            if w is not None:
+                try:
+                    w.close()
+                except Exception:
+                    pass
+    return ""
+
+
 def ensure_login(browser: BrowserLike, ws: PageSessionLike, timeout: float = 600) -> None:
     """确认头歌已登录；未登录则提示用户在窗口里登录并等待。
 
@@ -378,9 +407,13 @@ def ensure_login(browser: BrowserLike, ws: PageSessionLike, timeout: float = 600
         return False
 
     def success() -> None:
+        current = load_state().get("current")
+        login = read_account_login(browser)
+        if login:
+            remember_login(current, login)
         name = read_account_name(browser)
         if name:
-            remember_name(load_state().get("current"), name)
+            remember_name(current, name)
             log(f"  ✓ 已登录（账号：{name}）")
         else:
             log("  ✓ 已登录")

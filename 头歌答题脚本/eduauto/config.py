@@ -338,3 +338,17 @@ def remember_name(slot: str, name: str) -> None:
         if names.get(slot) != name:
             names[slot] = name
             save_state(state)
+
+
+def remember_login(slot: str, login: str) -> None:
+    """把用户 login 记进 state.json 的 logins 映射（用于直接打开个人课堂）。"""
+    if not slot or not login:
+        return
+    with state_lock():
+        state = _load_state_checked()
+        if state is None:
+            return
+        logins = state.setdefault("logins", {})
+        if logins.get(slot) != login:
+            logins[slot] = login
+            save_state(state)

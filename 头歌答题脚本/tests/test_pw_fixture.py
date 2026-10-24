@@ -112,7 +112,6 @@ if not port_alive(PORT):
 
 import cdp  # noqa: E402
 from eduauto import pw_backend  # noqa: E402
-from eduauto.course import list_courses  # noqa: E402
 from eduauto.flows import list_classroom_cards  # noqa: E402
 from eduauto.page import Page  # noqa: E402
 
@@ -238,36 +237,6 @@ try:
               for c in cards), repr(cards))
     check("课堂卡片标题跳过状态标签（补交中）",
           any(c["name"] == "第一章作业" and c["hasStart"] for c in cards), repr(cards))
-
-    # ---------- 课程列表：点「我的」时必须等旧列表真正被替换 ----------
-    ws.eval("""
-      document.body.insertAdjacentHTML('beforeend', `
-        <div class="tabs___fixture" id="course-tabs" style="margin-top:360px">
-          <span class="active___fixture">最新</span><span>最热</span><span id="tab-mine">我的</span>
-        </div>
-        <div class="list___fixture" id="course-list">
-          <a href="#"><span class="name___fixture">公开课A</span></a>
-          <a href="#"><span class="name___fixture">公开课B</span></a>
-        </div>`);
-      document.getElementById('tab-mine').addEventListener('click', () => {
-        document.querySelectorAll('#course-tabs span').forEach(e => e.className = '');
-        document.getElementById('tab-mine').className = 'active___fixture';
-        // 模拟真实页面：标签先切换，列表稍后才刷新
-        setTimeout(() => {
-          document.getElementById('course-list').innerHTML =
-            '<a href="#"><span class="name___fixture">我的课A</span></a>' +
-            '<a href="#"><span class="name___fixture">我的课B</span></a>';
-        }, 1200);
-      });
-    """)
-    mine = list_courses(Page(ws, fixture_target))
-    diag = ws.eval("""JSON.stringify({
-      tab: !!document.getElementById('tab-mine'),
-      active: document.querySelector('[class*="tabs___"] [class*="active"]')?.innerText || '',
-      names: [...document.querySelectorAll('[class*="list___"] a')].map(a=>a.innerText)
-    })""")
-    check("课程列表等待「我的」旧列表替换后再返回",
-          mine == ["我的课A", "我的课B"], f"{mine!r} {diag}")
 
     # ---------- close_target：适配器与浏览器两层都不残留 ----------
     pb.close_target(fixture_target["id"])

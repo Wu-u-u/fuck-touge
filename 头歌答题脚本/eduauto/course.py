@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import cdp
+from eduauto.config import load_state
 from eduauto.page import Page
 from eduauto.util import die, log
 
@@ -169,88 +170,40 @@ def _user_classrooms_forbidden(page: Page) -> bool:
         return False
 
 
-def _active_course_tab(page: Page) -> str:
-    try:
-        return str(page.ws.eval(
-            "(()=>{const tabs=document.querySelector('[class*=\"tabs___\"]');"
-            "if(!tabs) return '';"
-            "const a=[...tabs.querySelectorAll('[class*=\"active\"]')]"
-            ".find(e=>(e.innerText||'').trim());"
-            "return a ? (a.innerText||'').trim() : '';})()"
-        ) or "")
-    except Exception:
-        return ""
-
-
-def _mine_tab_active(page: Page) -> bool:
-    return _active_course_tab(page) == "我的"
-
-
 def list_courses(page: Page) -> list[str]:
-    """在课堂列表页点「我的」，返回我的课程名（按页面顺序）。
+    """只读取个人课堂页 `/users/<login>/classrooms`，返回课程名。
 
-    课程列表页也会以**后台标签页**打开；后台页收不到真实鼠标点击，
-    旧实现于是把「最新」的 16 门公开课当成「我的」返回。这里先切前台，
-    再以「我的」标签的 active 状态确认切换成功；不能确认就返回空列表，
-    不再把全量课程静默当成个人课程。
+    不再保留「最新/最热/我的」标签兜底：没有 login、个人页 403 或
+    加载失败都直接报错，避免把公开课程静默当成个人课程。
     """
     try:
-        page.ws.call("Page.bringToFront")   # 后台标签收不到真实点击，直接切前台
+        page.ws.call("Page.bringToFront")
         time.sleep(0.3)
     except Exception:
         pass
 
-    # 优先走个人主页：/users/<login>/classrooms 是平台自己的“我的课堂”页，
-    # 不依赖「最新/最热/我的」标签切换，也不会把公开课列表当成个人课程。
-    login = _account_login(page)
-    if login:
-        personal_url = f"{USER_BASE}/users/{login}/classrooms"
-        try:
-            current_url = str(page.ws.eval("location.href") or "")
-            if not current_url.startswith(personal_url):
-                page.ws.call("Page.navigate", {"url": personal_url})
-                page.ws.wait_for("document.readyState !== 'loading'", timeout=40)
-            for _ in range(50):
-                if _user_classrooms_forbidden(page):
-                    break
-                if _user_classrooms_ready(page):
-                    names = _read_course_names(page)
-                    if names or _user_classrooms_empty(page):
-                        return names
-                time.sleep(0.3)
-        except Exception:
-            pass
-        # 个人页不可用（例如个别账号 403）时回到公开列表，再走「我的」标签兜底。
-        try:
-            page.ws.call("Page.navigate", {"url": COURSES_URL})
+    login = _account_login(page) or _saved_login()
+    if not login:
+        die("没有读到登录信息：请先运行 browser 完成登录")
+    personal_url = f"{USER_BASE}/users/{login}/classrooms"
+    try:
+        current_url = str(page.ws.eval("location.href") or "")
+        if not current_url.startswith(personal_url):
+            page.ws.call("Page.navigate", {"url": personal_url})
             page.ws.wait_for("document.readyState !== 'loading'", timeout=40)
-        except Exception:
-            pass
-
-    before = _read_course_names(page)
-    was_mine = _mine_tab_active(page)
-    expr = ("[...document.querySelectorAll('span,div,li,a,button')]"
-            ".find(e=>(e.innerText||'').trim()==='我的')")
-    if not was_mine:
-        page.click_expr(expr)
-
-    names = before
-    for i in range(50):
-        time.sleep(0.3)
-        names = _read_course_names(page)
-        active = _active_course_tab(page)
-        if active == "我的":
-            # 已经是「我的」直接返回；从「最新/最热」切过来时，必须等
-            # 旧列表真正被替换，不能把切换瞬间的 16 门公开课当成个人课程。
-            if was_mine or (names and names != before):
-                return names
-        # 某些页面版本没有 active class，但列表确实已切换
-        if not was_mine and names and before and names != before:
-            return names
-        if i in (8, 18, 30):
-            page.click_expr(expr)
-    log("  ! 未能确认切到「我的」课程列表；请确认页面已登录后重试")
-    return []
+        for _ in range(50):
+            if _user_classrooms_forbidden(page):
+                die(f"个人课堂页无法访问（登录账号 {login}）：请确认账号状态")
+            if _user_classrooms_ready(page):
+                names = _read_course_names(page)
+                if names or _user_classrooms_empty(page):
+                    return names
+            time.sleep(0.3)
+    except SystemExit:
+        raise
+    except Exception as e:
+        die(f"打开个人课堂页失败（{login}）：{e}")
+    die(f"个人课堂页 15 秒内没有加载出课程列表（{login}）")
 
 
 def choose_course(courses: list[str], target: str) -> str:
@@ -295,11 +248,23 @@ def _login_from_open_pages(browser) -> str:
     return ""
 
 
+def _saved_login() -> str:
+    """读取当前槽位上次记录的 login，用于浏览器重启后仍直连个人课堂。"""
+    try:
+        state = load_state()
+    except Exception:
+        return ""
+    current = state.get("current")
+    logins = state.get("logins", {})
+    login = logins.get(current, "") if isinstance(logins, dict) else ""
+    return login if re.fullmatch(r"[A-Za-z0-9_-]+", str(login)) else ""
+
+
 def open_course_list(browser, cfg: dict, old: Page | None = None) -> Page:
     from eduauto.browser import classroom_page
-    # 已登录的页面里能读到 login 时直接开个人课堂页；这样 cd/browser
-    # 不会先显示一下公开课程列表，也不依赖「我的」标签。
-    login = _login_from_open_pages(browser)
+    # 已登录的页面或当前槽位记录里能拿到 login 时，直接开个人课堂页；
+    # 这样 cd/browser 不会先显示公开课程列表，也不再走「我的」标签。
+    login = _login_from_open_pages(browser) or _saved_login()
     url = (f"{USER_BASE}/users/{login}/classrooms"
            if login else str(cfg["edge"]["courses"]))
     return classroom_page(browser, cfg, old=old, url=url)
