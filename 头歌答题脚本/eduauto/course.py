@@ -204,11 +204,12 @@ def list_courses(page: Page) -> list[str]:
     # 不依赖「最新/最热/我的」标签切换，也不会把公开课列表当成个人课程。
     login = _account_login(page)
     if login:
+        personal_url = f"{USER_BASE}/users/{login}/classrooms"
         try:
-            page.ws.call("Page.navigate", {
-                "url": f"{USER_BASE}/users/{login}/classrooms",
-            })
-            page.ws.wait_for("document.readyState === 'complete'", timeout=40)
+            current_url = str(page.ws.eval("location.href") or "")
+            if not current_url.startswith(personal_url):
+                page.ws.call("Page.navigate", {"url": personal_url})
+                page.ws.wait_for("document.readyState !== 'loading'", timeout=40)
             for _ in range(50):
                 if _user_classrooms_forbidden(page):
                     break
@@ -222,7 +223,7 @@ def list_courses(page: Page) -> list[str]:
         # 个人页不可用（例如个别账号 403）时回到公开列表，再走「我的」标签兜底。
         try:
             page.ws.call("Page.navigate", {"url": COURSES_URL})
-            page.ws.wait_for("document.readyState === 'complete'", timeout=40)
+            page.ws.wait_for("document.readyState !== 'loading'", timeout=40)
         except Exception:
             pass
 
@@ -272,9 +273,36 @@ def choose_course(courses: list[str], target: str) -> str:
     return hits[0]
 
 
+def _login_from_open_pages(browser) -> str:
+    """从已打开的 educoder 页面读 login；用于直接打开个人课堂页，避免先闪一下 /classrooms。"""
+    try:
+        pages = browser.pages()
+    except Exception:
+        return ""
+    for t in pages:
+        if "educoder.net" not in (t.get("url") or ""):
+            continue
+        try:
+            ws = browser.attach(t)
+            try:
+                login = _account_login(Page(ws, t))
+            finally:
+                ws.close()
+        except Exception:
+            continue
+        if login:
+            return login
+    return ""
+
+
 def open_course_list(browser, cfg: dict, old: Page | None = None) -> Page:
     from eduauto.browser import classroom_page
-    return classroom_page(browser, cfg, old=old, url=str(cfg["edge"]["courses"]))
+    # 已登录的页面里能读到 login 时直接开个人课堂页；这样 cd/browser
+    # 不会先显示一下公开课程列表，也不依赖「我的」标签。
+    login = _login_from_open_pages(browser)
+    url = (f"{USER_BASE}/users/{login}/classrooms"
+           if login else str(cfg["edge"]["courses"]))
+    return classroom_page(browser, cfg, old=old, url=url)
 
 
 def select_course(browser, page: Page, name: str) -> tuple[dict, Course]:
@@ -308,7 +336,7 @@ def select_course(browser, page: Page, name: str) -> tuple[dict, Course]:
         ws = browser.attach(target)
         try:
             ws.call("Page.navigate", {"url": course.classroom})
-            ws.wait_for("document.readyState === 'complete'", timeout=40)
+            ws.wait_for("document.readyState !== 'loading'", timeout=40)
         finally:
             try:
                 ws.close()

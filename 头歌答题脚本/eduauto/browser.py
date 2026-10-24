@@ -268,7 +268,7 @@ def classroom_page(browser: BrowserLike, cfg: dict, old: "Page | None" = None,
     url = url or cfg["edge"]["courses"]
     target = browser.create_target(url)
     ws = browser.attach(target)
-    ws.wait_for("document.readyState === 'complete'", timeout=40)
+    ws.wait_for("document.readyState !== 'loading'", timeout=40)
     for _ in range(60):          # 等 ant-spin 加载遮罩消失
         try:
             if not ws.eval("!!document.querySelector('.ant-spin-spinning')"):

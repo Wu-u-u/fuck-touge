@@ -239,7 +239,7 @@ def scrape_status(browser: cdp.Browser, classroom: Page, detail_url: str,
     if m:
         landed = classroom.ws.wait_for(
             f"location.href.includes('/shixun_homework/{m.group(1)}/detail')"
-            " && document.readyState === 'complete'",
+            " && document.readyState !== 'loading'",
             timeout=20,
         )
         if not landed:
