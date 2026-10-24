@@ -683,8 +683,13 @@ def cmd_cd(args, cfg: dict) -> None:
     name = choose_course(courses, args.target)
     target, course = select_course(browser, page, name)
     ensure_answers_file(cfg, course)
+    # select_course 打开的课程页可能停在骨架加载（任务页另开新标签仍能跑）。
+    # 关掉它，重新开一个干净的课程页，避免把卡住的标签留给用户。
     if page.target.get("id") and page.target["id"] != target.get("id"):
         browser.close_target(page.target["id"])
+    if target.get("id"):
+        browser.close_target(target["id"])
+    classroom_page(browser, cfg, url=course.classroom)
     log(f"✓ 已进入课程：{course.name}（{course.code}）")
     log(f"  课程页：{course.classroom}")
 
@@ -871,6 +876,11 @@ def cmd_run_batch(args, cfg: dict) -> None:
                 target, selected = select_course(browser, page, wanted)
                 if page.target.get("id") and page.target["id"] != target.get("id"):
                     browser.close_target(page.target["id"])
+                # 选课页本身只用于解析课程码；真正的答题在
+                # _run_selected_course 里新开的课堂页完成。关掉它，
+                # 避免留下截图里那种一直 loading 的课程标签。
+                if target.get("id"):
+                    browser.close_target(target["id"])
                 if selected.code != course.code:
                     log(f"  ! 槽位 {slot} 的同名课程码不同："
                         f"{selected.code}（期望 {course.code}），跳过以免用错档案")
