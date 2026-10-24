@@ -353,7 +353,7 @@ bpatches = {
     "ensure_browser": lambda cfg: bbrowser,
     "current_course": lambda browser, cfg: bcourse,
     "open_course_list": lambda browser, cfg, old=None, url=None: BatchPage("list"),
-    "ensure_login": lambda browser, ws=None: None,
+    "ensure_login": lambda browser, ws=None, timeout=600: None,
     "list_courses": lambda page: ["测试课程"],
     "select_course": lambda browser, page, name: (
         {"id": "course"}, Course("测试课程", "TEST", bcourse.classroom,

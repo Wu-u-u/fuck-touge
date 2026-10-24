@@ -371,12 +371,15 @@ def ensure_login(browser: BrowserLike, ws: PageSessionLike, timeout: float = 600
         try:
             return bool(w.eval(
                 "(function(){"
-                "try{const v=JSON.parse(localStorage.getItem('userInfo')||'null');"
-                "if(v && ((v.real_name||v.username)||'').trim()) return true;}catch(e){}"
                 "const t=(document.body&&document.body.innerText)||'';"
-                "return !!(document.querySelector('.task-user-info')"
-                "|| t.includes('退出课堂')"
-                "|| (t.includes('个人主页') && t.includes('我的经验值')));})()"
+                "if(t.includes('登录/注册') || t.includes('登录 / 注册')) return false;"
+                "if(document.querySelector('.task-user-info')) return true;"
+                "if(t.includes('退出课堂')) return true;"
+                "if(t.includes('个人主页') && t.includes('我的经验值')) return true;"
+                "const pic=document.querySelector('img[class*=\"userPic\"]');"
+                "if(pic){const r=pic.getBoundingClientRect();"
+                "if(r.width>0 && r.height>0) return true;}"
+                "return false;})()"
             ))
         except cdp.CDPError:
             return False

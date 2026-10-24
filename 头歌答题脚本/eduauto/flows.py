@@ -858,7 +858,9 @@ def cmd_run_batch(args, cfg: dict) -> None:
             cfg["edge"]["profile"] = profile
             browser = ensure_browser(cfg)       # 会自动关掉旧档案并启动目标档案
             page = open_course_list(browser, cfg)
-            ensure_login(browser, page.ws)
+            # 批量不替某个槽位无限等登录：60 秒还没登录就记为失败，
+            # 继续后面的槽位，避免整批卡住。
+            ensure_login(browser, page.ws, timeout=60)
             names = list_courses(page)
             wanted = next((n for n in names if norm(n) == norm(course.name)), None)
             if wanted is None:
