@@ -927,9 +927,10 @@ def print_archive_status(chapters: list) -> None:
             elif lv.answer_empty():
                 desc = "缺答案"
             elif isinstance(lv.answer, list):
-                desc = f"答案 {lv.answer}"
+                desc = f"答案已填写（{len(lv.answer)} 题）"
+            elif kind == "choice":
+                desc = "答案已填写"
             else:
                 text = str(lv.answer)
-                desc = f"答案 {len(text)} 字符" if kind != "choice" and "\n" in text \
-                    else f"答案 {text[:30]}"
+                desc = f"答案 {len(text)} 字符" if "\n" in text else f"答案 {text[:30]}"
             log(f"  {i:>2}. {lv.name:<32} [{kind:<4}] {desc}")

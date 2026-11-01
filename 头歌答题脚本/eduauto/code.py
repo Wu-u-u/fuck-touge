@@ -644,7 +644,7 @@ JSON.stringify([...document.querySelectorAll('.option')].map(g =>
         result, checked = apply_and_check()
     if bad():
         raise RuntimeError(f"选项勾选与答案不一致（实际 {checked}，应为 {norm_items}）")
-    log(f"    已选择：{[{'q': i+1, 'letters': items} for i, items in enumerate(norm_items)]}（勾选数已核对）")
+    log(f"    ✓ 已选 {len(norm_items)} 题（勾选数已核对）")
 
 
 def choice_letters(answer) -> list:

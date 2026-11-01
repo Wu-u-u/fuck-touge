@@ -342,7 +342,7 @@ JSON.stringify([...document.querySelectorAll('.option')].map(g => {
 }))
 """)
             if groups and any(groups):
-                return "choice", groups, json.dumps(groups, ensure_ascii=False)
+                return "choice", groups, f"{len(groups)} 题选择题（已采集）"
             time.sleep(0.5)
         return None, None, "没有已保存的选项"
     return None, None, "未知题型"
