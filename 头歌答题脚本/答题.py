@@ -33,7 +33,7 @@ from eduauto.browser import (
 )
 from eduauto.config import (SLOT_RE, apply_current_profile, load_config, load_state,
                             remember_course_order, remember_name, setup_slot)
-from eduauto.flows import cmd_cd, cmd_harvest, cmd_run, cmd_scan_retired
+from eduauto.flows import cmd_cd, cmd_harvest, cmd_run, cmd_scan_retired, cmd_subjective
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -118,6 +118,10 @@ def main() -> None:
         "-b", "--batch", nargs="+", type=int, metavar="槽位",
         help="批量槽位：用当前槽位的当前课程，依次切换到这些槽位跑同一门课，例如 -b 1 2 3",
     )
+    p_subj = sub.add_parser("subjective", help="主观题作业：扫描题目、填写纯文本答案并提交作品")
+    p_subj.add_argument("subj_action", choices=["harvest", "run", "ls"],
+                        help="harvest=扫描题目；run=提交答案；ls=查看主观题档案")
+    p_subj.add_argument("names", nargs="*", help="只处理指定主观题（名称片段）")
 
     args = ap.parse_args()
     if hasattr(args, "chapters"):
@@ -157,6 +161,8 @@ def main() -> None:
         cmd_harvest(args, cfg)
     elif args.cmd == "run":
         cmd_run(args, cfg)
+    elif args.cmd == "subjective":
+        cmd_subjective(args, cfg)
 
 
 if __name__ == "__main__":

@@ -56,6 +56,9 @@ python3 答题.py harvest            # 只处理当前课程：补骨架/采集�
 # 课程答案在 answers/<课程名>-<课程码>.toml，第一次 cd 自动创建
 python3 答题.py run -y             # 只处理当前课程：自动跳过已满分关卡
 python3 答题.py run -y -b 1 2 3    # 用当前课程，依次在 1/2/3 号槽位跑同一门课
+python3 答题.py subjective harvest # 扫描当前课程的主观题作业
+python3 答题.py subjective ls      # 查看主观题题目/答案长度
+python3 答题.py subjective run 01-01 01-02  # 提交指定主观题纯文本答案
 # 章节参数直接跟在命令后，如：run -y 五 七 / harvest 八
 ```
 

@@ -19,6 +19,8 @@ from eduauto.course import (choose_course, current_course, ensure_answers_file,
                             find_answers_file, list_courses, open_course_list, select_course)
 from eduauto.code import answer_choice, choice_letters, close_file_menu, list_code_files, set_code, write_files
 from eduauto.workspace import ChapterEnterError, advance_level, card_progress_js, enter_chapter, is_passed_row, rewind_to_first, row_at, scrape_status, wait_index_change
+from eduauto.subjective import (harvest_subjective, load_subjective, run_subjective,
+                                sidecar_path)
 
 def _book_matches(chapters, name: str) -> list:
     """返回与卡片名匹配的档案章节：完全相等优先，其次双向子串。"""
@@ -697,6 +699,28 @@ def cmd_cd(args, cfg: dict) -> None:
         browser.close_target(page.target["id"])
     log(f"✓ 已进入课程：{course.name}（{course.code}）")
     log(f"  课程页：{target.get('url') or course.classroom}")
+
+
+def cmd_subjective(args, cfg: dict) -> None:
+    """主观题：harvest 扫描题目，run 提交纯文本答案，ls 查看。"""
+    browser = ensure_browser(cfg)
+    course = current_course(browser, cfg)
+    if course is None:
+        die("没有当前课程：先 python3 答题.py cd -ls，再 python3 答题.py cd 序号/课程名")
+    if args.subj_action == "ls":
+        path = sidecar_path(course)
+        entries = load_subjective(path)
+        log(f"主观题档案：{path}")
+        for e in entries:
+            log(f"  {e.name}  [{e.homework_id}]  答案 {len(e.answer)} 字符")
+        return
+    if args.subj_action == "harvest":
+        path = harvest_subjective(browser, cfg, course)
+        log(f"✓ 主观题扫描完成：{path}")
+        return
+    code = run_subjective(browser, cfg, course, list(args.names or []))
+    if code:
+        sys.exit(code)
 
 
 def _run_selected_course(args, cfg: dict, browser, course) -> int:
