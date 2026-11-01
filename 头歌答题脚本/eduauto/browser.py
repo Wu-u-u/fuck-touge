@@ -154,6 +154,21 @@ def ensure_window_size(browser: BrowserLike, min_w: int = 1400, min_h: int = 900
         pass
 
 
+def close_blank_tabs(browser: BrowserLike) -> None:
+    """关掉 Edge 启动时自带的“新建标签页”，避免每次多一个空白页。"""
+    try:
+        pages = browser.pages()
+    except (AttributeError, cdp.CDPError):
+        return
+    blank_prefixes = ("edge://newtab", "edge://ntp", "edge://startpage", "about:blank")
+    for t in pages:
+        if (t.get("url") or "").startswith(blank_prefixes):
+            try:
+                browser.close_target(t["id"])
+            except Exception:
+                pass
+
+
 def _ensure_browser_playwright(cfg: dict) -> BrowserLike:
     """Playwright 模式：只接管已运行的 Edge，不启动、不关闭共享浏览器。"""
     from eduauto import pw_backend
@@ -194,6 +209,7 @@ def _ensure_browser_playwright(cfg: dict) -> BrowserLike:
     elif running == cur and same_profile:
         update_state(running=cur, running_profile=cur_profile)
 
+    close_blank_tabs(browser)
     ensure_window_size(browser)
     try:
         ext = browser.ensure_extension(cfg["edge"]["extension"])
@@ -245,6 +261,7 @@ def ensure_browser(cfg: dict) -> BrowserLike:
     update_state(running=cur,
                  running_profile=os.path.expanduser(str(cfg["edge"]["profile"])))
     browser = connect_browser(port)
+    close_blank_tabs(browser)
     ensure_window_size(browser)
     try:
         ext = browser.ensure_extension(cfg["edge"]["extension"])

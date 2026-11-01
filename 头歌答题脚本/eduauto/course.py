@@ -297,17 +297,10 @@ def select_course(browser, page: Page, name: str) -> tuple[dict, Course]:
         die(f"无法从课程页识别课程：{url}")
     if name:
         course.name = name   # 以课程列表里的标题为准，避免页面 title 是平台名
-    if "/shixun_homework" not in url:
-        ws = browser.attach(target)
-        try:
-            ws.call("Page.navigate", {"url": course.classroom})
-            ws.wait_for("document.readyState !== 'loading'", timeout=40)
-        finally:
-            try:
-                ws.close()
-            except Exception:
-                pass
-    target["url"] = course.classroom
+    # 不要在这里强行把课程标签导航到 /shixun_homework：
+    # 平台偶尔会在“刚打开课程”时把直接导航的标签卡成骨架页，
+    # 但从课程卡片自然打开的 teaching_plan/课程页是正常的。
+    # current_course 只依赖 URL 里的课程码，不要求页面一定是实训页。
     return target, course
 
 

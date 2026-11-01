@@ -691,15 +691,12 @@ def cmd_cd(args, cfg: dict) -> None:
     name = choose_course(courses, args.target)
     target, course = select_course(browser, page, name)
     ensure_answers_file(cfg, course)
-    # select_course 打开的课程页可能停在骨架加载（任务页另开新标签仍能跑）。
-    # 关掉它，重新开一个干净的课程页，避免把卡住的标签留给用户。
+    # 保留课程卡片自然打开的页面；不要强制导航到 shixun_homework，
+    # 否则容易被平台卡成骨架 loading。run/harvest 会按需另开实训页。
     if page.target.get("id") and page.target["id"] != target.get("id"):
         browser.close_target(page.target["id"])
-    if target.get("id"):
-        browser.close_target(target["id"])
-    classroom_page(browser, cfg, url=course.classroom)
     log(f"✓ 已进入课程：{course.name}（{course.code}）")
-    log(f"  课程页：{course.classroom}")
+    log(f"  课程页：{target.get('url') or course.classroom}")
 
 
 def _run_selected_course(args, cfg: dict, browser, course) -> int:
