@@ -161,6 +161,12 @@ def close_blank_tabs(browser: BrowserLike) -> None:
     except (AttributeError, cdp.CDPError):
         return
     blank_prefixes = ("edge://newtab", "edge://ntp", "edge://startpage", "about:blank")
+    # 绝不能关掉最后一个标签：新档案启动时只有 edge://newtab，
+    # 关掉它会让 Edge 直接退出，后续 CDP/扩展都会连接断开。
+    nonblank = [t for t in pages
+                if not (t.get("url") or "").startswith(blank_prefixes)]
+    if not nonblank:
+        return
     for t in pages:
         if (t.get("url") or "").startswith(blank_prefixes):
             try:
@@ -285,6 +291,8 @@ def classroom_page(browser: BrowserLike, cfg: dict, old: "Page | None" = None,
     url = url or cfg["edge"]["courses"]
     target = browser.create_target(url)
     ws = browser.attach(target)
+    # 新页面已经建好，此时可以安全清理启动时残留的空白标签页。
+    close_blank_tabs(browser)
     ws.wait_for("document.readyState !== 'loading'", timeout=40)
     for _ in range(60):          # 等 ant-spin 加载遮罩消失
         try:

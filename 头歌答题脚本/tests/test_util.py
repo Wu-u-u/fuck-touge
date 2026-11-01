@@ -14,6 +14,7 @@ from unittest import mock  # noqa: E402
 import eduauto.config as config  # noqa: E402
 from eduauto.answers import answer_to_toml, looks_like_template  # noqa: E402
 from eduauto.archive import Chapter  # noqa: E402
+from eduauto.browser import close_blank_tabs  # noqa: E402
 from eduauto.code import answer_choice, choice_letters  # noqa: E402
 from eduauto.config import (apply_current_profile, load_config,  # noqa: E402
                             load_state, setup_slot)
@@ -345,6 +346,30 @@ _ec = _ed / "ext.toml"
 _ec.write_text(f"[edge]\nextension = {json.dumps(str(_ed))}\n", encoding="utf-8")
 _ecfg = load_config(_ec)
 check("extension 自动指向 dist", _ecfg["edge"]["extension"] == str(_ed / "dist"))
+
+class _BlankBrowser:
+    def __init__(self, pages):
+        self._pages = pages
+        self.closed = []
+
+    def pages(self):
+        return list(self._pages)
+
+    def close_target(self, tid):
+        self.closed.append(tid)
+        self._pages = [p for p in self._pages if p["id"] != tid]
+
+
+_b = _BlankBrowser([{"id": "blank", "url": "edge://newtab/"}])
+close_blank_tabs(_b)
+check("空白标签清理不关最后一个标签", _b.closed == [], _b.closed)
+
+_b = _BlankBrowser([
+    {"id": "blank", "url": "edge://newtab/"},
+    {"id": "course", "url": "https://www.educoder.net/classrooms/x/shixun_homework"},
+])
+close_blank_tabs(_b)
+check("有真实页面时才清理空白标签", _b.closed == ["blank"], _b.closed)
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
