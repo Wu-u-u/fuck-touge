@@ -31,7 +31,8 @@ from eduauto.browser import (
     classroom_page, connect_configured, ensure_browser,
     ensure_login, port_alive, read_account_name,
 )
-from eduauto.config import SLOT_RE, apply_current_profile, load_config, load_state, remember_name, setup_slot
+from eduauto.config import (SLOT_RE, apply_current_profile, load_config, load_state,
+                            remember_course_order, remember_name, setup_slot)
 from eduauto.flows import cmd_cd, cmd_harvest, cmd_run, cmd_scan_retired
 
 HERE = Path(__file__).resolve().parent
@@ -142,6 +143,7 @@ def main() -> None:
         page = open_course_list(browser, cfg)
         ensure_login(browser, page.ws)
         courses = list_courses(page)
+        remember_course_order(slot, courses)
         log(f"✓ 副本浏览器就绪，已记住档案槽「{slot}」，之后 harvest/run 都会用它。")
         log("课程列表：")
         for i, name in enumerate(courses, 1):

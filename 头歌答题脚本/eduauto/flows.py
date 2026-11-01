@@ -14,6 +14,7 @@ from eduauto.archive import Chapter, find_level, load_answers, write_back_answer
 from eduauto.util import die, fmt_secs, log, norm
 from eduauto.answers import answer_to_toml, read_saved_answer, read_test_result, wait_outcome
 from eduauto.browser import classroom_page, ensure_browser, ensure_login
+from eduauto.config import load_course_order, load_state, remember_course_order
 from eduauto.course import (choose_course, current_course, ensure_answers_file,
                             find_answers_file, list_courses, open_course_list, select_course)
 from eduauto.code import answer_choice, choice_letters, close_file_menu, list_code_files, set_code, write_files
@@ -670,6 +671,7 @@ def cmd_cd(args, cfg: dict) -> None:
     page = open_course_list(browser, cfg)
     ensure_login(browser, page.ws)
     courses = list_courses(page)
+    current = load_state().get("current")
     if args.list_courses:
         if not courses:
             log("没有发现课程")
@@ -677,9 +679,15 @@ def cmd_cd(args, cfg: dict) -> None:
             log("课程列表：")
             for i, name in enumerate(courses, 1):
                 log(f"  {i}. {name}")
+            # 个人课堂按“最新动态”排序，两次打开顺序可能变。把这次展示的
+            # 顺序留住，紧接着的 cd 序号就按用户看到的编号选。
+            remember_course_order(current, courses)
         return
     if not courses:
         die("没有发现课程")
+    saved_order = load_course_order(current)
+    if saved_order and set(saved_order) == set(courses):
+        courses = saved_order
     name = choose_course(courses, args.target)
     target, course = select_course(browser, page, name)
     ensure_answers_file(cfg, course)

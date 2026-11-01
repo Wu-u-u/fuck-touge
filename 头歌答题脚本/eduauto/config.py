@@ -352,3 +352,26 @@ def remember_login(slot: str, login: str) -> None:
         if logins.get(slot) != login:
             logins[slot] = login
             save_state(state)
+
+
+def remember_course_order(slot: str, names: list[str]) -> None:
+    """记住 cd -ls / browser 展示的课程顺序，供紧接着的 cd 序号复用。"""
+    if not slot or not names:
+        return
+    with state_lock():
+        state = _load_state_checked()
+        if state is None:
+            return
+        orders = state.setdefault("course_orders", {})
+        if orders.get(slot) != names:
+            orders[slot] = list(names)
+            save_state(state)
+
+
+def load_course_order(slot: str) -> list[str]:
+    state = load_state()
+    orders = state.get("course_orders", {})
+    if not isinstance(orders, dict):
+        return []
+    names = orders.get(slot, [])
+    return [str(x) for x in names] if isinstance(names, list) else []
