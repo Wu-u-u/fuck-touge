@@ -250,8 +250,27 @@ def scrape_status(browser: cdp.Browser, classroom: Page, detail_url: str,
         "!!document.querySelector('.ant-table-row')", timeout=45
     )
     if not ok:
-        log("  ! 详情页表格未加载，跳过状态检查")
-        return []
+        try:
+            body = str(classroom.ws.eval(
+                "(document.body&&document.body.innerText)||''"
+            ) or "")
+        except cdp.CDPError:
+            body = ""
+        if "本地网络不稳定" in body or "Failed to fetch" in body:
+            log("  ! 平台详情接口请求失败（本地网络/服务端），刷新重试一次…")
+            try:
+                classroom.ws.eval("location.reload()")
+                classroom.ws.wait_for(
+                    "document.readyState !== 'loading'", timeout=20
+                )
+                ok = classroom.ws.wait_for(
+                    "!!document.querySelector('.ant-table-row')", timeout=45
+                )
+            except cdp.CDPError:
+                ok = False
+        if not ok:
+            log("  ! 详情页表格未加载，跳过状态检查")
+            return []
     last, stable = -1, 0
     t0 = time.time()
     deadline = t0 + (40 if expect else 30)
