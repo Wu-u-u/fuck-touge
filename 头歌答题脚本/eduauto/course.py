@@ -164,7 +164,8 @@ def _user_classrooms_forbidden(page: Page) -> bool:
     try:
         return bool(page.ws.eval(
             "(()=>{const t=(document.body&&document.body.innerText)||'';"
-            "return t.includes('403') || t.includes('无权限') || t.includes('没有权限');})()"
+            # 课程人数里会出现 40396，不能用 includes('403') 判 403。
+            "return /(?<!\\d)403(?!\\d)/.test(t) || t.includes('无权限') || t.includes('没有权限');})()"
         ))
     except Exception:
         return False
