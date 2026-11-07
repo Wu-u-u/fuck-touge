@@ -10,8 +10,8 @@ import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from eduauto.archive import (Level, load_answers, write_back_answers,  # noqa: E402
-                            write_scan_skeleton)
+from eduauto.archive import (Level, load_answers, sync_chapter_name,  # noqa: E402
+                            write_back_answers, write_scan_skeleton)
 
 passed = failed = 0
 
@@ -168,6 +168,23 @@ d9 = tomllib.loads(archive6.read_text())
 check("骨架模糊匹配不重复建章", len(d9["chapters"]) == 1, str(d9["chapters"]))
 check("骨架回填 homework_id", d9["chapters"][0].get("homework_id") == "999")
 check("骨架追加缺失关卡", len(d9["chapters"][0]["levels"]) == 3)
+
+# 8b. 平台标题更完整时，harvest 可把档案短名同步为完整名
+archive6b = Path(tmp) / "arch6b.toml"
+write_scan_skeleton(archive6b, [{"name": "Java面向对象（三）", "homework_id": "1",
+                                 "levels": [{"name": "通关任务一"}]}])
+check("章节短名同步为完整名",
+      sync_chapter_name(archive6b, "Java面向对象（三）",
+                        "Java面向对象（三）-  综合练习"))
+d9b = tomllib.loads(archive6b.read_text())
+check("同步后保留答案结构",
+      d9b["chapters"][0]["name"] == "Java面向对象（三）-  综合练习"
+      and d9b["chapters"][0]["levels"][0]["name"] == "通关任务一")
+_before6b = archive6b.read_bytes()
+check("已是完整名时不重复改写",
+      not sync_chapter_name(archive6b, "Java面向对象（三）",
+                            "Java面向对象（三）-  综合练习")
+      and archive6b.read_bytes() == _before6b)
 
 # 9. 单引号章节名（合法 TOML）也能匹配写回
 archive7 = Path(tmp) / "arch7.toml"

@@ -154,6 +154,45 @@ def _find_raw_chapter(chapters: list[dict], name: str) -> dict | None:
     return fuzzy[0] if len(fuzzy) == 1 else None
 
 
+def sync_chapter_name(path: Path, old_name: str, new_name: str) -> bool:
+    """平台标题比档案名更完整时，把档案章节名同步成平台标题。
+
+    只做“旧名包含于新名”的单向更新，避免把用户补充过说明的长档案名改短。
+    返回是否真的改了文件。
+    """
+    old_n = norm(old_name)
+    new_n = norm(new_name)
+    if not path.exists() or not old_n or old_n == new_n or old_n not in new_n:
+        return False
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+    spans = _chapter_spans(lines)
+    span = _find_chapter_span(spans, old_name)
+    if span is None or span["name"] is None:
+        return False
+    if norm(span["name"]) == new_n:
+        return False
+    if any(sp is not span and sp["name"] is not None and norm(sp["name"]) == new_n
+           for sp in spans):
+        return False
+    for k in range(span["start"] + 1, span["end"]):
+        if _LV_HDR.match(lines[k].strip()):
+            break
+        if re.match(r"^\s*name\s*=", lines[k]):
+            indent = lines[k][:len(lines[k]) - len(lines[k].lstrip())]
+            lines[k] = f"{indent}name = {json.dumps(new_name, ensure_ascii=False)}\n"
+            break
+    else:
+        return False
+    updated = "".join(lines)
+    try:
+        tomllib.loads(updated)
+    except tomllib.TOMLDecodeError as e:
+        die(f"章节改名后 TOML 校验失败，未写入：{e}")
+    _atomic_write(path, updated)
+    return True
+
+
 def _atomic_write(path: Path, text: str) -> None:
     """先写临时文件再 os.replace，避免中途失败把档案截断。"""
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")

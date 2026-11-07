@@ -10,7 +10,8 @@ import time
 
 import cdp
 from eduauto.page import Page
-from eduauto.archive import Chapter, find_level, load_answers, write_back_answers, write_scan_skeleton
+from eduauto.archive import (Chapter, find_level, load_answers, sync_chapter_name,
+                             write_back_answers, write_scan_skeleton)
 from eduauto.util import die, fmt_secs, log, norm
 from eduauto.answers import answer_to_toml, read_saved_answer, read_test_result, wait_outcome
 from eduauto.browser import classroom_page, ensure_browser, ensure_login
@@ -311,6 +312,13 @@ def cmd_harvest(args, cfg: dict) -> None:
             if card and card.get("closed"):
                 log("  ! 已截止（只能查看作品）——跳过，不建骨架、不采集")
                 continue
+        if ch is not None and card is not None:
+            card_name = str(card.get("name") or "")
+            if sync_chapter_name(answers_path, ch.name, card_name):
+                log(f"  · 档案章节名已同步为平台完整名「{card_name}」")
+                ch.name = card_name
+                name = card_name
+                key = card_name
         if card is not None:
             prog = {"done": card.get("done", 0), "total": card.get("total", 0),
                     "name": card.get("name", "")}
