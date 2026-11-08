@@ -19,6 +19,7 @@ import json
 import os
 import socket
 import struct
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -233,6 +234,8 @@ class Browser:
     def __init__(self, port: int = DEFAULT_PORT):
         self.port = port
         self.ws = WS(http_json("/json/version", port)["webSocketDebuggerUrl"])
+        # 浏览器级 CDP 连接不是线程安全的；预加载线程和主线程会同时开/关标签页。
+        self._target_lock = threading.Lock()
 
     # 标签页
 
@@ -255,7 +258,8 @@ class Browser:
         return pages[-1] if pages else None
 
     def create_target(self, url: str = "about:blank", retries: int = 20) -> dict:
-        tid = self.ws.call("Target.createTarget", {"url": url})["targetId"]
+        with self._target_lock:
+            tid = self.ws.call("Target.createTarget", {"url": url})["targetId"]
         for _ in range(retries):
             time.sleep(0.25)
             for t in http_json("/json", self.port):
@@ -279,13 +283,15 @@ class Browser:
 
     def close_target(self, target_id: str) -> None:
         try:
-            self.ws.call("Target.closeTarget", {"targetId": target_id})
+            with self._target_lock:
+                self.ws.call("Target.closeTarget", {"targetId": target_id})
         except (CDPError, ConnectionError):
             pass
 
     def activate(self, target_id: str) -> None:
         try:
-            self.ws.call("Target.activateTarget", {"targetId": target_id})
+            with self._target_lock:
+                self.ws.call("Target.activateTarget", {"targetId": target_id})
         except (CDPError, ConnectionError):
             pass
 

@@ -6,6 +6,7 @@ from pathlib import Path
 import json
 import re
 import sys
+import threading
 import time
 
 import cdp
@@ -38,8 +39,11 @@ def _book_lookup(chapters, name: str):
     return hits[0] if len(hits) == 1 else None
 
 
-def list_classroom_cards(page: Page) -> list[dict]:
-    """读课堂页的章节卡片（名称 / 是否可进入 / 进度 / 是否已截止）。"""
+def list_classroom_cards(page: Page, *, all_pages: bool = False) -> list[dict]:
+    """读课堂页的章节卡片（名称 / 是否可进入 / 进度 / 是否已截止）。
+
+    all_pages=True 时会翻完分页再回到第 1 页，供 run 自动筛选使用。
+    """
     # 卡片异步渲染：先等列表出现（最多 30 秒），避免读到空列表
     for _ in range(60):
         try:
@@ -48,7 +52,9 @@ def list_classroom_cards(page: Page) -> list[dict]:
         except cdp.CDPError:
             pass
         time.sleep(0.5)
-    cards = page.ws.eval_json(r"""
+
+    def read_cards() -> list[dict]:
+        return page.ws.eval_json(r"""
 JSON.stringify([...document.querySelectorAll('[class*="listItem"]')].map(c => {
   const t = (c.innerText||'').split('\n').map(s=>s.trim()).filter(Boolean);
   const hasStart = [...c.querySelectorAll('*')].some(el => (el.innerText||'').trim() === '开始学习');
@@ -63,6 +69,33 @@ JSON.stringify([...document.querySelectorAll('[class*="listItem"]')].map(c => {
           done: prog ? +prog[1] : 0, total: prog ? +prog[2] : 0};
 }).filter(c => c.name))
 """) or []
+
+    cards = read_cards()
+    if all_pages:
+        try:
+            nums = page.ws.eval_json(
+                "JSON.stringify([...document.querySelectorAll('.ant-pagination-item')]"
+                ".map(e=>parseInt(e.innerText,10)).filter(n=>n>1))"
+            ) or []
+        except cdp.CDPError:
+            nums = []
+        seen = {str(c.get("name") or "") for c in cards}
+        for n in sorted(set(int(x) for x in nums)):
+            if not page.click_expr(f"document.querySelector('.ant-pagination-item-{n}')"):
+                continue
+            page.ws.wait_for(
+                "document.querySelectorAll('[class*=\"listItem\"]').length > 0",
+                timeout=10,
+            )
+            time.sleep(0.6)
+            for c in read_cards():
+                name = str(c.get("name") or "")
+                if name and name not in seen:
+                    seen.add(name)
+                    cards.append(c)
+        # 回到第 1 页，后续 enter_chapter 仍在第一页查找
+        page.click_expr("document.querySelector('.ant-pagination-item-1')")
+        time.sleep(0.6)
     if not cards:
         log("  ! 课堂页没有读到章节卡片（页面可能还没加载完，稍后重试）")
     return cards
@@ -195,6 +228,32 @@ def _match_card(cards: list[dict], name: str) -> dict | None:
                        or norm(str(c.get("name") or "")) in n)]
     hits = exact or fuzzy
     return hits[0] if len(hits) == 1 else None
+
+
+def _filter_todo_by_cards(todo: list[Chapter], cards: list[dict]) -> list[Chapter]:
+    """按课堂卡片的 done/total 先排除已完成/已截止章节，避免白开详情页。"""
+    if not cards:
+        return todo
+    keep = []
+    for ch in todo:
+        ns = norm(ch.name)
+        exact = [c for c in cards if norm(str(c.get("name") or "")) == ns]
+        fuzzy = [c for c in cards
+                 if ns and (ns in norm(str(c.get("name") or ""))
+                            or norm(str(c.get("name") or "")) in ns)]
+        hits = exact or fuzzy
+        if len(hits) != 1:
+            keep.append(ch)          # 卡片没对上/有歧义时保留，交给详情页判断
+            continue
+        card = hits[0]
+        total = int(card.get("total") or 0)
+        done = int(card.get("done") or 0)
+        if card.get("closed") or (total > 0 and done >= total):
+            log(f"  · 已自动跳过：{ch.name}（{done}/{total}，"
+                f"{'已截止' if card.get('closed') else '已完成'}）")
+            continue
+        keep.append(ch)
+    return keep
 
 
 def _rows_match_levels(rows: list[dict], ch: Chapter) -> bool:
@@ -447,41 +506,127 @@ def cmd_scan_retired() -> None:
     sys.exit(0)
 
 
+def _fill_preloaded_level(page: Page, st: dict, lv) -> bool:
+    """只给预加载标签页写第一关答案，不点评测。支持单/多文件代码和选择题。"""
+    if st.get("hasEditor"):
+        code = str(lv.answer or "")
+        if lv.multi is False and not lv.files:
+            if not code.strip():
+                return False
+            set_code(page, code)
+            return True
+        paths, _ = list_code_files(page)
+        if len(paths) > 1:
+            if not lv.files:
+                close_file_menu(page)
+                return False
+            missing = [f.get("path") for f in lv.files
+                       if not str(f.get("answer") or "").strip()]
+            if missing:
+                close_file_menu(page)
+                return False
+            write_files(page, paths, lv.files)
+            return True
+        close_file_menu(page)
+        if not code.strip() and len(lv.files) == 1:
+            code = str(lv.files[0].get("answer") or "")
+        if not code.strip():
+            return False
+        set_code(page, code)
+        return True
+    if st.get("choiceCount", 0) > 0:
+        if lv.answer_empty():
+            return False
+        answer_choice(page, choice_letters(lv.answer))
+        return True
+    return False
+
+
+def prepare_chapter(browser: cdp.Browser, cfg: dict, course, ch: Chapter):
+    """预加载一章：开标签、进入章节、回到第一关并写好第一关，不评测。
+
+    返回 (name, target, Page, state)；失败返回 None。主线程会在当前章结束后
+    接管这个标签页，避免下一章再从头加载。
+    """
+    classroom = None
+    target = None
+    try:
+        classroom = classroom_page(browser, cfg, url=course.classroom)
+        ensure_login(browser, classroom.ws)
+        target, ws = enter_chapter(browser, classroom, ch.name, on_fail="raise")
+        page = Page(ws, target)
+        target, page, entered = _open_levels_from_detail(browser, target, page)
+        if not entered:
+            raise RuntimeError("详情页上没有进入关卡的按钮")
+        st, reached_first = rewind_to_first(page)
+        if not st.get("index") or not reached_first:
+            raise RuntimeError("无法回到第 1 关")
+        lv = find_level(ch, st.get("index") or 1, st.get("name") or "")
+        if lv is None or not _fill_preloaded_level(page, st, lv):
+            raise RuntimeError("第一关没有可写入的答案")
+        log(f"  · 预加载完成：{ch.name}（第{st.get('index')}关）")
+        return ch.name, target, page, st
+    except BaseException as e:
+        if target and target.get("id"):
+            browser.close_target(target["id"])
+        log(f"  ! 预加载失败：{ch.name}（{e}）")
+        return None
+    finally:
+        if classroom is not None and classroom.target.get("id"):
+            browser.close_target(classroom.target["id"])
+
+
 def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
                     ch: Chapter, status: list[dict],
-                    stats: "dict | None" = None) -> dict:
+                    stats: "dict | None" = None,
+                    preopened: "tuple[dict, Page, dict] | None" = None) -> dict:
     """跑完一章。返回统计 {done, skipped, failed}。
 
     stats 可传外部汇总里已就位的 dict（cmd_run 这样用）：本章中途 die 退出时，
     已累计的作答/跳过数会留在那个 dict 里随之带回，不再丢失。
 
+    preopened 为预加载线程已经进入并填好第一关的 (target, page, state)；
+    传入时不再重新打开/回退本章，直接从该关卡继续。
+
     注意：正常结束才关掉本章标签页；中途失败（die）保留页面给用户排查。
     """
     if stats is None:
         stats = {"done": 0, "skipped": 0, "failed": 0}
-    try:
-        target, ws = enter_chapter(browser, classroom, ch.name, on_fail="raise")
-    except ChapterEnterError as e:
-        # 整章没跑起来：按失败 1 关计（记成 skipped 会把「关数」单位用错）
-        log(f"  ! 无法进入本章（{e}），跳过")
-        stats["failed"] += 1
-        return stats
-    page = Page(ws)
+    if preopened is None:
+        try:
+            target, ws = enter_chapter(browser, classroom, ch.name, on_fail="raise")
+        except ChapterEnterError as e:
+            # 整章没跑起来：按失败 1 关计（记成 skipped 会把「关数」单位用错）
+            log(f"  ! 无法进入本章（{e}），跳过")
+            stats["failed"] += 1
+            return stats
+        page = Page(ws)
+        st = {}
+    else:
+        target, page, st = preopened
     ok = False
     try:
-        target, page, entered = _open_levels_from_detail(browser, target, page)
-        if not entered:
-            stats["failed"] += 1
-            log("  ! 详情页上没找到进入关卡的按钮，跳过本章")
-            browser.close_target(target["id"])
-            return stats
-        st, reached_first = rewind_to_first(page)
+        if preopened is None:
+            target, page, entered = _open_levels_from_detail(browser, target, page)
+            if not entered:
+                stats["failed"] += 1
+                log("  ! 详情页上没找到进入关卡的按钮，跳过本章")
+                browser.close_target(target["id"])
+                return stats
+            st, reached_first = rewind_to_first(page)
+            if not st.get("index"):
+                die(f"章节「{ch.name}」进入后未能读到关卡信息。")
+            if not reached_first:
+                die(f"章节「{ch.name}」无法回到第 1 关（当前停在第{st.get('index')}关），"
+                    "前面关卡会被跳过，已暂停。\n"
+                    "  请手动点「上一关」回到第 1 关，或先 harvest 后再运行。")
+        elif preopened is not None:
+            # 预加载标签页在后台时，真实鼠标点「下一关」会点空，先切到前台。
+            browser.activate(target["id"])
+            if not st.get("index"):
+                st = page.wait_level(timeout=30)
         if not st.get("index"):
-            die(f"章节「{ch.name}」进入后未能读到关卡信息。")
-        if not reached_first:
-            die(f"章节「{ch.name}」无法回到第 1 关（当前停在第{st.get('index')}关），"
-                "前面关卡会被跳过，已暂停。\n"
-                "  请手动点「上一关」回到第 1 关，或先 harvest 后再运行。")
+            die(f"章节「{ch.name}」预加载页未能读到关卡信息。")
         log(f"  从第{st.get('index')}关开始：{st.get('name')}")
         guard = 0
         while guard < 50:
@@ -744,6 +889,17 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
     if not todo:
         die("答案档案里找不到指定章节。")
 
+    classroom = classroom_page(browser, cfg, url=course.classroom)
+    ensure_login(browser, classroom.ws)
+
+    if not args.chapter:
+        cards = (list_classroom_cards(classroom, all_pages=True)
+                 if getattr(classroom, "ws", None) is not None else [])
+        todo = _filter_todo_by_cards(todo, cards)
+        if not todo:
+            log("所有章节都已完成或在档案里标了 skip，没有需要打开的页面。")
+            return 0
+
     t0 = time.time()
 
     # 计划预览（原 check 命令并入：先看每关答案状态，再决定是否开跑）
@@ -755,14 +911,14 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
         except (EOFError, KeyboardInterrupt):
             die("已取消。")
 
-    classroom = classroom_page(browser, cfg, url=course.classroom)
-    ensure_login(browser, classroom.ws)
-
     results = {}
     status_page = classroom     # 复用登录用的课堂页做状态检查标签，全程不重复开
 
-    def run_one(ch) -> None:
+    def run_one(ch, prepared=None) -> None:
         log(f"\n══ 章节：{ch.name} ══")
+        if prepared is not None and prepared[0] != ch.name:
+            browser.close_target(prepared[1]["id"])
+            prepared = None
         if not ch.homework_id:
             die(f"章节「{ch.name}」缺少 homework_id，请先 harvest。")
         log("  → 检查平台状态…")
@@ -771,47 +927,91 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
                              expect=len(ch.levels))
         if not rows:
             log("  ! 详情页没有读到关卡列表，跳过本章")
+            if prepared is not None:
+                browser.close_target(prepared[1]["id"])
             results[ch.name] = {"done": 0, "skipped": 0, "failed": 1}
             return
         if len(rows) != len(ch.levels):
             log(f"  ! 平台关卡数（{len(rows)}）与档案（{len(ch.levels)}）不一致，"
                 "请先 harvest 补骨架；跳过本章")
+            if prepared is not None:
+                browser.close_target(prepared[1]["id"])
             results[ch.name] = {"done": 0, "skipped": 0, "failed": 1}
             return
         if not _rows_match_levels(rows, ch):
             log("  ! 详情表关卡名与档案不一致（可能读到了上一章的旧表），跳过本章")
+            if prepared is not None:
+                browser.close_target(prepared[1]["id"])
             results[ch.name] = {"done": 0, "skipped": 0, "failed": 1}
             return
         to_run = [lv for i, lv in enumerate(ch.levels, 1)
                   if not lv.skip and not is_passed_row(row_at(rows, i, lv.name))]
         if not to_run:
             log("  → 本章所有关卡都已通过或在档案里标了 skip，跳过")
+            if prepared is not None:
+                browser.close_target(prepared[1]["id"])
             results[ch.name] = {"done": 0, "skipped": len(ch.levels), "failed": 0}
             return
         missing = [lv.name for lv in to_run if lv.answer_empty()]
         if missing:
+            if prepared is not None:
+                browser.close_target(prepared[1]["id"])
             die(f"章节「{ch.name}」还有关卡没填答案：{'、'.join(missing)}\n"
                 f"  请填写后重新运行：{cfg['run']['answers']}")
-        # 只有真的要跑时，才开一个干净的课堂页去点「开始学习」
-        entry_classroom = classroom_page(browser, cfg, url=course.classroom)
         t_ch = time.time()
         stats = {"done": 0, "skipped": 0, "failed": 0}
         results[ch.name] = stats      # 先就位：本章中途 die 时已作答数不丢
-        try:
-            ret = process_chapter(browser, entry_classroom, cfg, ch, rows,
-                                  stats=stats)
-        finally:
-            if entry_classroom.target.get("id"):
-                browser.close_target(entry_classroom.target["id"])
+        if prepared is not None:
+            _, ptarget, ppage, pstate = prepared
+            ret = process_chapter(browser, classroom, cfg, ch, rows,
+                                  stats=stats, preopened=(ptarget, ppage, pstate))
+        else:
+            # 只有真的要跑时，才开一个干净的课堂页去点「开始学习」
+            entry_classroom = classroom_page(browser, cfg, url=course.classroom)
+            try:
+                ret = process_chapter(browser, entry_classroom, cfg, ch, rows,
+                                      stats=stats)
+            finally:
+                if entry_classroom.target.get("id"):
+                    browser.close_target(entry_classroom.target["id"])
         if isinstance(ret, dict) and ret is not stats:
             stats.update(ret)          # 替身实现/旧式实现直接返回统计时并入
         stats["secs"] = time.time() - t_ch
 
 
+    preloads: dict[int, tuple | None] = {}
+    preload_threads: dict[int, threading.Thread] = {}
+    preload_lock = threading.Lock()
+
+    def start_preload(idx: int) -> None:
+        if idx >= len(todo) or idx in preload_threads:
+            return
+        ch = todo[idx]
+
+        def worker():
+            p = prepare_chapter(browser, cfg, course, ch)
+            with preload_lock:
+                preloads[idx] = p
+
+        t = threading.Thread(target=worker, name=f"preload-{ch.name}", daemon=True)
+        preload_threads[idx] = t
+        t.start()
+
+    if len(todo) > 1:
+        start_preload(1)
+
     abort_code = 0
-    for ch in todo:
+    for i, ch in enumerate(todo):
+        t = preload_threads.pop(i, None)
+        if t is not None:
+            t.join()
+        with preload_lock:
+            p = preloads.pop(i, None)
+        prepared = p if p is not None and p[0] == ch.name else None
+        if p is not None and prepared is None:
+            browser.close_target(p[1]["id"])
         try:
-            run_one(ch)
+            run_one(ch, prepared)
         except (SystemExit, RuntimeError, KeyboardInterrupt) as e:
             if isinstance(e, RuntimeError):
                 log(f"  ! 章节中止：{e}")
@@ -825,6 +1025,16 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
             results[ch.name] = s
             abort_code = e.code if isinstance(e, SystemExit) and e.code else 2
             break
+        if i + 2 < len(todo):
+            start_preload(i + 2)
+
+    for t in preload_threads.values():
+        t.join()
+    with preload_lock:
+        pending = list(preloads.values())
+    for p in pending:
+        if p is not None:
+            browser.close_target(p[1]["id"])
 
     log("\n══════ 汇总 ══════")
     for name, s in results.items():

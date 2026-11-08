@@ -369,5 +369,71 @@ check("批量 run 按 -b 参数顺序执行同一课程",
       and "槽位 2：成功" in bout and "槽位 1：成功" in bout,
       f"code={bcode} calls={bcalls} out={bout}")
 
+# ---------- run 自动筛选：已完成的章节不再打开 ----------
+_filter_chs = [
+    Chapter({"name": "已完成", "levels": [{"name": "L1"}]}),
+    Chapter({"name": "进行中", "levels": [{"name": "L1"}]}),
+    Chapter({"name": "无卡片", "levels": [{"name": "L1"}]}),
+]
+_filter_cards = [
+    {"name": "已完成", "closed": False, "done": 3, "total": 3},
+    {"name": "进行中", "closed": False, "done": 1, "total": 3},
+]
+_filtered = flows._filter_todo_by_cards(_filter_chs, _filter_cards)
+check("run 自动筛选跳过已完成章节",
+      [c.name for c in _filtered] == ["进行中", "无卡片"],
+      str([c.name for c in _filtered]))
+
+# ---------- run 预加载：下一章先初始化并填第一关，再交给 process ----------
+_pipeline_chs = [
+    Chapter({"name": f"预加载章{i}", "homework_id": str(i),
+             "levels": [{"name": "L1", "answer": "A", "type": "choice"}]})
+    for i in (1, 2, 3)
+]
+_events = []
+
+
+def _fake_prepare(browser, cfg, course, ch):
+    _events.append(("prepare", ch.name))
+    return (ch.name, {"id": "pre-" + ch.name}, FakePage(),
+            {"index": 1, "name": "L1", "hasEditor": False, "choiceCount": 1})
+
+
+def _fake_process(browser, classroom, cfg, ch, rows, stats=None, preopened=None):
+    _events.append(("process", ch.name,
+                    preopened[0].get("id") if preopened else None))
+    stats = stats or {"done": 0, "skipped": 0, "failed": 0}
+    stats["done"] += 1
+    return stats
+
+
+_pipeline_patches = {
+    "load_answers": lambda p, **k: _pipeline_chs,
+    "resolve_chapter_args": lambda chs, pats, strict=True: chs,
+    "ensure_browser": lambda cfg: FakeBrowser(),
+    "current_course": lambda browser, cfg: Course(
+        "测试课程", "TEST", "http://example", Path("unused.toml")),
+    "classroom_page": lambda browser, cfg, old=None, url=None: FakePage(),
+    "ensure_login": lambda browser, ws=None: None,
+    "scrape_status": lambda *a, **k: [
+        {"name": "L1", "full": "10", "score": "0", "status": "未通过"}],
+    "prepare_chapter": _fake_prepare,
+    "process_chapter": _fake_process,
+}
+_pipeline_code, _pipeline_out = with_patches(
+    _pipeline_patches,
+    lambda: catch_exit(lambda: flows._run_selected_course(
+        Args(), CFG, FakeBrowser(),
+        Course("测试课程", "TEST", "http://example", Path("unused.toml")))))
+_pipeline_process = [e for e in _events if e[0] == "process"]
+check("run 预加载流水线按时接管下一章",
+      _pipeline_code == 0
+      and [e[1] for e in _pipeline_process] == ["预加载章1", "预加载章2", "预加载章3"]
+      and _pipeline_process[1][2] == "pre-预加载章2"
+      and _pipeline_process[2][2] == "pre-预加载章3"
+      and ("prepare", "预加载章2") in _events
+      and ("prepare", "预加载章3") in _events,
+      f"code={_pipeline_code} events={_events} out={_pipeline_out}")
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
