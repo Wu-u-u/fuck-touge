@@ -73,10 +73,10 @@ def wait_outcome(page: Page, ctx: dict, timeout: float) -> dict:
         pr = probe_state(page.ws)
         tr = read_test_result(page)
         toast_text = " ".join(list(pr.get("toasts", [])))
-        # 新平台「提交结果」面板：只认新出现且 success 的面板；
-        # 分数由调用方查详情页复核，不能仅凭面板当满分。
-        if (tr and "success" in str(tr.get("cls", ""))
-                and tr.get("text") != ctx.get("test_result0")):
+        # 新平台「提交结果」面板：部分判断题/选择题在进入关卡时就已存在
+        # 一个 success 面板（尤其 AI 通识/重复评测），点完评测文本不会变化。
+        # 因此只要点击后仍是 success 面板就算本次已提交；分数交给详情页复核。
+        if tr and "success" in str(tr.get("cls", "")):
             has_next = bool(page.ws.eval(
                 "!!([...document.querySelectorAll('a,button')].find(e=>"
                 "(e.innerText||'').trim()==='下一关' && "
