@@ -507,7 +507,13 @@ def cmd_scan_retired() -> None:
 
 
 def _fill_preloaded_level(page: Page, st: dict, lv) -> bool:
-    """只给预加载标签页写第一关答案，不点评测。支持单/多文件代码和选择题。"""
+    """只给预加载标签页写第一关答案，不点评测。
+
+    多文件关卡需要真实点击「代码文件」下拉；预加载页在后台时点击不可靠，
+    统一交给主流程在前台处理。
+    """
+    if lv.files or lv.multi is True:
+        return False
     if st.get("hasEditor"):
         code = str(lv.answer or "")
         if lv.multi is False and not lv.files:
@@ -562,6 +568,11 @@ def prepare_chapter(browser: cdp.Browser, cfg: dict, course, ch: Chapter):
         if not st.get("index") or not reached_first:
             raise RuntimeError("无法回到第 1 关")
         lv = find_level(ch, st.get("index") or 1, st.get("name") or "")
+        if lv is not None and (lv.files or lv.multi is True):
+            log(f"  · 多文件关卡不预加载：{ch.name}，交给主流程")
+            if target.get("id"):
+                browser.close_target(target["id"])
+            return None
         if lv is None or not _fill_preloaded_level(page, st, lv):
             raise RuntimeError("第一关没有可写入的答案")
         log(f"  · 预加载完成：{ch.name}（第{st.get('index')}关）")

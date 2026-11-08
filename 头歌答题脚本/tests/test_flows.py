@@ -10,7 +10,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import eduauto.flows as flows  # noqa: E402
-from eduauto.archive import Chapter  # noqa: E402
+from eduauto.archive import Chapter, Level  # noqa: E402
 from eduauto.course import Course  # noqa: E402
 
 passed = failed = 0
@@ -383,6 +383,12 @@ _filtered = flows._filter_todo_by_cards(_filter_chs, _filter_cards)
 check("run 自动筛选跳过已完成章节",
       [c.name for c in _filtered] == ["进行中", "无卡片"],
       str([c.name for c in _filtered]))
+
+# 多文件关卡在后台真实点击下拉不可靠，必须放弃预加载交给前台流程
+_multifile_lv = Level({"name": "多文件关", "multi": True,
+                       "files": [{"path": "src/A.java", "answer": "class A {}"}]})
+check("多文件关卡不预加载",
+      flows._fill_preloaded_level(None, {}, _multifile_lv) is False)
 
 # ---------- run 预加载：下一章先初始化并填第一关，再交给 process ----------
 _pipeline_chs = [
