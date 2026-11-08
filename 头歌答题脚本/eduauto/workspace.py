@@ -81,6 +81,37 @@ class ChapterEnterError(RuntimeError):
     """进入章节失败（没找到可点的动作按钮，或点击后没有新标签页）。"""
 
 
+def _find_card_across_pages(page: Page, name: str) -> dict:
+    """当前页找不到卡片时翻分页找；找到后返回 card_pos_js 的位置结果。"""
+    data = json.loads(page.ws.eval(card_pos_js(name)) or "{}")
+    if data.get("ok") or data.get("reason") != "card-not-found":
+        return data
+    try:
+        nums = page.ws.eval_json(
+            "JSON.stringify([...document.querySelectorAll('.ant-pagination-item')]"
+            ".map(e=>parseInt(e.innerText,10)).filter(n=>n>0))"
+        ) or []
+        active = int(page.ws.eval(
+            "(parseInt((document.querySelector('.ant-pagination-item-active')||{}).innerText,10)||1)"
+        ) or 1)
+    except (cdp.CDPError, TypeError, ValueError):
+        return data
+    for n in sorted(set(int(x) for x in nums)):
+        if n == active:
+            continue
+        if not page.click_expr(f"document.querySelector('.ant-pagination-item-{n}')"):
+            continue
+        page.ws.wait_for(
+            "document.querySelectorAll('[class*=\"listItem\"]').length > 0",
+            timeout=10,
+        )
+        time.sleep(0.4)
+        data = json.loads(page.ws.eval(card_pos_js(name)) or "{}")
+        if data.get("ok"):
+            return data
+    return data
+
+
 def wait_cards(page: Page, timeout: float = 10) -> bool:
     """等课堂章节卡片渲染出来（SPA 异步；新开的课堂页常常先空白）。"""
     deadline = time.time() + timeout
@@ -116,7 +147,7 @@ def enter_chapter(browser: cdp.Browser, classroom: Page, chapter_name: str,
                 break
             time.sleep(0.5)
         try:
-            data = json.loads(classroom.ws.eval(card_pos_js(chapter_name)) or "{}")
+            data = _find_card_across_pages(classroom, chapter_name)
         except cdp.CDPError:
             data = {}
         if not data.get("ok"):
