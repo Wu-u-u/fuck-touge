@@ -83,7 +83,7 @@ JSON.stringify((function(){
     const uniq = [...new Set(cands.filter(Boolean))];
     if (uniq.length === 1) out.uri = uniq[0];
   } catch (e) {}
-  return JSON.stringify(out);
+  return out;
 })())
 """
 
@@ -258,6 +258,11 @@ def _resolve_active_model(page: Page, path: str,
     if not uris:
         return None
     st = page.ws.eval_json(FILE_ACTIVE_MODEL_JS) or {}
+    if isinstance(st, str):                      # 兼容旧的双重 JSON 编码
+        try:
+            st = json.loads(st)
+        except json.JSONDecodeError:
+            st = {}
     if _norm_path(str(st.get("path") or "")) != want:
         return None                                  # 激活的不是目标文件
     shown = st.get("uri")
