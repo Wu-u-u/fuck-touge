@@ -34,8 +34,8 @@
 
 命令        一句话                         什么时候用
 --------    ----------------------------   ------------------------------
-browser     启动/检查副本浏览器            第一次用，或浏览器被关了
-cd          选择课程（-ls 列表）            进入 Java / 数据结构等课程
+browser     无参数列档案槽；带槽位启动浏览器  查看账号 / 第一次用，或浏览器被关了
+cd          无参数列课程；带序号进入课程      进入 Java / 数据结构等课程
 harvest     扫描并采集答案（缺骨架自动补） 新章节 / 要把已做完的答案收进档案时（已截止章节自动跳过）
 run         正式自动答题                  开始刷题（最常用；开跑前会先列出每关答案状态）
 subjective  主观题采集/提交                common_homework 里的“提交作品”作业
@@ -44,8 +44,8 @@ subjective  主观题采集/提交                common_homework 里的“提�
     python3 答题.py <命令> [参数]
 
 第一次用多课程：
-    python3 答题.py browser            # 打开课程列表
-    python3 答题.py cd -ls             # 列出课程和序号
+    python3 答题.py browser 1          # 启动/切换到 1 号档案
+    python3 答题.py cd                 # 列出课程和序号
     python3 答题.py cd 1               # 进入第 1 个课程（也可写课程名片段）
     python3 答题.py harvest            # 只处理当前课程
 
@@ -66,14 +66,13 @@ subjective  主观题采集/提交                common_homework 里的“提�
 ◆ browser —— 启动/检查副本浏览器（支持多账号档案槽）
 ────────────────────────────────────────
 命令：
-  python3 答题.py browser          # 用"当前记住的槽"打开/复用浏览器
-  python3 答题.py browser 1        # 切到 1 号档案，并记住它（1 号默认=现有的已登录档案）
+  python3 答题.py browser          # 列出所有档案槽的账号名（不启动浏览器）
+  python3 答题.py browser 1        # 启动/切到 1 号档案，并记住它（1 号默认=现有的已登录档案）
   python3 答题.py browser 2        # 切到 2 号档案，并记住它（新槽=干净档案，需登录一次）
   python3 答题.py browser 3        # 3~99 同理，每个槽相当于一个独立账号
   python3 答题.py browser new      # 每次都开一个全新档案（每次都是干干净净的）
   python3 答题.py browser 2new     # 清除 2 号的记忆，给 2 号换一个全新档案
-  python3 答题.py browser -ls      # 列出每个档案槽登录的账号名（浏览器在跑时实时刷新）
-                                    # （旧档案不会删；1new、3new……同理）
+
 
 作用：
   · 槽位会记住在 state.json 里；下次直接 python3 答题.py run 就沿用"当前槽"；
@@ -83,7 +82,7 @@ subjective  主观题采集/提交                common_homework 里的“提�
 
 会改什么：打开/关闭浏览器、更新 state.json；不动答案档案、不动头歌数据。
 什么时候用：
-  · 第一次用（跑一次 browser 1，把现有档案记为 1 号并登录）；账号名会自动记录，随时可用 browser -ls 查看；
+  · 第一次用（跑一次 browser 1，把现有档案记为 1 号并登录）；账号名会自动记录，随时可用 browser 查看；
   · 多个头歌账号（2、3、4……各登录各的）；
   · 想从零开始（new / 2new）。
 

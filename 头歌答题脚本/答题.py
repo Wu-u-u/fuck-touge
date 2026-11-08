@@ -2,8 +2,10 @@
 
 配套文档：脚本详细.md
 用法：
-    python3 答题.py browser                    # 启动/检查专用副本浏览器（可加槽位：browser 1）
-    python3 答题.py browser -ls                # 列出各档案槽登录的账号名（浏览器在跑时实时刷新）
+    python3 答题.py browser 1                  # 启动/切换到 1 号档案
+    python3 答题.py browser                    # 列出各档案槽登录的账号名（浏览器在跑时实时刷新）
+    python3 答题.py cd                         # 列出当前账号的课程
+    python3 答题.py cd 序号/课程名             # 进入课程
     python3 答题.py run -y [章节...]           # 按答案档案自动答题（开跑前会列出每关答案状态）
     python3 答题.py run -y -b 1 2 3            # 用当前课程，依次在 1/2/3 号槽位跑同一门课
     python3 答题.py harvest [章节...]          # 扫描并采集：自动补骨架，采集已满分关卡答案（-f 覆盖）
@@ -40,7 +42,7 @@ sys.path.insert(0, str(HERE))
 
 
 def cmd_browser_list(cfg: dict) -> None:
-    """browser -ls：列出各档案槽的路径、登录账号名与当前/运行状态。"""
+    """browser 无参数：列出各档案槽的路径、登录账号名与当前/运行状态。"""
     state = load_state()
     slots: dict = state.get("slots", {})
     names: dict = state.get("names", {})
@@ -93,21 +95,17 @@ def main() -> None:
         p.add_argument("--chapter", action="append", default=[], dest="chapter_opt",
                        help="兼容旧写法，等价于位置参数（可多次）")
 
-    p_browser = sub.add_parser("browser", help="启动/检查专用副本浏览器（可带档案槽参数）")
+    p_browser = sub.add_parser("browser", help="启动/检查专用副本浏览器；无参数列出档案槽")
     p_browser.add_argument(
         "slot", nargs="?", default=None,
         help="1-99 记住并切换对应档案；new 每次全新；1new~99new 清除该槽记忆换全新",
     )
-    p_browser.add_argument("-ls", "--list", action="store_true", dest="list_slots",
-                           help="不启动浏览器，列出各档案槽和登录账号名")
     p_scan = sub.add_parser("scan", help="（已并入 harvest，仅保留兼容提示）")
     add_chapter_args(p_scan)
     p_scan.add_argument("-a", "--all", action="store_true", help=argparse.SUPPRESS)
     p_cd = sub.add_parser("cd", help="选择课程并进入课程起始页")
-    p_cd.add_argument("-ls", "--list", action="store_true", dest="list_courses",
-                      help="列出当前账号的课程")
     p_cd.add_argument("target", nargs="?", default=None,
-                      help="课程序号（cd -ls 里的编号）或课程名片段")
+                      help="课程序号（cd 列表里的编号）或课程名片段；省略=列出课程")
     p_harvest = sub.add_parser("harvest", help="扫描并采集：缺骨架补骨架，有已满分关卡就采集答案")
     add_chapter_args(p_harvest)
     p_harvest.add_argument("-f", "--force", action="store_true", help="覆盖档案里已有答案")
@@ -133,7 +131,7 @@ def main() -> None:
     apply_current_profile(cfg)      # 记住的档案槽优先于 config 里的 profile
 
     if args.cmd == "browser":
-        if getattr(args, "list_slots", False):
+        if args.slot is None:
             cmd_browser_list(cfg)
             return
         if args.slot and not SLOT_RE.fullmatch(args.slot):
@@ -152,7 +150,7 @@ def main() -> None:
         log("课程列表：")
         for i, name in enumerate(courses, 1):
             log(f"  {i}. {name}")
-        log("用 python3 答题.py cd -ls 查看，cd 序号/课程名 进入课程。")
+        log("用 python3 答题.py cd 查看课程，cd 序号/课程名 进入课程。")
     elif args.cmd == "scan":
         cmd_scan_retired()
     elif args.cmd == "cd":

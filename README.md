@@ -48,8 +48,8 @@
 
 ```bash
 cd 头歌答题脚本
-python3 答题.py browser            # 启动副本浏览器并打开课程列表
-python3 答题.py cd -ls             # 列出课程和序号
+python3 答题.py browser 1          # 启动/切换到 1 号档案（按自己的槽位改）
+python3 答题.py cd                 # 列出课程和序号
 python3 答题.py cd 1               # 进入课程（也可写课程名片段）
 python3 答题.py harvest            # 只处理当前课程：补骨架/采集答案
 # 课程答案在 answers/<课程名>-<课程码>.toml，第一次 cd 自动创建
@@ -69,7 +69,7 @@ python3 答题.py subjective run 01-01 01-02  # 提交指定主观题纯文本�
 ```bash
 python3 -m pip install -r requirements.txt   # playwright>=1.40，仅此模式需要
 
-EDUAUTO_BACKEND=playwright python3 答题.py browser -ls
+EDUAUTO_BACKEND=playwright python3 答题.py browser 1
 EDUAUTO_BACKEND=playwright python3 答题.py harvest
 EDUAUTO_BACKEND=playwright python3 答题.py run -y "章节名"
 ```

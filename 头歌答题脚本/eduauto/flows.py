@@ -832,13 +832,13 @@ def resolve_chapter_args(chapters: list[Chapter], patterns: list[str],
 
 
 def cmd_cd(args, cfg: dict) -> None:
-    """选择课程：cd -ls 列课程，cd 序号/名称 进入课程起始页。"""
+    """选择课程：cd 列课程，cd 序号/名称 进入课程起始页。"""
     browser = ensure_browser(cfg)
     page = open_course_list(browser, cfg)
     ensure_login(browser, page.ws)
     courses = list_courses(page)
     current = load_state().get("current")
-    if args.list_courses:
+    if args.target is None:
         if not courses:
             log("没有发现课程")
         else:
