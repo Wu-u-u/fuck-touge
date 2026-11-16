@@ -59,13 +59,13 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     const st = await withPage(() => (window.__fuckTougeUI ? window.__fuckTougeUI.get() : null));
     if (!st.ok) {
       tt.disabled = tf.disabled = tc.disabled = true;
-      setMsg("当前页面不是头歌页面", true);
+      setMsg("当前页面不是头歌页面 🤔", true);
       return;
     }
     const initial = st.value;
     if (!initial) {
       tt.disabled = tf.disabled = tc.disabled = true;
-      setMsg("页面未就绪或脚本未注入，刷新页面后重试", true);
+      setMsg("页面未就绪或脚本未注入，刷新页面后重试 🔄", true);
       return;
     }
 
@@ -84,7 +84,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
       });
     };
     render(initial);
-    setMsg("修改即时生效");
+    setMsg("修改即时生效 ✨");
 
     // 连点竞态：tabs.query / executeScript 的完成顺序不保证，旧请求的响应可能后到，
     // 把新请求刚渲染的状态又盖回去 —— 给每次请求发一个单调递增序号，
@@ -100,9 +100,9 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
       if (my !== seq) return;
       if (r.ok && r.value) {
         render(r.value);
-        setMsg("修改即时生效");
+        setMsg("修改即时生效 ✨");
       } else {
-        setMsg("页面已刷新或不是头歌页面，请重试", true);
+        setMsg("页面已刷新或不是头歌页面，请重试 🔄", true);
       }
     };
 

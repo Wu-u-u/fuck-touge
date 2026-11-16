@@ -4,8 +4,8 @@
  * - 兼容旧路径：看到庆祝弹层（=.evaluate-result-container）→ 停止观察，交给 auto-next 跳关；
  * - 新路径：平台只给 `.test-result.success` 面板（无庆祝弹层）时，等新面板出现后点工具栏「下一关」；
  * - 评测前已有的旧 `.test-result` 只作为基线，不动它、不拿它当本次结果；
- * - `.test-result.failer` → 不跳，保留失败提示；
- * - 没有可见「下一关」（最后一关）→ 不跳；
+ * - `.test-result.failer` → 不跳，保留平台自己的失败提示；
+ * - 没有可见「下一关」（最后一关）→ 不跳，提示「未找到下一关」；
  * - 换关 → 立即停止观察；10 秒没有新面板 → 提示一次，不误跳；
  * - 新旧路径通过 `claimJump()` 互斥，同一关只能跳一次。
  */
@@ -18,6 +18,7 @@ export interface ChoiceWatcherDeps {
   toast?: (msg: string) => void;
   now?: () => number;
   claimJump?: (key: string) => boolean;
+  jumpNotice?: (kind: string) => void;
   findNext?: () => HTMLElement | null;
   clickNext?: (el: HTMLElement) => void;
 }
@@ -38,6 +39,7 @@ export function createChoiceWatcher(deps: ChoiceWatcherDeps = {}): ChoiceWatcher
   const toast = deps.toast || defaultToast;
   const now = deps.now || (() => Date.now());
   const claimJump = deps.claimJump || (() => true);
+  const jumpNotice = deps.jumpNotice || (() => {});
   const findNext = deps.findNext || findToolbarNextBtn;
   const clickNext = deps.clickNext || clickLikeUser;
 
@@ -59,7 +61,7 @@ export function createChoiceWatcher(deps: ChoiceWatcherDeps = {}): ChoiceWatcher
     if (!choiceEval) return;
     if (!choiceEval.notified) {
       choiceEval.notified = true;
-      toast("未检测到通过，已停止自动跳转");
+      toast("未检测到通过，已停止自动跳转 🥲");
     }
     stop();
   };
@@ -79,9 +81,10 @@ export function createChoiceWatcher(deps: ChoiceWatcherDeps = {}): ChoiceWatcher
     }
 
     const panels = testResults();
-    const fresh = (el: Element): boolean => !run.baseline.has(el) || !el.isConnected;
+    const fresh = (el: Element): boolean => !run.baseline.has(el);
     const newFailer = panels.find((el) => el.classList.contains("failer") && fresh(el));
     if (newFailer) {
+      // 平台自己会显示失败结果，这里不重复提示。
       stop();
       return;
     }
@@ -89,8 +92,9 @@ export function createChoiceWatcher(deps: ChoiceWatcherDeps = {}): ChoiceWatcher
     const newSuccess = panels.find((el) => el.classList.contains("success") && fresh(el));
     if (newSuccess) {
       const next = findNext();
-      // 最后一关没有工具栏「下一关」；不要硬跳。
+      // 最后一关没有工具栏「下一关」；提示后停止，不硬跳。
       if (!next) {
+        toast("未找到下一关 🤔");
         stop();
         return;
       }
@@ -106,6 +110,7 @@ export function createChoiceWatcher(deps: ChoiceWatcherDeps = {}): ChoiceWatcher
         return;
       }
       clickNext(next);
+      jumpNotice("next");
       stop();
       return;
     }

@@ -70,7 +70,7 @@ describe("popup 初始化", () => {
     expect(el("tf").checked).toBe(true);
     expect(el("tc").checked).toBe(false);
     expect(document.getElementById("themeSub")!.textContent).toContain("Catppuccin");
-    expect(document.getElementById("msg")!.textContent).toBe("修改即时生效");
+    expect(document.getElementById("msg")!.textContent).toBe("修改即时生效 ✨");
   });
 
   it("非头歌页面：禁用开关并提示", async () => {
@@ -78,7 +78,7 @@ describe("popup 初始化", () => {
     initPopup(api);
     await sleep(20);
     expect(el("tt").disabled).toBe(true);
-    expect(document.getElementById("msg")!.textContent).toBe("当前页面不是头歌页面");
+    expect(document.getElementById("msg")!.textContent).toBe("当前页面不是头歌页面 🤔");
   });
 
   it("页面未就绪：禁用开关并提示刷新", async () => {
@@ -102,6 +102,6 @@ describe("连点竞态（seq）", () => {
     await sleep(120);
     expect(el("tt").checked).toBe(false);
     expect(el("tc").checked).toBe(true);
-    expect(document.getElementById("msg")!.textContent).toBe("修改即时生效");
+    expect(document.getElementById("msg")!.textContent).toBe("修改即时生效 ✨");
   });
 });

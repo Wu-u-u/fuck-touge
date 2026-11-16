@@ -80,8 +80,9 @@ afterEach(() => {
 });
 
 describe("choice watcher", () => {
-  it("新 success 面板 → 点一次工具栏下一关", () => {
-    const w = createChoiceWatcher({ toast: () => {} });
+  it("新 success 面板 → 点一次工具栏下一关并提示", () => {
+    const jumpNotice = vi.fn();
+    const w = createChoiceWatcher({ toast: () => {}, jumpNotice });
     const dispose = w.install();
     const old = makeTestResult("success");
     const btn = makeEvalBtn();
@@ -96,6 +97,8 @@ describe("choice watcher", () => {
     vi.advanceTimersByTime(150);
 
     expect(clicked).toBe(1);
+    expect(jumpNotice).toHaveBeenCalledTimes(1);
+    expect(jumpNotice).toHaveBeenCalledWith("next");
     expect(w.isWatching()).toBe(false);
     dispose();
   });
@@ -115,12 +118,13 @@ describe("choice watcher", () => {
     expect(clicked).toBe(0);
     expect(w.isWatching()).toBe(false);
     expect(toast).toHaveBeenCalledTimes(1);
-    expect(toast).toHaveBeenCalledWith("未检测到通过，已停止自动跳转");
+    expect(toast).toHaveBeenCalledWith("未检测到通过，已停止自动跳转 🥲");
     dispose();
   });
 
-  it("failer 面板 → 不跳", () => {
-    const w = createChoiceWatcher({ toast: () => {} });
+  it("failer 面板 → 不跳，也不重复提示", () => {
+    const toast = vi.fn();
+    const w = createChoiceWatcher({ toast });
     const dispose = w.install();
     const next = makeToolbarNext();
     let clicked = 0;
@@ -131,17 +135,22 @@ describe("choice watcher", () => {
     vi.advanceTimersByTime(150);
 
     expect(clicked).toBe(0);
+    expect(toast).not.toHaveBeenCalled();
     expect(w.isWatching()).toBe(false);
     dispose();
   });
 
-  it("最后一关没有下一关 → 不跳", () => {
-    const w = createChoiceWatcher({ toast: () => {} });
+  it("最后一关没有下一关 → 不跳，提示未找到下一关", () => {
+    const toast = vi.fn();
+    const jumpNotice = vi.fn();
+    const w = createChoiceWatcher({ toast, jumpNotice });
     const dispose = w.install();
     makeEvalBtn().click();
     makeTestResult("success");
     vi.advanceTimersByTime(150);
 
+    expect(toast).toHaveBeenCalledWith("未找到下一关 🤔");
+    expect(jumpNotice).not.toHaveBeenCalled();
     expect(w.isWatching()).toBe(false);
     dispose();
   });
@@ -199,7 +208,7 @@ describe("choice watcher", () => {
 
     expect(clicked).toBe(0);
     expect(w.isWatching()).toBe(false);
-    expect(toast).toHaveBeenCalledWith("未检测到通过，已停止自动跳转");
+    expect(toast).toHaveBeenCalledWith("未检测到通过，已停止自动跳转 🥲");
     dispose();
   });
 

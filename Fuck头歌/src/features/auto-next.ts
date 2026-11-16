@@ -33,6 +33,7 @@ export interface AutoNextController {
   install(): () => void;
   autoNext(): void;
   claimJump(key: string): boolean;
+  jumpNotice(kind: string): void;
   resetClaim(): void;
   getClaim(): { key: string; at: number };
 }
@@ -133,7 +134,7 @@ export function createAutoNext(deps: AutoNextDeps = {}): AutoNextController {
       // 弹层出现 9 秒还没有按钮 → 保守提示（不一定是最后一关）
       if (!box.__ftLastToast && now() - (box.__ftSeenAt || 0) > 9000) {
         box.__ftLastToast = true;
-        toast("未检测到跳转按钮");
+        toast("未检测到跳转按钮 🤔");
       }
       return;
     }
@@ -141,7 +142,7 @@ export function createAutoNext(deps: AutoNextDeps = {}): AutoNextController {
     if ((next.el as any).disabled === true || next.el.getAttribute("aria-disabled") === "true") {
       if (!box.__ftLastToast && now() - (box.__ftSeenAt || 0) > 10000) {
         box.__ftLastToast = true;
-        toast("跳转按钮未激活，请手动点击「下一关」"); // 不再静默放弃
+        toast("跳转按钮未激活，请手动点击「下一关」 😅"); // 不再静默放弃
       }
       return; // 按钮还没激活（评测刚结束时短暂禁用）→ 下一轮再点
     }
@@ -185,6 +186,7 @@ export function createAutoNext(deps: AutoNextDeps = {}): AutoNextController {
     install,
     autoNext,
     claimJump,
+    jumpNotice,
     resetClaim: () => {
       jumpClaim.key = "";
       jumpClaim.at = 0;

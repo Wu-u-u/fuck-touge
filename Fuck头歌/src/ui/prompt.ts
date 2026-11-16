@@ -27,9 +27,9 @@ export function createFontPrompt(deps: FontPromptDeps): FontPrompt {
       "background:#1e1e1e;color:#eee;border:1px solid #3a3a3a;border-radius:12px;" +
       "padding:14px 16px;font-size:13px;line-height:1.6;box-shadow:0 10px 30px rgba(0,0,0,.45);";
     wrap.innerHTML =
-      '<div style="font-weight:600;margin-bottom:6px;">Fuck 头歌 · 编辑器增强</div>' +
-      '<div style="opacity:.85;margin-bottom:10px;">检测到头歌编辑器：是否启用更舒适的 Maple Mono 字体？（主题已默认开启）</div>' +
-      '<div style="opacity:.6;font-size:12px;margin-bottom:12px;">提示：内置字体只替换英文/代码符号；想替换中文请自行安装 Maple Mono NF CN 字体</div>';
+      '<div style="font-weight:600;margin-bottom:6px;">Fuck 头歌 · 编辑器增强 ✨</div>' +
+      '<div style="opacity:.85;margin-bottom:10px;">检测到头歌编辑器：是否启用更舒适的 Maple Mono 字体？（主题已默认开启） 🎨</div>' +
+      '<div style="opacity:.6;font-size:12px;margin-bottom:12px;">提示：内置字体只替换英文/代码符号；想替换中文请自行安装 Maple Mono NF CN 字体 💡</div>';
     const mkBtn = (text: string, primary: boolean): HTMLButtonElement => {
       const b = document.createElement("button");
       b.textContent = text;

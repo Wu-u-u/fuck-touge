@@ -166,7 +166,7 @@ describe("autoNext", () => {
 
     vi.advanceTimersByTime(9001);
     ctl.autoNext();
-    expect(toast).toHaveBeenCalledWith("未检测到跳转按钮");
+    expect(toast).toHaveBeenCalledWith("未检测到跳转按钮 🤔");
   });
 
   it("禁用按钮：等待激活；10s 后提示手动点击", () => {
@@ -183,7 +183,7 @@ describe("autoNext", () => {
 
     vi.setSystemTime(new Date(1_010_001));
     ctl.autoNext();
-    expect(toast).toHaveBeenCalledWith("跳转按钮未激活，请手动点击「下一关」");
+    expect(toast).toHaveBeenCalledWith("跳转按钮未激活，请手动点击「下一关」 😅");
   });
 
   it("完成按钮提示最后一关", () => {

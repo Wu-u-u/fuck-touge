@@ -1,4 +1,4 @@
-// Fuck 头歌 v2.5.1 —— 仅作用于头歌：
+// Fuck 头歌 v2.5.2 —— 仅作用于头歌：
 //   ① 允许粘贴/复制，并阻止网页篡改剪贴板
 //   ② 答对后自动点掉“恭喜通过”弹层里的「下一关」/「最后一关」/「完成」；
 //      选择题新 UI 的 `.test-result.success` 也由插件主路径自动下一关
@@ -24,7 +24,7 @@ import { createFontPrompt } from "../ui/prompt";
 (() => {
   "use strict";
   try {
-    window.__fuckTouge = "2.5.1";
+    window.__fuckTouge = "2.5.2";
   } catch (e) {}
 
   const $ = (sel: string, root: ParentNode = document): any => root.querySelector(sel);
@@ -192,6 +192,7 @@ import { createFontPrompt } from "../ui/prompt";
   const autoNext = createAutoNext({ onTick: (): void => fontPrompt.maybeAsk() });
   const choiceWatcher = createChoiceWatcher({
     claimJump: (key): boolean => autoNext.claimJump(key),
+    jumpNotice: (kind): void => autoNext.jumpNotice(kind),
     findNext: findToolbarNextBtn,
     clickNext: clickLikeUser,
   });
