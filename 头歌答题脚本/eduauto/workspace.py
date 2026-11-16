@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from urllib.parse import urljoin
 
 import cdp
 from eduauto.page import Page
@@ -230,7 +231,24 @@ def rewind_to_first(page: Page, timeout: float = 60) -> tuple[dict, bool]:
 
 def advance_level(page: Page, old_index: int, timeout: float = 60) -> dict:
     """点工具栏「下一关」，等待关卡变化（带重试）。"""
-    return _click_toolbar_and_wait(page, "下一关", old_index)
+    st = _click_toolbar_and_wait(page, "下一关", old_index)
+    if st.get("index") != old_index:
+        return st
+    # 兜底：工具栏是普通 <a href>，后台标签/页面重渲染时真实鼠标点击可能丢；
+    # 直接导航到 href，避免「评测已通过但进不了下一关」。
+    try:
+        href = page.ws.eval(
+            "[...document.querySelectorAll('a,button')].find(el=>"
+            "(el.innerText||'').trim()==='下一关' && "
+            "!el.closest('.evaluate-result-container'))?.getAttribute('href') || ''"
+        ) or ""
+        base = str(page.ws.eval("location.href") or "")
+    except cdp.CDPError:
+        return st
+    if href and not href.startswith(("javascript:", "#")):
+        page.ws.call("Page.navigate", {"url": urljoin(base, href)})
+        st = page.wait_level(want_index=old_index + 1, timeout=timeout)
+    return st
 
 
 def status_of(page: Page, text: str) -> str | None:

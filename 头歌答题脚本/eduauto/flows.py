@@ -763,9 +763,12 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
                 log("  → 本章最后一关已通过，本章结束"
                     f"（本关用时 {time.time() - t_level:.1f} 秒）")
                 break
-            # next：等待进入下一关；提交面板不会自动跳，直接点工具栏
+            # next：先给插件/平台一点时间（插件只在庆祝弹层出现时跳，
+            # 选择题的新 UI 通常只给提交面板），没动再走脚本兜底。
             if outcome.get("submitted_panel"):
-                nxt = advance_level(page, idx)
+                nxt = wait_index_change(page, idx, timeout=3.5)
+                if nxt.get("index") in (0, idx):
+                    nxt = advance_level(page, idx)
             else:
                 nxt = wait_index_change(page, idx, timeout=float(cfg["run"]["level_timeout"]))
                 if nxt.get("index") == idx:
