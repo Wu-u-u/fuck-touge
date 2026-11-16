@@ -45,6 +45,16 @@ export function findNextBtn(box: ParentNode): { el: HTMLElement; kind: "next" | 
   return null;
 }
 
+/** 工具栏里的「下一关」（排除庆祝弹层内部的按钮）。 */
+export function findToolbarNextBtn(): HTMLElement | null {
+  for (const el of $$<HTMLElement>("a, button, [role=button]")) {
+    if (normText(el.innerText) !== "下一关" || !visible(el)) continue;
+    if (el.closest(".evaluate-result-container")) continue;
+    return el;
+  }
+  return null;
+}
+
 /** 完整鼠标序列，兼容只监听 pointer/mousedown 的组件 */
 export function clickLikeUser(el: HTMLElement): void {
   const opts = { bubbles: true, cancelable: true, view: window, button: 0 };
