@@ -16,23 +16,45 @@
     <span class="version" id="version"></span>
   </header>
 
-  <section class="card">
+  <section class="card" id="background">
     <div class="card-head">
       <div>
         <h2>自定义背景</h2>
         <p>图片会自动压缩到 2560px WebP；GIF 会变成静态图。</p>
       </div>
-      <span class="pill off" id="bgState">未启用</span>
+      <div class="head-actions">
+        <span class="pill off" id="bgState">未启用</span>
+        <label class="switch" aria-label="启用自定义背景">
+          <input id="bgEnabled" type="checkbox">
+          <span class="slider"></span>
+        </label>
+      </div>
     </div>
 
-    <div class="bg-grid">
-      <div class="preview" id="bgPreview">
-        <img id="bgThumb" alt="背景预览" hidden>
-        <div class="preview-empty" id="bgEmpty">
-          <span class="preview-icon">🖼️</span>
-          <span>还没有背景图</span>
-          <small>支持 PNG / JPG / WebP</small>
+    <div class="bg-grid" id="bgDetails" hidden>
+      <div class="bg-left">
+        <div class="preview" id="bgPreview">
+          <img id="bgThumb" alt="背景预览" hidden>
+          <div class="preview-empty" id="bgEmpty">
+            <span class="preview-icon">🖼️</span>
+            <span>还没有背景图</span>
+            <small>支持 PNG / JPG / WebP</small>
+          </div>
         </div>
+
+        <label class="field">
+          <span>填充方式</span>
+          <select id="bgFit">
+            <option value="cover">裁剪填充</option>
+            <option value="stretch">拉伸填充</option>
+            <option value="contain">完整显示</option>
+          </select>
+        </label>
+
+        <label class="check">
+          <input id="bgFixed" type="checkbox" checked>
+          <span>背景固定（滚动时不动）</span>
+        </label>
       </div>
 
       <div class="bg-controls">
@@ -41,14 +63,6 @@
           <input id="bgFile" type="file" accept="image/*" hidden>
           <button class="btn ghost" id="removeBg" type="button">移除背景</button>
         </div>
-
-        <label class="field">
-          <span>图片 URL</span>
-          <div class="inline">
-            <input id="bgUrl" type="url" placeholder="https://example.com/bg.jpg" autocomplete="off">
-            <button class="btn small" id="useUrl" type="button">使用</button>
-          </div>
-        </label>
 
         <label class="field">
           <span>图片透明度 <output id="bgOpacityVal">60%</output></span>
@@ -60,28 +74,13 @@
           <span>面板不透明度 <output id="bgPanelOpacityVal">80%</output></span>
           <input id="bgPanelOpacity" type="range" min="50" max="100" step="1" value="80">
         </label>
-        <div class="meta">面板不透明度越低，背景越明显，文字对比度也越低。</div>
+        <div class="meta">作用于左侧任务区、顶部标签、测试结果等；越低背景越明显。</div>
 
         <label class="field">
           <span>编辑器区域不透明度 <output id="bgEditorOpacityVal">100%</output></span>
           <input id="bgEditorOpacity" type="range" min="50" max="100" step="1" value="100">
         </label>
-        <div class="meta">只影响右侧编辑器/测试区；调低会让背景透出来，代码文字仍然不透明。</div>
-
-        <div class="field-row">
-          <label class="field">
-            <span>填充方式</span>
-            <select id="bgFit">
-              <option value="cover">裁剪填充</option>
-              <option value="stretch">拉伸填充</option>
-              <option value="contain">完整显示</option>
-            </select>
-          </label>
-          <label class="check">
-            <input id="bgFixed" type="checkbox" checked>
-            <span>背景固定（滚动时不动）</span>
-          </label>
-        </div>
+        <div class="meta">只影响右侧写代码的区域（Monaco）；文字始终不透明。</div>
 
         <div class="meta" id="bgMeta">未选择图片</div>
       </div>

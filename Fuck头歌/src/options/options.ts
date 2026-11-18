@@ -1,9 +1,7 @@
 import {
   COLOR_DEFS,
   CUSTOM_CONFIG_KEY,
-  DEFAULT_CUSTOM_CONFIG,
   isHexColor,
-  isImageSource,
   normalizeCustomConfig,
 } from "../shared/custom";
 import type { BackgroundFit, CustomColorKey, CustomConfig } from "../shared/types";
@@ -13,14 +11,14 @@ const $ = <T extends HTMLElement>(sel: string): T => document.querySelector(sel)
 const els = {
   version: $<HTMLSpanElement>("#version"),
   bgState: $<HTMLSpanElement>("#bgState"),
+  bgEnabled: $<HTMLInputElement>("#bgEnabled"),
+  bgDetails: $<HTMLDivElement>("#bgDetails"),
   bgPreview: $<HTMLDivElement>("#bgPreview"),
   bgThumb: $<HTMLImageElement>("#bgThumb"),
   bgEmpty: $<HTMLDivElement>("#bgEmpty"),
   bgFile: $<HTMLInputElement>("#bgFile"),
   pickImage: $<HTMLButtonElement>("#pickImage"),
   removeBg: $<HTMLButtonElement>("#removeBg"),
-  bgUrl: $<HTMLInputElement>("#bgUrl"),
-  useUrl: $<HTMLButtonElement>("#useUrl"),
   bgOpacity: $<HTMLInputElement>("#bgOpacity"),
   bgOpacityVal: $<HTMLOutputElement>("#bgOpacityVal"),
   bgPanelOpacity: $<HTMLInputElement>("#bgPanelOpacity"),
@@ -101,7 +99,9 @@ const saveNow = (): void => {
 
 const renderBackground = (): void => {
   const bg = config.background;
-  const hasImage = bg.enabled && !!bg.image;
+  const hasImage = !!bg.image;
+  els.bgEnabled.checked = bg.enabled;
+  els.bgDetails.hidden = !bg.enabled;
   els.bgThumb.hidden = !hasImage;
   els.bgEmpty.hidden = hasImage;
   if (hasImage) {
@@ -112,8 +112,8 @@ const renderBackground = (): void => {
     els.bgPreview.classList.remove("has-image");
   }
 
-  els.bgState.textContent = hasImage ? "已启用" : "未启用";
-  els.bgState.classList.toggle("off", !hasImage);
+  els.bgState.textContent = bg.enabled ? (hasImage ? "已启用" : "待选择图片") : "未启用";
+  els.bgState.classList.toggle("off", !bg.enabled || !hasImage);
   const transparency = Math.round((1 - bg.opacity) * 100);
   els.bgOpacity.value = String(transparency);
   els.bgOpacityVal.textContent = `${transparency}%`;
@@ -123,7 +123,6 @@ const renderBackground = (): void => {
   els.bgEditorOpacityVal.textContent = `${Math.round(bg.editorOpacity * 100)}%`;
   els.bgFit.value = bg.fit;
   els.bgFixed.checked = bg.fixed;
-  els.bgUrl.value = /^https?:\/\//i.test(bg.image) ? bg.image : "";
   els.removeBg.disabled = !hasImage;
 
   if (!hasImage) {
@@ -340,6 +339,12 @@ const load = (): void => {
   }
 };
 
+els.bgEnabled.addEventListener("change", () => {
+  config.background.enabled = els.bgEnabled.checked;
+  saveNow();
+  render();
+});
+
 els.pickImage.addEventListener("click", () => els.bgFile.click());
 
 els.bgFile.addEventListener("change", async () => {
@@ -369,27 +374,6 @@ els.removeBg.addEventListener("click", () => {
   saveNow();
   render();
   setStatus("背景已移除", "ok");
-});
-
-els.useUrl.addEventListener("click", () => {
-  const value = els.bgUrl.value.trim();
-  if (!value) {
-    setStatus("先填一个图片 URL", "err");
-    return;
-  }
-  if (!isImageSource(value)) {
-    setStatus("只支持 http(s) 图片或 data:image/...", "err");
-    return;
-  }
-  setBackground(value);
-  setStatus("背景 URL 已保存", "ok");
-});
-
-els.bgUrl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    els.useUrl.click();
-  }
 });
 
 els.bgOpacity.addEventListener("input", () => {
@@ -422,6 +406,11 @@ els.bgFixed.addEventListener("change", () => {
   config.background.fixed = els.bgFixed.checked;
   saveNow();
 });
+
+// 拖动时用 debounce，松手立刻落盘，避免后台标签页定时器被节流导致“看起来没生效”
+for (const slider of [els.bgOpacity, els.bgPanelOpacity, els.bgEditorOpacity]) {
+  slider.addEventListener("change", saveNow);
+}
 
 els.resetColors.addEventListener("click", () => {
   config.colors = {};

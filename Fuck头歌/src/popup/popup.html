@@ -5,7 +5,7 @@
 <style>
   body {
     margin: 0;
-    width: 280px;
+    width: 320px;
     font: 13px/1.6 system-ui, "Noto Sans CJK SC", sans-serif;
     background: #11111b;
     color: #cdd6f4;
@@ -44,12 +44,23 @@
   .opt:hover { border-color: #585b70; }
   .opt:focus-visible { outline: 2px solid #cba6f7; outline-offset: 1px; }
   .opt.on { background: #cba6f7; border-color: #cba6f7; color: #11111b; font-weight: 600; }
-  .advanced {
-    display: inline-flex; align-items: center; gap: 4px; margin-top: 10px;
-    color: #89b4fa; font-size: 12px; text-decoration: none;
+  .bg-pick {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    margin-top: 8px; padding: 8px 12px; border: 1px dashed #313244; border-radius: 8px;
+    background: rgba(137, 180, 250, .06); color: #89b4fa; font-size: 12.5px;
+    text-decoration: none;
   }
-  .advanced:hover { text-decoration: underline; }
-  .advanced:focus-visible { outline: 2px solid #cba6f7; outline-offset: 3px; border-radius: 4px; }
+  .bg-pick:hover { border-color: #585b70; background: rgba(137, 180, 250, .12); }
+  .bg-pick:focus-visible { outline: 2px solid #cba6f7; outline-offset: 3px; }
+  .advanced {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin-top: 12px; padding: 9px 12px; border: 1px solid #313244; border-radius: 8px;
+    background: #1e1e2e; color: #cdd6f4; font-size: 13px; text-decoration: none;
+    transition: border-color .15s, background .15s;
+  }
+  .advanced:hover { border-color: #585b70; background: #242438; }
+  .advanced:focus-visible { outline: 2px solid #cba6f7; outline-offset: 3px; }
+  .advanced .arrow { color: #89b4fa; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -71,8 +82,15 @@
       <div><label class="lab" for="tc">光标动画</label><div class="sub">平滑移动 · 打字时也会滑动</div></div>
       <label class="switch"><input type="checkbox" id="tc"><span class="slider"></span></label>
     </div>
+    <div class="row">
+      <div><label class="lab" for="tb">自定义背景</label><div class="sub">图片 · 透明度 · 编辑器区域</div></div>
+      <label class="switch"><input type="checkbox" id="tb"><span class="slider"></span></label>
+    </div>
+    <a class="bg-pick" id="bgPick" href="options.html#background" target="_blank" rel="noreferrer" hidden>选择背景图 →</a>
     <div class="desc" id="msg" aria-live="polite">读取中… ⏳</div>
-    <a class="advanced" href="options.html" target="_blank" rel="noreferrer">高级设置 · 背景与颜色 →</a>
+    <a class="advanced" href="options.html" target="_blank" rel="noreferrer">
+      <span>高级设置</span><span class="arrow">背景与颜色 →</span>
+    </a>
   </div>
   <script src="popup.js"></script>
 </body>

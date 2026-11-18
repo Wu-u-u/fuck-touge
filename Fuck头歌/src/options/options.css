@@ -28,9 +28,9 @@ body {
 }
 
 .wrap {
-  max-width: 920px;
+  max-width: 1040px;
   margin: 0 auto;
-  padding: 36px 22px 96px;
+  padding: 40px 28px 110px;
 }
 
 .hero {
@@ -113,6 +113,64 @@ h2 {
   border-color: var(--border);
   background: rgba(255, 255, 255, .03);
   color: var(--dim);
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+
+.switch {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  flex: none;
+}
+
+.switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.switch .slider {
+  position: absolute;
+  inset: 0;
+  border-radius: 13px;
+  background: #45475a;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.switch .slider::before {
+  content: "";
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  left: 3px;
+  top: 3px;
+  border-radius: 50%;
+  background: #fff;
+  transition: .2s;
+}
+
+.switch input:checked + .slider { background: #cba6f7; }
+.switch input:checked + .slider::before { transform: translateX(20px); }
+.switch input:focus-visible + .slider { outline: 2px solid #cba6f7; outline-offset: 3px; }
+
+.bg-left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .bg-grid {

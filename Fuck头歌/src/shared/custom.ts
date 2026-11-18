@@ -63,7 +63,8 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
     : {}) as Record<string, unknown>;
 
   const image = isImageSource(bgRaw.image) ? String(bgRaw.image).trim() : "";
-  const enabled = bgRaw.enabled === true && !!image;
+  // 开关可以独立于图片存在：先开启，再选择图片（旧配置也兼容）
+  const enabled = bgRaw.enabled === true;
   const opacity =
     typeof bgRaw.opacity === "number" && Number.isFinite(bgRaw.opacity)
       ? clamp01(bgRaw.opacity)

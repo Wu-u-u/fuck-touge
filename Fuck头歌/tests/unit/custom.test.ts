@@ -56,7 +56,13 @@ describe("custom config", () => {
     const cfg = normalizeCustomConfig({
       background: { enabled: true, image: "javascript:alert(1)", opacity: 9, fit: "wat", fixed: "no" },
     });
-    expect(cfg.background).toEqual({ enabled: false, image: "", opacity: 1, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", fixed: true });
+    expect(cfg.background).toEqual({ enabled: true, image: "", opacity: 1, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", fixed: true });
+  });
+
+  it("开关可以先开启、后选图", () => {
+    const cfg = normalizeCustomConfig({ background: { enabled: true, image: "" } });
+    expect(cfg.background.enabled).toBe(true);
+    expect(cfg.background.image).toBe("");
   });
 
   it("保留合法图片 / fit / 颜色", () => {
@@ -97,6 +103,7 @@ describe("custom visual", () => {
     expect(css).toContain(".monaco-editor");
     expect(css).toContain("background-color: transparent !important");
     expect(css).toContain("background: transparent !important");
+    expect(css).toContain(".left-panel :is(");
   });
 
   it("fit 三态 + 滚动层", () => {

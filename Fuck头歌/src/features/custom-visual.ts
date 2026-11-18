@@ -134,6 +134,10 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   [class*="task-header"], [class*="tab-nav"], [class*="tabs___"],
   [class*="test-case-item"], [class*="content-wrapper"], [class*="resize-y-bar"]
 ) { background-color: color-mix(in srgb, var(--ft-panel) var(--ft-panel-alpha), transparent) !important; }`);
+      // 左侧面板内部还有 task-header / tab-nav / content-wrapper 自带底色；不清掉会三层叠加，背景几乎看不见
+      rules.push(`html[data-ft-skin][data-ft-bg] .left-panel :is(
+  .task-header, [class*="tab-nav"], [class*="content-wrapper"]
+) { background-color: transparent !important; }`);
       rules.push(`html[data-ft-skin][data-ft-bg] :is(
   .task-header-container, [class*="test-set-container"], [class*="action-container"],
   [class*="test-header"], [class*="choose-game-item"]
@@ -147,12 +151,6 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   .monaco-editor .margin
 ) {
   background-color: color-mix(in srgb, var(--ft-bg) var(--ft-editor-alpha), transparent) !important;
-}`);
-      rules.push(`html[data-ft-skin][data-ft-bg] :is(.right-panel, [class*="code-area-container"]) :is(
-  [class*="test-set-container"], [class*="action-container"],
-  [class*="test-header"], [class*="test-case-item"]
-) {
-  background-color: color-mix(in srgb, var(--ft-panel2) var(--ft-editor-alpha), transparent) !important;
 }`);
     }
 

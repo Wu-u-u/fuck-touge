@@ -1,3 +1,4 @@
+import { CUSTOM_CONFIG_KEY, normalizeCustomConfig } from "../shared/custom";
 import type { PublicSettings } from "../shared/types";
 
 /** 最小 Chrome API 面（便于单测注入；真实弹窗用全局 chrome） */
@@ -15,6 +16,12 @@ export interface PopupChromeApi {
       args: any[];
     }): Promise<Array<{ result?: T }>>;
   };
+  storage?: {
+    local: {
+      get(keys: string, callback: (items: Record<string, unknown>) => void): void;
+      set(items: Record<string, unknown>, callback?: () => void): void;
+    };
+  };
 }
 
 const LABELS: Record<string, string> = { catppuccin: "Catppuccin", github: "GitHub 高对比" };
@@ -30,11 +37,52 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   const themePick = doc.getElementById("themePick") as HTMLElement;
   const opts = [...themePick.querySelectorAll<HTMLElement>(".opt")];
   const msg = doc.getElementById("msg") as HTMLElement;
+  const tb = doc.getElementById("tb") as HTMLInputElement | null;
+  const bgPick = doc.getElementById("bgPick") as HTMLElement | null;
 
   const setMsg = (text: string, warn = false): void => {
     msg.textContent = text;
     msg.className = warn ? "desc warn" : "desc";
   };
+
+  /* 背景开关独立于页面：不依赖当前标签页是否头歌，也不走 __fuckTougeUI */
+  const bgStorage = chromeApi.storage?.local;
+  let bgImage = "";
+  const renderBg = (enabled: boolean, image: string): void => {
+    bgImage = image;
+    if (tb) tb.checked = enabled;
+    if (bgPick) {
+      bgPick.hidden = !enabled;
+      bgPick.textContent = image ? "更换背景图 →" : "选择背景图 →";
+    }
+  };
+  const readBg = (): void => {
+    if (!bgStorage) return;
+    try {
+      bgStorage.get(CUSTOM_CONFIG_KEY, (items) => {
+        const cfg = normalizeCustomConfig(items?.[CUSTOM_CONFIG_KEY]);
+        renderBg(cfg.background.enabled, cfg.background.image);
+      });
+    } catch (e) {}
+  };
+
+  if (!bgStorage) {
+    if (tb) tb.disabled = true;
+    if (bgPick) bgPick.hidden = true;
+  } else {
+    tb?.addEventListener("change", () => {
+      const enabled = !!tb.checked;
+      renderBg(enabled, bgImage);
+      try {
+        bgStorage.get(CUSTOM_CONFIG_KEY, (items) => {
+          const cfg = normalizeCustomConfig(items?.[CUSTOM_CONFIG_KEY]);
+          cfg.background.enabled = enabled;
+          bgStorage.set?.({ [CUSTOM_CONFIG_KEY]: cfg });
+        });
+      } catch (e) {}
+    });
+    readBg();
+  }
 
   async function withPage<T>(
     func: (...args: any[]) => T,

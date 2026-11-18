@@ -15,6 +15,8 @@ function buildDom(): void {
       <button class="opt" data-name="catppuccin"></button>
       <button class="opt" data-name="github"></button>
     </div>
+    <input id="tb" type="checkbox">
+    <a id="bgPick" hidden></a>
     <div id="msg"></div>`;
 }
 
@@ -87,6 +89,34 @@ describe("popup 初始化", () => {
     await sleep(20);
     expect(el("tf").disabled).toBe(true);
     expect(document.getElementById("msg")!.textContent).toContain("页面未就绪");
+  });
+
+  it("背景开关读写 storage，并显示选择背景图入口", async () => {
+    const { api } = makeApi();
+    const store: Record<string, any> = {
+      fuckTougeCustom: {
+        version: 1,
+        background: { enabled: true, image: "data:image/png;base64,AA" },
+        colors: {},
+      },
+    };
+    api.storage = {
+      local: {
+        get: (_keys, callback) => callback({ ...store }),
+        set: (items, callback) => {
+          Object.assign(store, items);
+          callback?.();
+        },
+      },
+    };
+    initPopup(api);
+    await sleep(20);
+
+    expect(el("tb").checked).toBe(true);
+    expect(document.getElementById("bgPick")!.hidden).toBe(false);
+    el("tb").click();
+    await sleep(10);
+    expect(store.fuckTougeCustom.background.enabled).toBe(false);
   });
 });
 
