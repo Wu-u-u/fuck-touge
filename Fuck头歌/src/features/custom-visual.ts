@@ -123,21 +123,37 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
 
     if (withBg) {
       const panelAlpha = `${Math.round(cfg.background.panelOpacity * 100)}%`;
-      rules.push(`html[data-ft-skin][data-ft-bg] { --ft-panel-alpha: ${panelAlpha}; }`);
+      const editorAlpha = `${Math.round(cfg.background.editorOpacity * 100)}%`;
+      rules.push(`html[data-ft-skin][data-ft-bg] { --ft-panel-alpha: ${panelAlpha}; --ft-editor-alpha: ${editorAlpha}; }`);
       rules.push(`html[data-ft-skin][data-ft-bg] body { background: transparent !important; }`);
       if (!cfg.background.fixed) {
         rules.push(`html[data-ft-skin][data-ft-bg] body { position: relative; }`);
       }
       rules.push(`html[data-ft-skin][data-ft-bg] :is(
-  .left-panel, .right-panel, .task-header,
+  .left-panel, .task-header,
   [class*="task-header"], [class*="tab-nav"], [class*="tabs___"],
-  [class*="code-area-container"], [class*="test-case-item"],
-  [class*="content-wrapper"], [class*="resize-y-bar"]
+  [class*="test-case-item"], [class*="content-wrapper"], [class*="resize-y-bar"]
 ) { background-color: color-mix(in srgb, var(--ft-panel) var(--ft-panel-alpha), transparent) !important; }`);
       rules.push(`html[data-ft-skin][data-ft-bg] :is(
   .task-header-container, [class*="test-set-container"], [class*="action-container"],
   [class*="test-header"], [class*="choose-game-item"]
 ) { background-color: color-mix(in srgb, var(--ft-panel2) var(--ft-panel-alpha), transparent) !important; }`);
+      // 编辑器区域单独一层：容器透明，编辑器背景用 editor-alpha；文字不受影响
+      rules.push(`html[data-ft-skin][data-ft-bg] :is(.right-panel, [class*="code-area-container"]) {
+  background-color: transparent !important;
+}`);
+      rules.push(`html[data-ft-skin][data-ft-bg] :is(
+  .monaco-editor, .monaco-editor .monaco-editor-background,
+  .monaco-editor .margin
+) {
+  background-color: color-mix(in srgb, var(--ft-bg) var(--ft-editor-alpha), transparent) !important;
+}`);
+      rules.push(`html[data-ft-skin][data-ft-bg] :is(.right-panel, [class*="code-area-container"]) :is(
+  [class*="test-set-container"], [class*="action-container"],
+  [class*="test-header"], [class*="test-case-item"]
+) {
+  background-color: color-mix(in srgb, var(--ft-panel2) var(--ft-editor-alpha), transparent) !important;
+}`);
     }
 
     return rules.join("\n");

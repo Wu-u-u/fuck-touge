@@ -12,6 +12,7 @@ export interface BackgroundConfig {
   image: string;
   opacity: number;
   panelOpacity: number;
+  editorOpacity: number;
   fit: BackgroundFit;
   fixed: boolean;
 }

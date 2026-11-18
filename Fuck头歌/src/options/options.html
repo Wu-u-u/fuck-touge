@@ -51,15 +51,22 @@
         </label>
 
         <label class="field">
-          <span>图片透明度 <output id="bgOpacityVal">40%</output></span>
-          <input id="bgOpacity" type="range" min="0" max="100" step="1" value="40">
+          <span>图片透明度 <output id="bgOpacityVal">60%</output></span>
+          <input id="bgOpacity" type="range" min="0" max="100" step="1" value="60">
         </label>
+        <div class="meta">数值越高越透明；0% = 原图完全不透明，100% = 完全隐藏。</div>
 
         <label class="field">
           <span>面板不透明度 <output id="bgPanelOpacityVal">80%</output></span>
           <input id="bgPanelOpacity" type="range" min="50" max="100" step="1" value="80">
         </label>
         <div class="meta">面板不透明度越低，背景越明显，文字对比度也越低。</div>
+
+        <label class="field">
+          <span>编辑器区域不透明度 <output id="bgEditorOpacityVal">100%</output></span>
+          <input id="bgEditorOpacity" type="range" min="50" max="100" step="1" value="100">
+        </label>
+        <div class="meta">只影响右侧编辑器/测试区；调低会让背景透出来，代码文字仍然不透明。</div>
 
         <div class="field-row">
           <label class="field">

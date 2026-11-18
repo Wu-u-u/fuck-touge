@@ -10,6 +10,7 @@ export const DEFAULT_CUSTOM_CONFIG: CustomConfig = {
     image: "",
     opacity: 0.4,
     panelOpacity: 0.8,
+    editorOpacity: 1,
     fit: "cover",
     fixed: true,
   },
@@ -71,6 +72,10 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
     typeof bgRaw.panelOpacity === "number" && Number.isFinite(bgRaw.panelOpacity)
       ? Math.min(1, Math.max(0.5, bgRaw.panelOpacity))
       : DEFAULT_CUSTOM_CONFIG.background.panelOpacity;
+  const editorOpacity =
+    typeof bgRaw.editorOpacity === "number" && Number.isFinite(bgRaw.editorOpacity)
+      ? Math.min(1, Math.max(0.5, bgRaw.editorOpacity))
+      : DEFAULT_CUSTOM_CONFIG.background.editorOpacity;
   const fit = FITS.includes(bgRaw.fit as BackgroundFit)
     ? (bgRaw.fit as BackgroundFit)
     : DEFAULT_CUSTOM_CONFIG.background.fit;
@@ -87,7 +92,7 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
 
   return {
     version: 1,
-    background: { enabled, image, opacity, panelOpacity, fit, fixed },
+    background: { enabled, image, opacity, panelOpacity, editorOpacity, fit, fixed },
     colors,
   };
 }

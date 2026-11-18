@@ -48,7 +48,7 @@ function mount(cfg: CustomConfig, themeOn = true, answer = true): void {
 describe("custom config", () => {
   it("默认值", () => {
     const cfg = normalizeCustomConfig(null);
-    expect(cfg.background).toEqual({ enabled: false, image: "", opacity: 0.4, panelOpacity: 0.8, fit: "cover", fixed: true });
+    expect(cfg.background).toEqual({ enabled: false, image: "", opacity: 0.4, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", fixed: true });
     expect(cfg.colors).toEqual({});
   });
 
@@ -56,15 +56,15 @@ describe("custom config", () => {
     const cfg = normalizeCustomConfig({
       background: { enabled: true, image: "javascript:alert(1)", opacity: 9, fit: "wat", fixed: "no" },
     });
-    expect(cfg.background).toEqual({ enabled: false, image: "", opacity: 1, panelOpacity: 0.8, fit: "cover", fixed: true });
+    expect(cfg.background).toEqual({ enabled: false, image: "", opacity: 1, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", fixed: true });
   });
 
   it("保留合法图片 / fit / 颜色", () => {
     const cfg = normalizeCustomConfig({
-      background: { enabled: true, image: IMG, opacity: .35, panelOpacity: .75, fit: "contain", fixed: false },
+      background: { enabled: true, image: IMG, opacity: .35, panelOpacity: .75, editorOpacity: .9, fit: "contain", fixed: false },
       colors: { bg: "#ABC", text: "#aabbcc", border: "#11223344", bad: "#fff" },
     });
-    expect(cfg.background).toEqual({ enabled: true, image: IMG, opacity: .35, panelOpacity: .75, fit: "contain", fixed: false });
+    expect(cfg.background).toEqual({ enabled: true, image: IMG, opacity: .35, panelOpacity: .75, editorOpacity: .9, fit: "contain", fixed: false });
     expect(cfg.colors).toEqual({ bg: "#abc", text: "#aabbcc", border: "#11223344" });
   });
 
@@ -93,6 +93,9 @@ describe("custom visual", () => {
     const css = document.getElementById("ft-custom-visual")!.textContent || "";
     expect(css).toContain("color-mix");
     expect(css).toContain("--ft-panel-alpha: 80%");
+    expect(css).toContain("--ft-editor-alpha: 100%");
+    expect(css).toContain(".monaco-editor");
+    expect(css).toContain("background-color: transparent !important");
     expect(css).toContain("background: transparent !important");
   });
 
@@ -116,6 +119,17 @@ describe("custom visual", () => {
       }),
     );
     expect(layer.style.backgroundSize).toBe("contain");
+  });
+
+  it("编辑器区域独立透明度：容器透明、Monaco 背景单独 alpha", () => {
+    mount(makeConfig({
+      background: { enabled: true, image: IMG, opacity: .4, panelOpacity: .8, editorOpacity: .7, fit: "cover", fixed: true },
+    }));
+    const css = document.getElementById("ft-custom-visual")!.textContent || "";
+    expect(css).toContain("--ft-editor-alpha: 70%");
+    expect(css).toContain(".right-panel");
+    expect(css).toContain(".monaco-editor .monaco-editor-background");
+    expect(css).toContain(".right-panel, [class*=\"code-area-container\"]");
   });
 
   it("颜色覆盖写入 CSS 变量，并处理强调色前景", () => {

@@ -25,6 +25,8 @@ const els = {
   bgOpacityVal: $<HTMLOutputElement>("#bgOpacityVal"),
   bgPanelOpacity: $<HTMLInputElement>("#bgPanelOpacity"),
   bgPanelOpacityVal: $<HTMLOutputElement>("#bgPanelOpacityVal"),
+  bgEditorOpacity: $<HTMLInputElement>("#bgEditorOpacity"),
+  bgEditorOpacityVal: $<HTMLOutputElement>("#bgEditorOpacityVal"),
   bgFit: $<HTMLSelectElement>("#bgFit"),
   bgFixed: $<HTMLInputElement>("#bgFixed"),
   bgMeta: $<HTMLDivElement>("#bgMeta"),
@@ -112,10 +114,13 @@ const renderBackground = (): void => {
 
   els.bgState.textContent = hasImage ? "已启用" : "未启用";
   els.bgState.classList.toggle("off", !hasImage);
-  els.bgOpacity.value = String(Math.round(bg.opacity * 100));
-  els.bgOpacityVal.textContent = `${Math.round(bg.opacity * 100)}%`;
+  const transparency = Math.round((1 - bg.opacity) * 100);
+  els.bgOpacity.value = String(transparency);
+  els.bgOpacityVal.textContent = `${transparency}%`;
   els.bgPanelOpacity.value = String(Math.round(bg.panelOpacity * 100));
   els.bgPanelOpacityVal.textContent = `${Math.round(bg.panelOpacity * 100)}%`;
+  els.bgEditorOpacity.value = String(Math.round(bg.editorOpacity * 100));
+  els.bgEditorOpacityVal.textContent = `${Math.round(bg.editorOpacity * 100)}%`;
   els.bgFit.value = bg.fit;
   els.bgFixed.checked = bg.fixed;
   els.bgUrl.value = /^https?:\/\//i.test(bg.image) ? bg.image : "";
@@ -389,8 +394,8 @@ els.bgUrl.addEventListener("keydown", (e) => {
 
 els.bgOpacity.addEventListener("input", () => {
   const value = Number(els.bgOpacity.value);
-  config.background.opacity = Math.min(1, Math.max(0, value / 100));
-  els.bgOpacityVal.textContent = `${Math.round(config.background.opacity * 100)}%`;
+  config.background.opacity = Math.min(1, Math.max(0, 1 - value / 100));
+  els.bgOpacityVal.textContent = `${Math.round((1 - config.background.opacity) * 100)}%`;
   saveSoon();
 });
 
@@ -398,6 +403,13 @@ els.bgPanelOpacity.addEventListener("input", () => {
   const value = Number(els.bgPanelOpacity.value);
   config.background.panelOpacity = Math.min(1, Math.max(0.5, value / 100));
   els.bgPanelOpacityVal.textContent = `${Math.round(config.background.panelOpacity * 100)}%`;
+  saveSoon();
+});
+
+els.bgEditorOpacity.addEventListener("input", () => {
+  const value = Number(els.bgEditorOpacity.value);
+  config.background.editorOpacity = Math.min(1, Math.max(0.5, value / 100));
+  els.bgEditorOpacityVal.textContent = `${Math.round(config.background.editorOpacity * 100)}%`;
   saveSoon();
 });
 
