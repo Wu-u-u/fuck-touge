@@ -16,7 +16,7 @@
 ```
 .
 ├── Fuck头歌/          # 扩展源码（TypeScript + esbuild）与构建脚本
-│   ├── src/          # 源码：content / features / shared / ui / popup / api
+│   ├── src/          # 源码：content / features / shared / ui / popup / options / api
 │   ├── tests/unit/   # Vitest 单测
 │   ├── build.mjs     # 构建脚本（输出 dist/，不入库）
 │   └── dist/         # 构建产物（Edge 加载这个文件夹）

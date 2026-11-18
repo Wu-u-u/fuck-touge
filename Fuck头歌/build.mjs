@@ -36,7 +36,9 @@ await build({
   entryPoints: {
     "允许粘贴": join(root, "src/content/main.ts"),
     fonts: join(root, "src/content/fonts.ts"),
+    bridge: join(root, "src/content/bridge.ts"),
     popup: join(root, "src/popup/popup.ts"),
+    options: join(root, "src/options/options.ts"),
   },
   outdir: dist,
   bundle: true,
@@ -54,6 +56,8 @@ await build({
 // 静态资源
 cpSync(join(root, "src/manifest.json"), join(dist, "manifest.json"));
 cpSync(join(root, "src/popup/popup.html"), join(dist, "popup.html"));
+cpSync(join(root, "src/options/options.html"), join(dist, "options.html"));
+cpSync(join(root, "src/options/options.css"), join(dist, "options.css"));
 for (const name of ["icon16.png", "icon48.png", "icon128.png"]) {
   cpSync(join(root, "src/assets/icons", name), join(dist, name));
 }

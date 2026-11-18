@@ -44,6 +44,12 @@
   .opt:hover { border-color: #585b70; }
   .opt:focus-visible { outline: 2px solid #cba6f7; outline-offset: 1px; }
   .opt.on { background: #cba6f7; border-color: #cba6f7; color: #11111b; font-weight: 600; }
+  .advanced {
+    display: inline-flex; align-items: center; gap: 4px; margin-top: 10px;
+    color: #89b4fa; font-size: 12px; text-decoration: none;
+  }
+  .advanced:hover { text-decoration: underline; }
+  .advanced:focus-visible { outline: 2px solid #cba6f7; outline-offset: 3px; border-radius: 4px; }
 </style>
 </head>
 <body>
@@ -66,6 +72,7 @@
       <label class="switch"><input type="checkbox" id="tc"><span class="slider"></span></label>
     </div>
     <div class="desc" id="msg" aria-live="polite">读取中… ⏳</div>
+    <a class="advanced" href="options.html" target="_blank" rel="noreferrer">高级设置 · 背景与颜色 →</a>
   </div>
   <script src="popup.js"></script>
 </body>

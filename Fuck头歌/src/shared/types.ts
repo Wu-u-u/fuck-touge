@@ -5,6 +5,33 @@
 
 export type ThemeName = "catppuccin" | "github";
 
+export type BackgroundFit = "cover" | "stretch" | "contain";
+
+export interface BackgroundConfig {
+  enabled: boolean;
+  image: string;
+  opacity: number;
+  panelOpacity: number;
+  fit: BackgroundFit;
+  fixed: boolean;
+}
+
+export type CustomColorKey =
+  | "bg"
+  | "panel"
+  | "border"
+  | "text"
+  | "dim"
+  | "accent"
+  | "codeBg"
+  | "codeText";
+
+export interface CustomConfig {
+  version: 1;
+  background: BackgroundConfig;
+  colors: Partial<Record<CustomColorKey, string>>;
+}
+
 export interface FuckTougeSettings {
   theme: boolean;
   font: boolean;

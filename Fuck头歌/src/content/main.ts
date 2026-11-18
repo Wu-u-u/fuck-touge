@@ -1,4 +1,4 @@
-// Fuck 头歌 v2.5.2 —— 仅作用于头歌：
+// Fuck 头歌 v2.6.0 —— 仅作用于头歌：
 //   ① 允许粘贴/复制，并阻止网页篡改剪贴板
 //   ② 答对后自动点掉“恭喜通过”弹层里的「下一关」/「最后一关」/「完成」；
 //      选择题新 UI 的 `.test-result.success` 也由插件主路径自动下一关
@@ -10,6 +10,7 @@ import { clickLikeUser, createAutoNext, findToolbarNextBtn } from "../features/a
 import { createChoiceWatcher } from "../features/choice";
 import { installClipboardGuard } from "../features/clipboard";
 import { createCursorController } from "../features/cursor";
+import { createCustomVisual } from "../features/custom-visual";
 import { createEditorManager } from "../features/editor";
 import { createFontController, FONT_OPTIONS, shouldAskFont } from "../features/font";
 import { createPasteGuard } from "../features/paste-guard";
@@ -24,7 +25,7 @@ import { createFontPrompt } from "../ui/prompt";
 (() => {
   "use strict";
   try {
-    window.__fuckTouge = "2.5.2";
+    window.__fuckTouge = "2.6.0";
   } catch (e) {}
 
   const $ = (sel: string, root: ParentNode = document): any => root.querySelector(sel);
@@ -64,7 +65,12 @@ import { createFontPrompt } from "../ui/prompt";
     getThemeName: () => themeName,
     isFontOn: () => fontOn,
   });
-  const applySkin = (): void => skinController.apply();
+  const customVisual = createCustomVisual({ isThemeOn: () => themeOn });
+  const applySkin = (): void => {
+    skinController.apply();
+    customVisual.apply();
+  };
+  customVisual.install();
   applySkin();
 
   // 单页应用内切换界面（主页 ↔ 答题页等）时同步开关
