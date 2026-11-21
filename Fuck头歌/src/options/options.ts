@@ -19,6 +19,7 @@ const $ = <T extends HTMLElement>(sel: string): T => document.querySelector(sel)
 
 const els = {
   version: $<HTMLSpanElement>("#version"),
+  aboutVersion: $<HTMLSpanElement>("#aboutVersion"),
   bgState: $<HTMLSpanElement>("#bgState"),
   bgPreview: $<HTMLDivElement>("#bgPreview"),
   bgThumb: $<HTMLImageElement>("#bgThumb"),
@@ -704,5 +705,6 @@ buildColorRows();
 buildEditorDirect();
 buildEditorGroups();
 els.version.textContent = `v${chrome.runtime.getManifest().version}`;
+els.aboutVersion.textContent = `v${chrome.runtime.getManifest().version} · 测试版`;
 render();
 load();
