@@ -3,7 +3,9 @@ import {
   CUSTOM_CONFIG_KEY,
   activeWallpaper,
   isHexColor,
+  isMediaSource,
   normalizeCustomConfig,
+  wallpaperKind,
   MAX_WALLPAPERS,
 } from "../shared/custom";
 import {
@@ -16,7 +18,7 @@ import {
   type EditorOptionField,
 } from "../shared/editor-options";
 import { applyMaterialPalette, clearMaterialPalette, seedFromImage } from "../shared/material-theme";
-import type { BackgroundFit, CustomColorKey, CustomConfig } from "../shared/types";
+import type { BackgroundFit, CustomColorKey, CustomConfig, WallpaperCrop, WallpaperKind } from "../shared/types";
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector(sel) as T;
 
@@ -26,6 +28,7 @@ const els = {
   bgState: $<HTMLSpanElement>("#bgState"),
   bgPreview: $<HTMLDivElement>("#bgPreview"),
   bgThumb: $<HTMLImageElement>("#bgThumb"),
+  bgThumbVideo: $<HTMLVideoElement>("#bgThumbVideo"),
   bgEmpty: $<HTMLDivElement>("#bgEmpty"),
   bgFile: $<HTMLInputElement>("#bgFile"),
   pickImage: $<HTMLButtonElement>("#pickImage"),
@@ -37,12 +40,12 @@ const els = {
   bgEditorOpacity: $<HTMLInputElement>("#bgEditorOpacity"),
   bgEditorOpacityVal: $<HTMLOutputElement>("#bgEditorOpacityVal"),
   bgFit: $<HTMLSelectElement>("#bgFit"),
-  bgTransition: $<HTMLSelectElement>("#bgTransition"),
   bgMeta: $<HTMLDivElement>("#bgMeta"),
   wallpaperList: $<HTMLDivElement>("#wallpaperList"),
   cropDialog: $<HTMLDialogElement>("#cropDialog"),
   cropStage: $<HTMLDivElement>("#cropStage"),
   cropImage: $<HTMLImageElement>("#cropImage"),
+  cropVideo: $<HTMLVideoElement>("#cropVideo"),
   cropZoom: $<HTMLInputElement>("#cropZoom"),
   cropZoomVal: $<HTMLOutputElement>("#cropZoomVal"),
   cropCancel: $<HTMLButtonElement>("#cropCancel"),
@@ -80,6 +83,7 @@ let editorFieldControls = new Map<string, HTMLInputElement | HTMLSelectElement>(
 interface CropState {
   dataUrl: string;
   name: string;
+  kind: WallpaperKind;
   nw: number;
   nh: number;
   baseScale: number;
@@ -180,7 +184,6 @@ const renderBackground = (): void => {
   els.bgEditorOpacity.value = String(Math.round(bg.editorOpacity * 100));
   els.bgEditorOpacityVal.textContent = `${Math.round(bg.editorOpacity * 100)}%`;
   els.bgFit.value = bg.fit;
-  els.bgTransition.value = bg.transition;
   els.removeBg.disabled = !hasImage;
   els.pickImage.disabled = bg.wallpapers.length >= MAX_WALLPAPERS;
 
@@ -197,10 +200,11 @@ const renderBackground = (): void => {
 
   if (!active) {
     els.bgMeta.textContent = "未选择壁纸";
-  } else if (/^data:image\//i.test(active.image)) {
-    els.bgMeta.textContent = `${active.name} · ${active.animated ? "GIF 动图" : "静态图"} · 约 ${formatBytes(estimateDataUrlBytes(active.image))}`;
+  } else if (/^data:(?:image|video)\//i.test(active.image)) {
+    const label = active.kind === "video" ? "视频" : active.kind === "gif" ? "GIF 动图" : "静态图";
+    els.bgMeta.textContent = `${active.name} · ${label} · 约 ${formatBytes(estimateDataUrlBytes(active.image))}`;
   } else {
-    els.bgMeta.textContent = `${active.name} · 外链图片`;
+    els.bgMeta.textContent = `${active.name} · 媒体`;
   }
 
   renderWallpapers();
@@ -216,10 +220,21 @@ const renderWallpapers = (): void => {
     item.title = wp.name;
     item.addEventListener("click", () => selectWallpaper(wp.id));
 
-    const img = document.createElement("img");
-    img.src = wp.image;
-    img.alt = wp.name;
-    item.appendChild(img);
+    if (wp.kind === "video") {
+      const video = document.createElement("video");
+      video.src = wp.image;
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      video.setAttribute("aria-label", wp.name);
+      item.appendChild(video);
+    } else {
+      const img = document.createElement("img");
+      img.src = wp.image;
+      img.alt = wp.name;
+      item.appendChild(img);
+    }
 
     const del = document.createElement("button");
     del.type = "button";
@@ -609,17 +624,30 @@ const compressImage = async (
 const newWallpaperId = (): string =>
   `wp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-const addWallpaper = (image: string, name: string, animated: boolean, seed: string): boolean => {
+const addWallpaper = (
+  image: string,
+  name: string,
+  kind: WallpaperKind,
+  seed: string,
+  crop: WallpaperCrop,
+  width: number,
+  height: number,
+): boolean => {
   if (config.background.wallpapers.length >= MAX_WALLPAPERS) {
     setStatus("最多 5 张壁纸，先删一张再添加", "err");
     return false;
   }
-  const total = config.background.wallpapers.reduce((n, w) => n + estimateDataUrlBytes(w.image), 0);
-  if (total + estimateDataUrlBytes(image) > 8.5 * 1024 * 1024) {
-    setStatus("壁纸总大小接近 8.5MB 上限，先删一张或换小图", "err");
-    return false;
-  }
-  const wp = { id: newWallpaperId(), name: name || `壁纸 ${config.background.wallpapers.length + 1}`, image, animated, seed };
+  const wp = {
+    id: newWallpaperId(),
+    name: name || `壁纸 ${config.background.wallpapers.length + 1}`,
+    image,
+    kind,
+    animated: kind !== "image",
+    seed,
+    crop,
+    width,
+    height,
+  };
   config.background.wallpapers.push(wp);
   config.background.activeId = wp.id;
   config.background.image = image;
@@ -629,6 +657,43 @@ const addWallpaper = (image: string, name: string, animated: boolean, seed: stri
   render();
   applyMaterialPreview();
   return true;
+};
+
+const mediaDimensions = (dataUrl: string, kind: WallpaperKind): Promise<{ w: number; h: number }> =>
+  new Promise((resolve, reject) => {
+    if (kind === "video") {
+      const v = document.createElement("video");
+      v.muted = true;
+      v.preload = "metadata";
+      v.onloadedmetadata = () => resolve({ w: v.videoWidth, h: v.videoHeight });
+      v.onerror = () => reject(new Error("视频无法解码"));
+      v.src = dataUrl;
+      return;
+    }
+    const img = new Image();
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+    img.onerror = () => reject(new Error("图片无法解码"));
+    img.src = dataUrl;
+  });
+
+const seedFromVideo = async (dataUrl: string): Promise<string> => {
+  try {
+    const v = document.createElement("video");
+    v.muted = true;
+    v.preload = "auto";
+    v.src = dataUrl;
+    await new Promise<void>((resolve, reject) => {
+      v.onloadeddata = () => resolve();
+      v.onerror = () => reject(new Error("视频无法解码"));
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.min(320, v.videoWidth || 320);
+    canvas.height = Math.min(180, v.videoHeight || 180);
+    canvas.getContext("2d")?.drawImage(v, 0, 0, canvas.width, canvas.height);
+    return (await seedFromImage(canvas.toDataURL("image/jpeg", .8))) || "#cba6f7";
+  } catch (e) {
+    return "#cba6f7";
+  }
 };
 
 const selectWallpaper = (id: string): void => {
@@ -684,45 +749,51 @@ const applyCropView = (): void => {
   const minY = c.stageH - h;
   c.x = Math.min(0, Math.max(minX, c.x));
   c.y = Math.min(0, Math.max(minY, c.y));
-  els.cropImage.style.width = `${w}px`;
-  els.cropImage.style.height = `${h}px`;
-  els.cropImage.style.left = `${c.x}px`;
-  els.cropImage.style.top = `${c.y}px`;
+  const media = c.kind === "video" ? els.cropVideo : els.cropImage;
+  media.style.width = `${w}px`;
+  media.style.height = `${h}px`;
+  media.style.left = `${c.x}px`;
+  media.style.top = `${c.y}px`;
   els.cropZoom.value = String(Math.round(c.zoom * 100));
   els.cropZoomVal.textContent = `${Math.round(c.zoom * 100)}%`;
 };
 
-const openCrop = async (dataUrl: string, name: string): Promise<void> => {
+const openCrop = async (dataUrl: string, name: string, kind: WallpaperKind, nw: number, nh: number): Promise<void> => {
   cropState = null;
   cropDrag = null;
-  els.cropImage.src = dataUrl;
-  try {
-    await els.cropImage.decode();
-  } catch (e) {
-    setStatus("图片解码失败，换一张试试", "err");
+  const isVideo = kind === "video";
+  els.cropImage.hidden = isVideo;
+  els.cropVideo.hidden = !isVideo;
+  if (isVideo) {
+    els.cropVideo.src = dataUrl;
+    els.cropVideo.currentTime = 0;
+    els.cropVideo.play?.().catch(() => {});
+  } else {
+    els.cropImage.src = dataUrl;
+    try {
+      await els.cropImage.decode();
+    } catch (e) {
+      setStatus("图片解码失败，换一张试试", "err");
+      return;
+    }
+  }
+  if (!nw || !nh) {
+    setStatus("无法读取媒体尺寸", "err");
     return;
   }
   els.cropDialog.showModal();
   const stage = els.cropStage.getBoundingClientRect();
-  const nw = els.cropImage.naturalWidth;
-  const nh = els.cropImage.naturalHeight;
-  if (!nw || !nh || !stage.width || !stage.height) {
+  if (!stage.width || !stage.height) {
     els.cropDialog.close();
-    setStatus("无法读取图片尺寸", "err");
+    setStatus("无法读取裁剪区域", "err");
     return;
   }
   const baseScale = Math.max(stage.width / nw, stage.height / nh);
   cropState = {
-    dataUrl,
-    name,
-    nw,
-    nh,
-    baseScale,
-    zoom: 1,
+    dataUrl, name, kind, nw, nh, baseScale, zoom: 1,
     x: (stage.width - nw * baseScale) / 2,
     y: (stage.height - nh * baseScale) / 2,
-    stageW: stage.width,
-    stageH: stage.height,
+    stageW: stage.width, stageH: stage.height,
   };
   applyCropView();
 };
@@ -771,30 +842,20 @@ els.cropSave.addEventListener("click", () => {
   if (!cropState) return;
   const c = cropState;
   const scale = c.baseScale * c.zoom;
-  const sx = -c.x / scale;
-  const sy = -c.y / scale;
-  const sw = c.stageW / scale;
-  const sh = c.stageH / scale;
-  const canvas = document.createElement("canvas");
-  canvas.width = 1920;
-  canvas.height = 1080;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    setStatus("无法创建裁剪画布", "err");
-    return;
-  }
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(els.cropImage, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-  const cropped = canvas.toDataURL("image/webp", 0.9);
-  if (!cropped.startsWith("data:image/")) {
-    setStatus("裁剪失败，换一张图片试试", "err");
-    return;
-  }
+  const sx = Math.max(0, -c.x / scale);
+  const sy = Math.max(0, -c.y / scale);
+  const sw = Math.min(c.nw - sx, c.stageW / scale);
+  const sh = Math.min(c.nh - sy, c.stageH / scale);
+  const crop: WallpaperCrop = {
+    x: Math.max(0, Math.min(1, sx / c.nw)),
+    y: Math.max(0, Math.min(1, sy / c.nh)),
+    w: Math.max(0.05, Math.min(1, sw / c.nw)),
+    h: Math.max(0.05, Math.min(1, sh / c.nh)),
+  };
   void (async () => {
-    const seed = (await seedFromImage(cropped)) || "#cba6f7";
-    if (addWallpaper(cropped, c.name, false, seed)) {
-      setStatus("壁纸已裁剪并添加", "ok");
+    const seed = c.kind === "video" ? await seedFromVideo(c.dataUrl) : ((await seedFromImage(c.dataUrl)) || "#cba6f7");
+    if (addWallpaper(c.dataUrl, c.name, c.kind, seed, crop, c.nw, c.nh)) {
+      setStatus("壁纸已添加 · 原图保留，裁剪只记录区域", "ok");
       els.cropDialog.close();
       cropState = null;
     }
@@ -849,38 +910,21 @@ els.bgFile.addEventListener("change", async () => {
   const file = els.bgFile.files?.[0];
   els.bgFile.value = "";
   if (!file) return;
-  if (!file.type.startsWith("image/")) {
-    setStatus("请选择图片文件", "err");
+  const isVideo = file.type.startsWith("video/");
+  if (!file.type.startsWith("image/") && !isVideo) {
+    setStatus("请选择图片、GIF 或视频文件", "err");
     return;
   }
-  if (file.type === "image/gif") {
-    if (file.size > 4 * 1024 * 1024) {
-      setStatus("GIF 太大（超过 4MB），换一张小一点的动图", "err");
-      return;
-    }
-    els.pickImage.disabled = true;
-    setStatus("正在读取 GIF…");
-    try {
-      const dataUrl = await readFileAsDataUrl(file);
-      const seed = (await seedFromImage(dataUrl)) || "#cba6f7";
-      if (addWallpaper(dataUrl, file.name.replace(/\.gif$/i, ""), true, seed)) {
-        setStatus(`已添加 GIF 壁纸 · ${formatBytes(file.size)}`, "ok");
-      }
-    } catch (e) {
-      setStatus(e instanceof Error ? e.message : "GIF 读取失败", "err");
-    } finally {
-      els.pickImage.disabled = false;
-    }
-    return;
-  }
-
+  const kind: WallpaperKind = isVideo ? "video" : file.type === "image/gif" ? "gif" : "image";
   els.pickImage.disabled = true;
-  setStatus("正在压缩图片…");
+  setStatus(isVideo ? "正在读取视频…" : "正在读取图片…");
   try {
-    const result = await compressImage(file);
-    openCrop(result.dataUrl, file.name.replace(/\.[^.]+$/, ""));
+    const dataUrl = await readFileAsDataUrl(file);
+    const { w, h } = await mediaDimensions(dataUrl, kind);
+    const seed = kind === "video" ? await seedFromVideo(dataUrl) : ((await seedFromImage(dataUrl)) || "#cba6f7");
+    await openCrop(dataUrl, file.name.replace(/\.[^.]+$/, ""), kind, w, h);
   } catch (e) {
-    setStatus(e instanceof Error ? e.message : "图片处理失败", "err");
+    setStatus(e instanceof Error ? e.message : "媒体读取失败", "err");
   } finally {
     els.pickImage.disabled = false;
   }
@@ -925,10 +969,7 @@ els.bgFit.addEventListener("change", () => {
   saveNow();
 });
 
-els.bgTransition.addEventListener("change", () => {
-  config.background.transition = els.bgTransition.value as import("../shared/types").BackgroundTransition;
-  saveNow();
-});
+
 
 // 拖动时用 debounce，松手立刻落盘，避免后台标签页定时器被节流导致“看起来没生效”
 for (const slider of [els.bgOpacity, els.bgPanelOpacity, els.bgEditorOpacity]) {

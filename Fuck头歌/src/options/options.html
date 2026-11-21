@@ -53,10 +53,11 @@
         <div class="bg-left">
           <div class="preview" id="bgPreview">
             <img id="bgThumb" alt="背景预览" hidden>
+            <video id="bgThumbVideo" muted loop playsinline hidden></video>
             <div class="preview-empty" id="bgEmpty">
               <span class="preview-icon">🖼️</span>
               <span>还没有背景图</span>
-              <small>支持 PNG / JPG / WebP / GIF</small>
+              <small>支持 PNG / JPG / WebP / GIF / MP4 / WebM</small>
             </div>
           </div>
 
@@ -83,23 +84,12 @@
             </select>
           </label>
 
-          <label class="field">
-            <span>切换效果</span>
-            <select id="bgTransition">
-              <option value="slide">滑动 + 淡入（niri 横向）</option>
-              <option value="fade">淡入淡出</option>
-              <option value="zoom">缩放 + 淡入（overview）</option>
-              <option value="spring">弹性滑动（workspace-switch）</option>
-              <option value="instant">瞬间切换</option>
-            </select>
-          </label>
-
         </div>
 
         <div class="bg-controls">
           <div class="actions">
             <button class="btn primary" id="pickImage" type="button">添加壁纸</button>
-            <input id="bgFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+            <input id="bgFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime" hidden>
             <button class="btn ghost" id="removeBg" type="button">移除当前</button>
           </div>
 
@@ -252,6 +242,7 @@
   </div>
   <div class="crop-stage" id="cropStage">
     <img id="cropImage" alt="待裁剪的壁纸">
+    <video id="cropVideo" muted loop playsinline hidden></video>
     <div class="crop-grid" aria-hidden="true"></div>
   </div>
   <div class="crop-controls">

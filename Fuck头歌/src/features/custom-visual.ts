@@ -1,6 +1,6 @@
 import { COLOR_DEFS, activeWallpaper, contrastText, normalizeCustomConfig } from "../shared/custom";
 import { toast } from "../ui/toast";
-import type { CustomConfig } from "../shared/types";
+import type { CustomConfig, Wallpaper } from "../shared/types";
 import { isAnswerPage } from "./theme/skin";
 
 const STYLE_ID = "ft-custom-visual";
@@ -43,6 +43,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   let currentId = "";
   let currentLayer: HTMLDivElement | null = null;
   let switchTimer = 0;
+  const layerWp = new Map<HTMLDivElement, Wallpaper>();
 
   const clearRetry = (): void => {
     if (retryTimer) {
@@ -88,6 +89,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     clearSwitch();
     currentId = "";
     currentLayer = null;
+    layerWp.clear();
     try {
       document.getElementById(BG_ID)?.remove();
       document.getElementById(BG_NEXT_ID)?.remove();
@@ -101,18 +103,81 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     return el;
   };
 
-  const styleLayer = (el: HTMLDivElement, bg: CustomConfig["background"], image: string): void => {
-    el.style.backgroundImage = `url(${JSON.stringify(image)})`;
-    el.style.backgroundSize =
-      bg.fit === "stretch" ? "100% 100%" : bg.fit === "contain" ? "contain" : "cover";
-    el.style.backgroundPosition = "center";
-    el.style.backgroundRepeat = "no-repeat";
+  const layoutLayer = (el: HTMLDivElement, wp: Wallpaper, bg: CustomConfig["background"]): void => {
+    const media = el.firstElementChild as HTMLImageElement | HTMLVideoElement | null;
+    if (!media) return;
+    const nw = wp.width || (media instanceof HTMLVideoElement ? media.videoWidth : media.naturalWidth) || 0;
+    const nh = wp.height || (media instanceof HTMLVideoElement ? media.videoHeight : media.naturalHeight) || 0;
+    if (!nw || !nh) return; // 等 loadedmetadata / load
+    const crop = wp.crop || { x: 0, y: 0, w: 1, h: 1 };
+    const cw = Math.max(1, crop.w * nw);
+    const ch = Math.max(1, crop.h * nh);
+    const W = window.innerWidth || 1;
+    const H = window.innerHeight || 1;
+    let sx: number;
+    let sy: number;
+    if (bg.fit === "stretch") {
+      sx = W / cw;
+      sy = H / ch;
+    } else {
+      const s = bg.fit === "contain" ? Math.min(W / cw, H / ch) : Math.max(W / cw, H / ch);
+      sx = sy = s;
+    }
+    media.style.width = `${nw * sx}px`;
+    media.style.height = `${nh * sy}px`;
+    media.style.left = `${(W - cw * sx) / 2 - crop.x * nw * sx}px`;
+    media.style.top = `${(H - ch * sy) / 2 - crop.y * nh * sy}px`;
+  };
+
+  const createMedia = (wp: Wallpaper, bg: CustomConfig["background"], layer: HTMLDivElement): HTMLImageElement | HTMLVideoElement => {
+    let media: HTMLImageElement | HTMLVideoElement;
+    if (wp.kind === "video") {
+      const video = document.createElement("video");
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
+      video.autoplay = true;
+      video.preload = "auto";
+      video.src = wp.image;
+      video.addEventListener("loadedmetadata", () => layoutLayer(layer, wp, bg), { once: true });
+      video.play?.().catch(() => {});
+      media = video;
+    } else {
+      const img = document.createElement("img");
+      img.alt = "";
+      img.decoding = "async";
+      img.src = wp.image;
+      img.addEventListener("load", () => layoutLayer(layer, wp, bg), { once: true });
+      media = img;
+    }
+    media.style.position = "absolute";
+    media.style.left = "0";
+    media.style.top = "0";
+    media.style.maxWidth = "none";
+    media.style.maxHeight = "none";
+    media.style.userSelect = "none";
+    media.style.pointerEvents = "none";
+    media.style.transformOrigin = "0 0";
+    return media;
+  };
+
+  const styleLayer = (el: HTMLDivElement, bg: CustomConfig["background"], wp: Wallpaper): void => {
+    el.style.background = "transparent";
     el.style.opacity = String(bg.opacity);
     el.style.position = "fixed";
     el.style.inset = "0";
+    el.style.overflow = "hidden";
     el.style.zIndex = "-1";
     el.style.pointerEvents = "none";
     el.style.willChange = "transform, opacity";
+    const existing = el.firstElementChild;
+    const sameKind = existing && (wp.kind === "video" ? existing instanceof HTMLVideoElement : existing instanceof HTMLImageElement);
+    if (!sameKind) {
+      const media = createMedia(wp, bg, el);
+      el.replaceChildren(media);
+    }
+    layerWp.set(el, wp);
+    layoutLayer(el, wp, bg);
   };
 
   const prefersReducedMotion = (): boolean => {
@@ -146,7 +211,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
 
     if (!currentLayer || !currentLayer.isConnected) {
       const el = createLayer(BG_ID);
-      styleLayer(el, bg, wp.image);
+      styleLayer(el, bg, wp);
       document.body.appendChild(el);
       currentLayer = el;
       currentId = wp.id;
@@ -154,17 +219,18 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     }
 
     if (currentId === wp.id) {
-      styleLayer(currentLayer, bg, wp.image);
+      styleLayer(currentLayer, bg, wp);
       return;
     }
 
     const old = currentLayer;
     const oldId = currentId;
     currentId = wp.id;
-    const effect = bg.transition;
-    if (!old.animate || prefersReducedMotion() || effect === "instant") {
+    const effects = ["slide", "fade", "zoom", "spring"] as const;
+    const effect = effects[Math.floor(Math.random() * effects.length)];
+    if (!old.animate || prefersReducedMotion()) {
       const el = createLayer(BG_ID);
-      styleLayer(el, bg, wp.image);
+      styleLayer(el, bg, wp);
       document.body.appendChild(el);
       old.remove();
       currentLayer = el;
@@ -172,7 +238,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     }
 
     const next = createLayer(BG_NEXT_ID);
-    styleLayer(next, bg, wp.image);
+    styleLayer(next, bg, wp);
     next.style.opacity = "0";
     next.style.transformOrigin = "center";
     document.body.appendChild(next);
@@ -222,15 +288,15 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
         old.remove();
         nextAnim.cancel?.();
         oldAnim.cancel?.();
-        next.removeAttribute("style");
-        styleLayer(next, bg, wp.image);
+        next.style.transform = "none";
+        next.style.opacity = String(bg.opacity);
         next.id = BG_ID;
         currentLayer = next;
       }, duration + 20);
     } catch (e) {
       old.remove();
-      next.removeAttribute("style");
-      styleLayer(next, bg, wp.image);
+      next.style.transform = "none";
+      next.style.opacity = String(bg.opacity);
       next.id = BG_ID;
       currentLayer = next;
     }
@@ -359,6 +425,11 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   return {
     install: (): void => {
       window.addEventListener("message", onMessage);
+      window.addEventListener("resize", () => {
+        for (const [el, wp] of layerWp) {
+          if (el.isConnected) layoutLayer(el, wp, config.background);
+        }
+      });
       window.addEventListener("keydown", onKeyDown, true);
       try {
         window.postMessage({ source: MAIN_SOURCE, type: "config-request" }, "*");

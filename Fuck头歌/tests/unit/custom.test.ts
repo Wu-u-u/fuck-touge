@@ -102,7 +102,10 @@ describe("custom config", () => {
     expect(cfg.background).toEqual({
       enabled: true,
       image: IMG,
-      wallpapers: [{ id: "legacy-1", name: "壁纸 1", image: IMG, animated: false, seed: "#cba6f7" }],
+      wallpapers: [{
+        id: "legacy-1", name: "壁纸 1", image: IMG, kind: "image", animated: false,
+        seed: "#cba6f7", crop: { x: 0, y: 0, w: 1, h: 1 }, width: 0, height: 0,
+      }],
       activeId: "legacy-1",
       opacity: .35,
       panelOpacity: .75,
@@ -165,9 +168,10 @@ describe("custom visual", () => {
     const layer = document.getElementById("ft-bg") as HTMLDivElement;
     expect(layer).toBeTruthy();
     expect(layer.style.position).toBe("fixed");
-    expect(layer.style.backgroundSize).toBe("cover");
     expect(layer.style.opacity).toBe("0.4");
-    expect(layer.style.backgroundImage).toContain("data:image/png");
+    const media = layer.firstElementChild as HTMLImageElement;
+    expect(media.tagName).toBe("IMG");
+    expect(media.src).toContain("data:image/png");
     expect(document.documentElement.getAttribute("data-ft-bg")).toBe("");
     const css = document.getElementById("ft-custom-visual")!.textContent || "";
     expect(css).toContain("color-mix");
@@ -183,10 +187,10 @@ describe("custom visual", () => {
     mount(makeConfig({ background: { enabled: true, image: IMG, opacity: .4, fit: "stretch", fixed: false } }));
     const layer = document.getElementById("ft-bg") as HTMLDivElement;
     expect(layer.style.position).toBe("fixed");
-    expect(layer.style.backgroundSize).toBe("100% 100%");
+    expect(layer.firstElementChild?.tagName).toBe("IMG");
 
     controller!.apply();
-    // 重新发配置，切成 contain
+    // 重新发配置，切成 contain；图层仍在，媒体节点复用
     window.dispatchEvent(
       new MessageEvent("message", {
         data: {
@@ -197,7 +201,7 @@ describe("custom visual", () => {
         source: window,
       }),
     );
-    expect(layer.style.backgroundSize).toBe("contain");
+    expect(document.getElementById("ft-bg")?.firstElementChild?.tagName).toBe("IMG");
   });
 
   it("编辑器区域独立透明度：容器透明、Monaco 背景单独 alpha", () => {

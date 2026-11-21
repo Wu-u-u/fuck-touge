@@ -10,13 +10,26 @@ export type ThemeName = "catppuccin" | "github";
 export type BackgroundFit = "cover" | "stretch" | "contain";
 export type BackgroundTransition = "slide" | "fade" | "zoom" | "spring" | "instant";
 
+export type WallpaperKind = "image" | "gif" | "video";
+
+export interface WallpaperCrop {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface Wallpaper {
   id: string;
   name: string;
-  /** data:image/webp 或 data:image/gif；GIF 保留动画 */
+  /** 原始 data URL（图片/GIF/视频都保留原图，裁剪只是元数据） */
   image: string;
+  kind: WallpaperKind;
   animated: boolean;
   seed: string;
+  crop: WallpaperCrop;
+  width: number;
+  height: number;
 }
 
 export interface BackgroundConfig {

@@ -1,5 +1,5 @@
 import type { EditorOptions } from "./editor-options";
-import type { BackgroundFit, BackgroundTransition, CustomColorKey, CustomConfig, Wallpaper } from "./types";
+import type { BackgroundFit, BackgroundTransition, CustomColorKey, CustomConfig, Wallpaper, WallpaperCrop, WallpaperKind } from "./types";
 
 /** chrome.storage.local 键；与页面 localStorage 的旧设置完全分开 */
 export const CUSTOM_CONFIG_KEY = "fuckTougeCustom";
@@ -65,6 +65,28 @@ export const isImageSource = (value: unknown): value is string => {
   return /^data:image\/[a-z0-9.+-]+(?:[;,])/i.test(s) || /^https?:\/\//i.test(s);
 };
 
+/** 2.7.1 起壁纸支持图片/GIF/视频；只接受本地 data URL */
+export const isMediaSource = (value: unknown): value is string => {
+  if (typeof value !== "string") return false;
+  return /^data:(?:image|video)\/[a-z0-9.+-]+(?:[;,])/i.test(value.trim());
+};
+
+export const wallpaperKind = (src: string): WallpaperKind =>
+  /^data:video\//i.test(src) ? "video" : /^data:image\/gif/i.test(src) ? "gif" : "image";
+
+const fullCrop: WallpaperCrop = { x: 0, y: 0, w: 1, h: 1 };
+
+const normalizeCrop = (raw: unknown): WallpaperCrop => {
+  const c = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const num = (v: unknown, d: number): number =>
+    typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : d;
+  const x = num(c.x, 0);
+  const y = num(c.y, 0);
+  const w = Math.min(1 - x, Math.max(0.05, num(c.w, 1)));
+  const h = Math.min(1 - y, Math.max(0.05, num(c.h, 1)));
+  return { x, y, w, h };
+};
+
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
 
 /** 只保留 JSON 安全的 1-2 层值；编辑器选项都是扁平/单层对象 */
@@ -95,7 +117,7 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
     ? src.background
     : {}) as Record<string, unknown>;
 
-  const legacyImage = isImageSource(bgRaw.image) ? String(bgRaw.image).trim() : "";
+  const legacyImage = isMediaSource(bgRaw.image) ? String(bgRaw.image).trim() : "";
   const legacySeed = isHexColor(src.materialSeed) ? String(src.materialSeed).trim().toLowerCase() : "";
   // 开关可以独立于图片存在：先开启，再选择图片（旧配置也兼容）
   const enabled = bgRaw.enabled === true;
@@ -123,13 +145,15 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
   const listRaw = Array.isArray(bgRaw.wallpapers) ? bgRaw.wallpapers : [];
   for (let i = 0; i < listRaw.length && wallpapers.length < MAX_WALLPAPERS; i++) {
     const w = (listRaw[i] && typeof listRaw[i] === "object" ? listRaw[i] : {}) as Record<string, unknown>;
-    const image = isImageSource(w.image) ? String(w.image).trim() : "";
+    const image = isMediaSource(w.image) ? String(w.image).trim() : "";
     if (!image) continue;
     const seed = isHexColor(w.seed) ? String(w.seed).trim().toLowerCase() : (legacySeed || "#cba6f7");
     const id = typeof w.id === "string" && w.id.trim() ? w.id.trim().slice(0, 80) : `wp-${i + 1}`;
     const name = typeof w.name === "string" && w.name.trim() ? w.name.trim().slice(0, 60) : `壁纸 ${wallpapers.length + 1}`;
-    const animated = w.animated === true || /^data:image\/gif/i.test(image);
-    wallpapers.push({ id, name, image, animated, seed });
+    const kind = w.kind === "video" || w.kind === "gif" || w.kind === "image" ? w.kind : wallpaperKind(image);
+    const width = typeof w.width === "number" && w.width > 0 ? w.width : 0;
+    const height = typeof w.height === "number" && w.height > 0 ? w.height : 0;
+    wallpapers.push({ id, name, image, kind, animated: kind !== "image", seed, crop: normalizeCrop(w.crop), width, height });
   }
   // 旧版单图迁移成第一张壁纸
   if (!wallpapers.length && legacyImage) {
@@ -137,8 +161,12 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
       id: "legacy-1",
       name: "壁纸 1",
       image: legacyImage,
+      kind: wallpaperKind(legacyImage),
       animated: /^data:image\/gif/i.test(legacyImage),
       seed: legacySeed || "#cba6f7",
+      crop: { ...fullCrop },
+      width: 0,
+      height: 0,
     });
   }
   const activeId = wallpapers.some((w) => w.id === bgRaw.activeId)

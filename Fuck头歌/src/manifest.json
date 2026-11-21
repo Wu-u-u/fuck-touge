@@ -20,7 +20,8 @@
   "permissions": [
     "scripting",
     "activeTab",
-    "storage"
+    "storage",
+    "unlimitedStorage"
   ],
   "options_ui": {
     "page": "options.html",
