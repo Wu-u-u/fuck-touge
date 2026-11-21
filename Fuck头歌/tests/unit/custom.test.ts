@@ -65,6 +65,22 @@ describe("custom config", () => {
     expect(cfg.background.image).toBe("");
   });
 
+  it("编辑器选项只保留 JSON 安全值", () => {
+    const cfg = normalizeCustomConfig({
+      editor: {
+        fontSize: 16,
+        smoothScrolling: true,
+        minimap: { enabled: false, size: "fit" },
+        bad: () => 1,
+      },
+    });
+    expect(cfg.editor).toEqual({
+      fontSize: 16,
+      smoothScrolling: true,
+      minimap: { enabled: false, size: "fit" },
+    });
+  });
+
   it("保留合法图片 / fit / 颜色", () => {
     const cfg = normalizeCustomConfig({
       background: { enabled: true, image: IMG, opacity: .35, panelOpacity: .75, editorOpacity: .9, fit: "contain", fixed: false },

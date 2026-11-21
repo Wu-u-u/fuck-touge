@@ -432,6 +432,159 @@ input[type="color"]:focus-visible { outline: 2px solid var(--accent); outline-of
   font-size: 12px;
 }
 
+.editor-direct { display: flex; flex-direction: column; }
+
+.editor-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(49, 50, 68, .6);
+}
+
+.editor-row:last-child { border-bottom: 0; }
+
+.editor-row .name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.editor-row .name strong { font-size: 13px; font-weight: 600; }
+.editor-row .name small { color: var(--dim); font-size: 11px; }
+
+.more {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.more > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::after { content: "展开 ▾"; margin-left: auto; color: var(--dim); font-size: 11px; font-weight: 400; }
+.more[open] > summary::after { content: "收起 ▴"; }
+
+.more #moreHint {
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.editor-group {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .02);
+  overflow: hidden;
+}
+
+.editor-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 12.5px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.editor-group > summary::-webkit-details-marker { display: none; }
+.editor-group > summary::after { content: "▾"; margin-left: auto; color: var(--dim); }
+.editor-group[open] > summary::after { content: "▴"; }
+
+.editor-group > summary .count {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.editor-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 18px;
+  padding: 0 12px 12px;
+}
+
+.editor-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+  color: var(--dim);
+  font-size: 12.5px;
+}
+
+.editor-field .ef-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-field select,
+.editor-field input[type="number"],
+.editor-field input[type="text"] {
+  width: 150px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #11111b;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.editor-field input[type="number"] { width: 92px; }
+
+.editor-field select:focus,
+.editor-field input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(137, 180, 250, .14);
+}
+
+#editorJson {
+  display: block;
+  width: calc(100% - 24px);
+  min-height: 120px;
+  margin: 0 12px 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #11111b;
+  color: var(--text);
+  font: 12px/1.5 ui-monospace, "SFMono-Regular", Consolas, monospace;
+  resize: vertical;
+}
+
+#editorJson:focus { border-color: var(--accent); outline: none; }
+
+.editor-json-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 .statusbar {
   position: sticky;
   bottom: 0;
@@ -456,6 +609,7 @@ input[type="color"]:focus-visible { outline: 2px solid var(--accent); outline-of
 @media (max-width: 760px) {
   .bg-grid { grid-template-columns: 1fr; }
   .field-row { grid-template-columns: 1fr; }
+  .editor-fields { grid-template-columns: 1fr; }
   .color-row { grid-template-columns: 22px minmax(110px, 1fr) 44px minmax(86px, .8fr) auto; }
 }
 

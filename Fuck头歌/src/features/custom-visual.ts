@@ -11,12 +11,14 @@ export interface CustomVisualDeps {
   isThemeOn(): boolean;
   isAnswerPage?(): boolean;
   isTopFrame?(): boolean;
+  onConfig?(config: CustomConfig): void;
 }
 
 export interface CustomVisualController {
   install(): void;
   apply(): void;
   dispose(): void;
+  getConfig(): CustomConfig;
 }
 
 const defaultTopFrame = (): boolean => {
@@ -200,6 +202,9 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     if (!data || data.source !== BRIDGE_SOURCE || data.type !== "config") return;
     config = normalizeCustomConfig(data.config);
     apply();
+    try {
+      deps.onConfig?.(config);
+    } catch (e) {}
   };
 
   return {
@@ -214,6 +219,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       }
     },
     apply,
+    getConfig: () => config,
     dispose: (): void => {
       window.removeEventListener("message", onMessage);
       clearRetry();

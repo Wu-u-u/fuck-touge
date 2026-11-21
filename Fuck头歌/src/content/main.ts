@@ -12,6 +12,7 @@ import { installClipboardGuard } from "../features/clipboard";
 import { createCursorController } from "../features/cursor";
 import { createCustomVisual } from "../features/custom-visual";
 import { createEditorManager } from "../features/editor";
+import { createEditorOptionsController, type EditorOptionsController } from "../features/editor-options";
 import { createFontController, FONT_OPTIONS, shouldAskFont } from "../features/font";
 import { createPasteGuard } from "../features/paste-guard";
 import { createThemeController } from "../features/theme/apply";
@@ -65,7 +66,11 @@ import { createFontPrompt } from "../ui/prompt";
     getThemeName: () => themeName,
     isFontOn: () => fontOn,
   });
-  const customVisual = createCustomVisual({ isThemeOn: () => themeOn });
+  let editorOptions: EditorOptionsController | null = null;
+  const customVisual = createCustomVisual({
+    isThemeOn: () => themeOn,
+    onConfig: (cfg): void => editorOptions?.setConfig(cfg.editor),
+  });
   const applySkin = (): void => {
     skinController.apply();
     customVisual.apply();
@@ -190,10 +195,23 @@ import { createFontPrompt } from "../ui/prompt";
       try {
         entry.ed.updateOptions(cursorController.options(entry.cursorOrig));
       } catch (e) {}
+      if (editorOptions) {
+        entry.editorOrig = editorOptions.readOptions(entry.ed);
+        editorOptions.applyOne(entry);
+      }
     },
     onMonacoHooked: (M): void => themeController.onAttached(M),
   });
   editorManager.install();
+  const optionsController = createEditorOptionsController({
+    getEditors: () => editorManager.getEditors(),
+    getMonaco: () => window.Monaco,
+  });
+  editorOptions = optionsController;
+  for (const entry of editorManager.getEditors()) {
+    if (!entry.editorOrig) entry.editorOrig = optionsController.readOptions(entry.ed);
+  }
+  optionsController.setConfig(customVisual.getConfig().editor);
   installAttrCleaner();
   const autoNext = createAutoNext({ onTick: (): void => fontPrompt.maybeAsk() });
   const choiceWatcher = createChoiceWatcher({

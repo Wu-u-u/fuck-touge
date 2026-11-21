@@ -4,6 +4,15 @@ import {
   isHexColor,
   normalizeCustomConfig,
 } from "../shared/custom";
+import {
+  EDITOR_DIRECT_OPTIONS,
+  EDITOR_GROUPS,
+  countEditorOverrides,
+  deleteEditorPath,
+  getEditorPath,
+  setEditorPath,
+  type EditorOptionField,
+} from "../shared/editor-options";
 import type { BackgroundFit, CustomColorKey, CustomConfig } from "../shared/types";
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector(sel) as T;
@@ -30,6 +39,15 @@ const els = {
   bgMeta: $<HTMLDivElement>("#bgMeta"),
   colors: $<HTMLDivElement>("#colors"),
   resetColors: $<HTMLButtonElement>("#resetColors"),
+  editorCount: $<HTMLSpanElement>("#editorCount"),
+  editorDirect: $<HTMLDivElement>("#editorDirect"),
+  editorGroups: $<HTMLDivElement>("#editorGroups"),
+  moreEditor: $<HTMLDetailsElement>("#moreEditor"),
+  moreHint: $<HTMLSpanElement>("#moreHint"),
+  resetEditor: $<HTMLButtonElement>("#resetEditor"),
+  editorJson: $<HTMLTextAreaElement>("#editorJson"),
+  applyEditorJson: $<HTMLButtonElement>("#applyEditorJson"),
+  editorJsonMsg: $<HTMLSpanElement>("#editorJsonMsg"),
   status: $<HTMLSpanElement>("#status"),
 };
 
@@ -42,6 +60,9 @@ let colorRows = new Map<CustomColorKey, {
   color: HTMLInputElement;
   hex: HTMLInputElement;
 }>();
+
+let editorDirectInputs = new Map<string, HTMLInputElement>();
+let editorFieldControls = new Map<string, HTMLInputElement | HTMLSelectElement>();
 
 const setStatus = (text: string, kind: "ok" | "err" | "idle" = "idle"): void => {
   els.status.textContent = text;
@@ -253,9 +274,193 @@ const buildColorRows = (): void => {
   }
 };
 
+const editorFieldValue = (field: EditorOptionField): unknown => getEditorPath(config.editor, field.path);
+
+const writeEditorField = (field: EditorOptionField, value: unknown): void => {
+  if (value === undefined) deleteEditorPath(config.editor, field.path);
+  else setEditorPath(config.editor, field.path, value);
+  saveNow();
+  renderEditorOptions();
+};
+
+const updateEditorCounts = (): void => {
+  const total = countEditorOverrides(config.editor);
+  els.editorCount.textContent = `${total} 项覆盖`;
+  els.editorCount.classList.toggle("off", total === 0);
+  els.moreHint.textContent = total ? `${total} 项已覆盖` : "按分类展开";
+  for (const group of EDITOR_GROUPS) {
+    const count = group.fields.filter((f) => getEditorPath(config.editor, f.path) !== undefined).length;
+    const badge = els.editorGroups.querySelector<HTMLElement>(
+      `.count[data-group="${group.id}"]`,
+    );
+    if (badge) badge.textContent = count ? `${count} 项` : "";
+  }
+};
+
+const createEditorControl = (field: EditorOptionField): HTMLInputElement | HTMLSelectElement => {
+  if (field.type === "bool" || field.type === "select") {
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", field.label);
+    const add = (value: string, label: string): void => {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      select.appendChild(opt);
+    };
+    add("", "跟随默认");
+    if (field.type === "bool") {
+      add("true", "开");
+      add("false", "关");
+    } else {
+      for (const opt of field.options || []) add(opt.value, opt.label);
+    }
+    select.addEventListener("change", () => {
+      if (!select.value) {
+        writeEditorField(field, undefined);
+      } else if (field.type === "bool") {
+        writeEditorField(field, select.value === "true");
+      } else {
+        writeEditorField(field, field.numeric ? Number(select.value) : select.value);
+      }
+    });
+    return select;
+  }
+
+  const input = document.createElement("input");
+  input.type = field.type === "number" ? "number" : "text";
+  input.placeholder = field.placeholder || "跟随默认";
+  input.setAttribute("aria-label", field.label);
+  if (field.type === "number") {
+    if (field.min !== undefined) input.min = String(field.min);
+    if (field.max !== undefined) input.max = String(field.max);
+    if (field.step !== undefined) input.step = String(field.step);
+  }
+  input.addEventListener("change", () => {
+    const raw = input.value.trim();
+    if (!raw) {
+      writeEditorField(field, undefined);
+      return;
+    }
+    if (field.type === "number") {
+      const value = Number(raw);
+      if (!Number.isFinite(value)) {
+        renderEditorOptions();
+        setStatus("请输入数字", "err");
+        return;
+      }
+      writeEditorField(field, value);
+    } else {
+      writeEditorField(field, raw);
+    }
+  });
+  return input;
+};
+
+const buildEditorDirect = (): void => {
+  els.editorDirect.innerHTML = "";
+  editorDirectInputs = new Map();
+  for (const field of EDITOR_DIRECT_OPTIONS) {
+    const row = document.createElement("div");
+    row.className = "editor-row";
+
+    const name = document.createElement("div");
+    name.className = "name";
+    const strong = document.createElement("strong");
+    strong.textContent = field.label;
+    const small = document.createElement("small");
+    small.textContent = field.hint || field.path;
+    name.append(strong, small);
+
+    const sw = document.createElement("label");
+    sw.className = "switch";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.setAttribute("aria-label", field.label);
+    const slider = document.createElement("span");
+    slider.className = "slider";
+    sw.append(input, slider);
+
+    input.addEventListener("change", () => {
+      if (input.checked) setEditorPath(config.editor, field.path, true);
+      else deleteEditorPath(config.editor, field.path);
+      saveNow();
+      renderEditorOptions();
+    });
+
+    row.append(name, sw);
+    els.editorDirect.appendChild(row);
+    editorDirectInputs.set(field.path, input);
+  }
+};
+
+const buildEditorGroups = (): void => {
+  els.editorGroups.innerHTML = "";
+  editorFieldControls = new Map();
+  for (const group of EDITOR_GROUPS) {
+    const details = document.createElement("details");
+    details.className = "editor-group";
+
+    const summary = document.createElement("summary");
+    const label = document.createElement("span");
+    label.textContent = group.label;
+    const count = document.createElement("span");
+    count.className = "count";
+    count.dataset.group = group.id;
+    summary.append(label, count);
+    details.appendChild(summary);
+
+    const fields = document.createElement("div");
+    fields.className = "editor-fields";
+    for (const field of group.fields) {
+      const row = document.createElement("div");
+      row.className = "editor-field";
+      const name = document.createElement("span");
+      name.className = "ef-label";
+      name.textContent = field.label;
+      name.title = field.path;
+      const control = createEditorControl(field);
+      row.append(name, control);
+      fields.appendChild(row);
+      editorFieldControls.set(field.path, control);
+    }
+    details.appendChild(fields);
+    els.editorGroups.appendChild(details);
+  }
+};
+
+const renderEditorOptions = (): void => {
+  for (const field of EDITOR_DIRECT_OPTIONS) {
+    const input = editorDirectInputs.get(field.path);
+    if (input) input.checked = getEditorPath(config.editor, field.path) === true;
+  }
+
+  for (const group of EDITOR_GROUPS) {
+    for (const field of group.fields) {
+      const control = editorFieldControls.get(field.path);
+      if (!control) continue;
+      const value = editorFieldValue(field);
+      if (control instanceof HTMLSelectElement) {
+        if (field.type === "bool") {
+          control.value = value === true ? "true" : value === false ? "false" : "";
+        } else {
+          control.value = value === undefined ? "" : String(value);
+        }
+      } else {
+        control.value = typeof value === "number" || typeof value === "string" ? String(value) : "";
+      }
+    }
+  }
+
+  if (document.activeElement !== els.editorJson) {
+    els.editorJson.value = JSON.stringify(config.editor, null, 2) || "{}";
+  }
+  updateEditorCounts();
+};
+
 const render = (): void => {
   renderBackground();
   renderColors();
+  renderEditorOptions();
 };
 
 const decodeFile = async (file: File): Promise<ImageBitmap | HTMLImageElement> => {
@@ -419,11 +624,38 @@ els.resetColors.addEventListener("click", () => {
   setStatus("页面颜色已恢复跟随主题", "ok");
 });
 
+els.resetEditor.addEventListener("click", () => {
+  config.editor = {};
+  saveNow();
+  renderEditorOptions();
+  setStatus("编辑器选项已恢复默认", "ok");
+});
+
+els.applyEditorJson.addEventListener("click", () => {
+  try {
+    const raw = els.editorJson.value.trim() || "{}";
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("JSON 必须是一个对象");
+    }
+    config = normalizeCustomConfig({ ...config, editor: parsed });
+    saveNow();
+    render();
+    els.editorJsonMsg.textContent = "已应用";
+    els.editorJsonMsg.className = "meta ok";
+  } catch (e) {
+    els.editorJsonMsg.textContent = e instanceof Error ? e.message : "JSON 格式错误";
+    els.editorJsonMsg.className = "meta err";
+  }
+});
+
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && saveTimer) saveNow();
 });
 
 buildColorRows();
+buildEditorDirect();
+buildEditorGroups();
 els.version.textContent = `v${chrome.runtime.getManifest().version}`;
 render();
 load();

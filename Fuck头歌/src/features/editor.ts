@@ -15,6 +15,8 @@ export interface EditorEntry {
   orig?: unknown;
   /** 光标快照（上层填充） */
   cursorOrig?: unknown;
+  /** 常用编辑器选项快照（上层填充） */
+  editorOrig?: Record<string, unknown>;
 }
 
 export interface EditorManagerDeps {

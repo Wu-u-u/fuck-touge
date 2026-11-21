@@ -98,6 +98,36 @@
     <div class="colors" id="colors"></div>
   </section>
 
+  <section class="card" id="editor">
+    <div class="card-head">
+      <div>
+        <h2>编辑器</h2>
+        <p>常用选项直接放这里；“更多”按分类展开。修改后对现有和后续打开的编辑器生效。</p>
+      </div>
+      <span class="pill off" id="editorCount">0 项覆盖</span>
+    </div>
+
+    <div class="editor-direct" id="editorDirect"></div>
+
+    <details class="more" id="moreEditor">
+      <summary>更多编辑器选项 <span id="moreHint">按分类展开</span></summary>
+      <div id="editorGroups"></div>
+
+      <details class="editor-group">
+        <summary>高级 JSON</summary>
+        <textarea id="editorJson" spellcheck="false" placeholder='{ "fontSize": 15, "lineHeight": 24 }'></textarea>
+        <div class="editor-json-actions">
+          <button class="btn small" id="applyEditorJson" type="button">应用 JSON</button>
+          <span id="editorJsonMsg" class="meta"></span>
+        </div>
+      </details>
+
+      <div class="editor-actions">
+        <button class="btn ghost" id="resetEditor" type="button">恢复默认编辑器选项</button>
+      </div>
+    </details>
+  </section>
+
   <section class="card note">
     <strong>生效范围</strong>
     <p>背景和颜色仅作用于 <code>/tasks/...</code> 答题页，且主题开启时生效；主页、课堂、作业详情保持平台原样。</p>

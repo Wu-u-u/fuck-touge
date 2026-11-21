@@ -1,3 +1,4 @@
+import type { EditorOptions } from "./editor-options";
 import type { BackgroundFit, CustomColorKey, CustomConfig } from "./types";
 
 /** chrome.storage.local 键；与页面 localStorage 的旧设置完全分开 */
@@ -15,6 +16,7 @@ export const DEFAULT_CUSTOM_CONFIG: CustomConfig = {
     fixed: true,
   },
   colors: {},
+  editor: {},
 };
 
 export interface ColorDef {
@@ -51,6 +53,24 @@ export const isImageSource = (value: unknown): value is string => {
 };
 
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
+
+/** 只保留 JSON 安全的 1-2 层值；编辑器选项都是扁平/单层对象 */
+const copyEditorOptions = (raw: unknown): EditorOptions => {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: EditorOptions = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      out[key] = value;
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+      const nested: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") nested[k] = v;
+      }
+      if (Object.keys(nested).length) out[key] = nested;
+    }
+  }
+  return out;
+};
 
 /**
  * 把 storage / postMessage 里的任意值收敛成合法配置。
@@ -95,6 +115,7 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
     version: 1,
     background: { enabled, image, opacity, panelOpacity, editorOpacity, fit, fixed },
     colors,
+    editor: copyEditorOptions(src.editor),
   };
 }
 

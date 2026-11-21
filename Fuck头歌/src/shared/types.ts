@@ -3,6 +3,8 @@
  * 只声明项目实际会用到的 API，避免把整个 Monaco / Chrome 类型面引入。
  */
 
+import type { EditorOptions } from "./editor-options";
+
 export type ThemeName = "catppuccin" | "github";
 
 export type BackgroundFit = "cover" | "stretch" | "contain";
@@ -31,6 +33,7 @@ export interface CustomConfig {
   version: 1;
   background: BackgroundConfig;
   colors: Partial<Record<CustomColorKey, string>>;
+  editor: EditorOptions;
 }
 
 export interface FuckTougeSettings {
