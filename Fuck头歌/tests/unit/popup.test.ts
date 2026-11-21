@@ -93,6 +93,26 @@ describe("popup 初始化", () => {
     expect(document.getElementById("msg")!.textContent).toContain("页面未就绪");
   });
 
+  it("Material You 从 storage 应用颜色变量", async () => {
+    const { api } = makeApi();
+    const store: Record<string, any> = {
+      fuckTougeCustom: { materialYou: true, materialSeed: "#2536d7" },
+    };
+    api.storage = {
+      local: {
+        get: (_keys, callback) => callback({ ...store }),
+        set: () => {},
+      },
+    };
+    initPopup(api);
+    await sleep(20);
+
+    expect(document.documentElement.getAttribute("data-material")).toBe("on");
+    expect(document.documentElement.style.getPropertyValue("--accent")).not.toBe("");
+    document.documentElement.removeAttribute("data-material");
+    document.documentElement.removeAttribute("style");
+  });
+
   it("背景开关读写 storage，并显示选择背景图入口", async () => {
     const { api } = makeApi();
     const store: Record<string, any> = {

@@ -19,5 +19,8 @@
     "jsdom": "^30.1.3",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@material/material-color-utilities": "^0.4.0"
   }
 }

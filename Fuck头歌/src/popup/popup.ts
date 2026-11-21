@@ -1,5 +1,6 @@
 import { CUSTOM_CONFIG_KEY, normalizeCustomConfig } from "../shared/custom";
 import { deleteEditorPath, setEditorPath } from "../shared/editor-options";
+import { applyMaterialPalette, clearMaterialPalette } from "../shared/material-theme";
 import {
   MAX_SCRIPT_LOGS,
   SCRIPT_LOGS_KEY,
@@ -96,12 +97,21 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     } catch (e) {}
   };
 
+  const applyMaterial = (): void => {
+    if (customCfg.materialYou && customCfg.materialSeed) {
+      applyMaterialPalette(document.documentElement, customCfg.materialSeed);
+    } else {
+      clearMaterialPalette(document.documentElement);
+    }
+  };
+
   const readCustom = (): void => {
     if (!customStorage) return;
     try {
       customStorage.get(CUSTOM_CONFIG_KEY, (items) => {
         customCfg = normalizeCustomConfig(items?.[CUSTOM_CONFIG_KEY]);
         renderCustom();
+        applyMaterial();
       });
     } catch (e) {}
   };
@@ -130,6 +140,9 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
       writeCustom();
     });
     readCustom();
+    chromeApi.storage?.onChanged?.addListener((changes, area) => {
+      if (area === "local" && changes[CUSTOM_CONFIG_KEY]) readCustom();
+    });
   }
 
   /* 答题脚本状态 / 日志：只展示当前槽位，不提供启动/停止控制 */

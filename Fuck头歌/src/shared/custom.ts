@@ -17,6 +17,8 @@ export const DEFAULT_CUSTOM_CONFIG: CustomConfig = {
   },
   colors: {},
   editor: {},
+  materialYou: false,
+  materialSeed: "",
 };
 
 export interface ColorDef {
@@ -111,11 +113,16 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
     if (isHexColor(value)) colors[def.key] = value.trim().toLowerCase();
   }
 
+  const materialSeed = isHexColor(src.materialSeed) ? String(src.materialSeed).trim().toLowerCase() : "";
+  const materialYou = src.materialYou === true && !!materialSeed;
+
   return {
     version: 1,
     background: { enabled, image, opacity, panelOpacity, editorOpacity, fit, fixed },
     colors,
     editor: copyEditorOptions(src.editor),
+    materialYou,
+    materialSeed,
   };
 }
 

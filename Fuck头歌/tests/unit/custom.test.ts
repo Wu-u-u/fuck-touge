@@ -52,6 +52,19 @@ describe("custom config", () => {
     expect(cfg.colors).toEqual({});
   });
 
+  it("Material You 需要合法种子色", () => {
+    const on = normalizeCustomConfig({ materialYou: true, materialSeed: "#2536D7" });
+    expect(on.materialYou).toBe(true);
+    expect(on.materialSeed).toBe("#2536d7");
+
+    const bad = normalizeCustomConfig({ materialYou: true, materialSeed: "blue" });
+    expect(bad.materialYou).toBe(false);
+    expect(bad.materialSeed).toBe("");
+
+    const off = normalizeCustomConfig({ materialYou: false, materialSeed: "#2536d7" });
+    expect(off.materialYou).toBe(false);
+  });
+
   it("收敛非法背景字段", () => {
     const cfg = normalizeCustomConfig({
       background: { enabled: true, image: "javascript:alert(1)", opacity: 9, fit: "wat", fixed: "no" },

@@ -34,6 +34,8 @@ export interface CustomConfig {
   background: BackgroundConfig;
   colors: Partial<Record<CustomColorKey, string>>;
   editor: EditorOptions;
+  materialYou: boolean;
+  materialSeed: string;
 }
 
 export interface FuckTougeSettings {

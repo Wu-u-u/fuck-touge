@@ -13,6 +13,7 @@ import {
   setEditorPath,
   type EditorOptionField,
 } from "../shared/editor-options";
+import { applyMaterialPalette, clearMaterialPalette, seedFromImage } from "../shared/material-theme";
 import type { BackgroundFit, CustomColorKey, CustomConfig } from "../shared/types";
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector(sel) as T;
@@ -36,6 +37,8 @@ const els = {
   bgFit: $<HTMLSelectElement>("#bgFit"),
   bgFixed: $<HTMLInputElement>("#bgFixed"),
   bgMeta: $<HTMLDivElement>("#bgMeta"),
+  materialYou: $<HTMLInputElement>("#materialYou"),
+  materialYouHint: $<HTMLDivElement>("#materialYouHint"),
   colors: $<HTMLDivElement>("#colors"),
   resetColors: $<HTMLButtonElement>("#resetColors"),
   editorCount: $<HTMLSpanElement>("#editorCount"),
@@ -119,6 +122,14 @@ const saveNow = (): void => {
   save();
 };
 
+const applyMaterialPreview = (): void => {
+  if (config.materialYou && config.materialSeed) {
+    applyMaterialPalette(document.documentElement, config.materialSeed);
+  } else {
+    clearMaterialPalette(document.documentElement);
+  }
+};
+
 const renderBackground = (): void => {
   const bg = config.background;
   const hasImage = !!bg.image;
@@ -144,6 +155,16 @@ const renderBackground = (): void => {
   els.bgFit.value = bg.fit;
   els.bgFixed.checked = bg.fixed;
   els.removeBg.disabled = !hasImage;
+  const canMaterial = hasImage && !!config.materialSeed;
+  els.materialYou.disabled = !canMaterial;
+  els.materialYou.checked = canMaterial && config.materialYou;
+  els.materialYouHint.textContent = !hasImage
+    ? "先选择背景图，再从图片取色"
+    : !config.materialSeed
+      ? "正在从图片取色…"
+      : config.materialYou
+        ? "已启用 · 从背景图取色，只影响弹窗和高级设置"
+        : "从背景图取色，只影响弹窗和高级设置";
 
   if (!hasImage) {
     els.bgMeta.textContent = "未选择图片";
@@ -517,10 +538,13 @@ const compressImage = async (
   return { dataUrl, width, height, bytes };
 };
 
-const setBackground = (image: string): void => {
+const setBackground = (image: string, seed: string): void => {
   config.background.image = image;
+  config.background.enabled = true;
+  config.materialSeed = seed;
   saveNow();
   render();
+  applyMaterialPreview();
 };
 
 const load = (): void => {
@@ -535,11 +559,13 @@ const load = (): void => {
         setStatus("已读取 · 修改会自动保存", "ok");
       }
       render();
+      applyMaterialPreview();
     });
   } catch (e) {
     config = normalizeCustomConfig(null);
     lastSaved = JSON.stringify(config);
     render();
+    applyMaterialPreview();
     setStatus("读取失败，先显示默认值", "err");
   }
 };
@@ -553,6 +579,7 @@ try {
     lastSaved = json;
     config = next;
     render();
+    applyMaterialPreview();
     setStatus("已同步弹窗开关", "ok");
   });
 } catch (e) {}
@@ -571,7 +598,8 @@ els.bgFile.addEventListener("change", async () => {
   setStatus("正在压缩图片…");
   try {
     const result = await compressImage(file);
-    setBackground(result.dataUrl);
+    const seed = (await seedFromImage(result.dataUrl)) || "#cba6f7";
+    setBackground(result.dataUrl, seed);
     setStatus(`背景已更新 · ${result.width}×${result.height} · ${formatBytes(result.bytes)}`, "ok");
   } catch (e) {
     setStatus(e instanceof Error ? e.message : "图片处理失败", "err");
@@ -583,9 +611,19 @@ els.bgFile.addEventListener("change", async () => {
 els.removeBg.addEventListener("click", () => {
   config.background.image = "";
   config.background.enabled = false;
+  config.materialSeed = "";
+  config.materialYou = false;
   saveNow();
   render();
+  applyMaterialPreview();
   setStatus("背景已移除", "ok");
+});
+
+els.materialYou.addEventListener("change", () => {
+  config.materialYou = els.materialYou.checked && !!config.materialSeed;
+  saveNow();
+  applyMaterialPreview();
+  renderBackground();
 });
 
 els.bgOpacity.addEventListener("input", () => {
