@@ -17,6 +17,17 @@
     --red: #f38ba8;
   }
   * { box-sizing: border-box; }
+  html { color-scheme: dark; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--dim) 30%, transparent);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--dim) 52%, transparent);
+  }
+  ::-webkit-scrollbar-corner { background: transparent; }
   body {
     margin: 0;
     width: 340px;
@@ -137,7 +148,8 @@
   .log-actions button:disabled { opacity: .4; cursor: default; }
   .log-list {
     max-height: 132px; margin-top: 6px; padding: 5px 8px;
-    overflow-y: auto; border: 1px solid var(--border); border-radius: 9px;
+    overflow-y: auto; scrollbar-gutter: stable;
+    border: 1px solid var(--border); border-radius: 9px;
     background: color-mix(in srgb, var(--bg) 82%, transparent);
     font-size: 10.5px; line-height: 1.55;
   }
