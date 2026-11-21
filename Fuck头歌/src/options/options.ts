@@ -20,8 +20,6 @@ const $ = <T extends HTMLElement>(sel: string): T => document.querySelector(sel)
 const els = {
   version: $<HTMLSpanElement>("#version"),
   bgState: $<HTMLSpanElement>("#bgState"),
-  bgEnabled: $<HTMLInputElement>("#bgEnabled"),
-  bgDetails: $<HTMLDivElement>("#bgDetails"),
   bgPreview: $<HTMLDivElement>("#bgPreview"),
   bgThumb: $<HTMLImageElement>("#bgThumb"),
   bgEmpty: $<HTMLDivElement>("#bgEmpty"),
@@ -54,6 +52,7 @@ const els = {
 let config: CustomConfig = normalizeCustomConfig(null);
 let saveTimer = 0;
 let saveSeq = 0;
+let lastSaved = "";
 let colorRows = new Map<CustomColorKey, {
   row: HTMLDivElement;
   check: HTMLInputElement;
@@ -86,6 +85,7 @@ const estimateDataUrlBytes = (dataUrl: string): number => {
 const save = (): void => {
   const seq = ++saveSeq;
   const snapshot = normalizeCustomConfig(config);
+  lastSaved = JSON.stringify(snapshot);
   try {
     chrome.storage.local.set({ [CUSTOM_CONFIG_KEY]: snapshot }, () => {
       if (seq !== saveSeq) return;
@@ -121,8 +121,6 @@ const saveNow = (): void => {
 const renderBackground = (): void => {
   const bg = config.background;
   const hasImage = !!bg.image;
-  els.bgEnabled.checked = bg.enabled;
-  els.bgDetails.hidden = !bg.enabled;
   els.bgThumb.hidden = !hasImage;
   els.bgEmpty.hidden = hasImage;
   if (hasImage) {
@@ -133,8 +131,8 @@ const renderBackground = (): void => {
     els.bgPreview.classList.remove("has-image");
   }
 
-  els.bgState.textContent = bg.enabled ? (hasImage ? "已启用" : "待选择图片") : "未启用";
-  els.bgState.classList.toggle("off", !bg.enabled || !hasImage);
+  els.bgState.textContent = bg.enabled ? "已开启" : "未开启";
+  els.bgState.classList.toggle("off", !bg.enabled);
   const transparency = Math.round((1 - bg.opacity) * 100);
   els.bgOpacity.value = String(transparency);
   els.bgOpacityVal.textContent = `${transparency}%`;
@@ -520,7 +518,6 @@ const compressImage = async (
 
 const setBackground = (image: string): void => {
   config.background.image = image;
-  config.background.enabled = true;
   saveNow();
   render();
 };
@@ -533,22 +530,31 @@ const load = (): void => {
         config = normalizeCustomConfig(null);
       } else {
         config = normalizeCustomConfig(result?.[CUSTOM_CONFIG_KEY]);
+        lastSaved = JSON.stringify(config);
         setStatus("已读取 · 修改会自动保存", "ok");
       }
       render();
     });
   } catch (e) {
     config = normalizeCustomConfig(null);
+    lastSaved = JSON.stringify(config);
     render();
     setStatus("读取失败，先显示默认值", "err");
   }
 };
 
-els.bgEnabled.addEventListener("change", () => {
-  config.background.enabled = els.bgEnabled.checked;
-  saveNow();
-  render();
-});
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !changes[CUSTOM_CONFIG_KEY]) return;
+    const next = normalizeCustomConfig(changes[CUSTOM_CONFIG_KEY].newValue);
+    const json = JSON.stringify(next);
+    if (json === lastSaved) return;
+    lastSaved = json;
+    config = next;
+    render();
+    setStatus("已同步弹窗开关", "ok");
+  });
+} catch (e) {}
 
 els.pickImage.addEventListener("click", () => els.bgFile.click());
 
@@ -663,6 +669,13 @@ const setActiveNav = (id: string): void => {
   });
 };
 
+const showPanel = (id: string): void => {
+  navSections.forEach((section) => {
+    section.hidden = section.id !== id;
+  });
+  window.scrollTo({ top: 0, behavior: "auto" });
+};
+
 if (navSections.length) {
   navLinks.forEach((a) => {
     a.addEventListener("click", (e) => {
@@ -670,15 +683,17 @@ if (navSections.length) {
       const target = document.getElementById(id);
       if (!target) return;
       e.preventDefault();
-      target.scrollIntoView({ behavior: "auto", block: "start" });
       setActiveNav(id);
+      showPanel(id);
       try {
         history.replaceState(null, "", `#${id}`);
       } catch (err) {}
     });
   });
   const initial = location.hash.replace(/^#/, "");
-  setActiveNav(navSections.some((s) => s.id === initial) ? initial : navSections[0].id);
+  const active = navSections.some((s) => s.id === initial) ? initial : navSections[0].id;
+  setActiveNav(active);
+  showPanel(active);
 }
 
 document.addEventListener("visibilitychange", () => {

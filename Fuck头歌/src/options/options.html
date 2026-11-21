@@ -38,22 +38,18 @@
       </div>
     </header>
 
-    <section class="card" id="background">
+    <section class="card panel" id="background">
       <div class="card-head">
         <div>
           <h2>自定义背景</h2>
-          <p>图片会自动压缩到 2560px WebP；GIF 会变成静态图。</p>
+          <p>图片会自动压缩到 2560px WebP；开关在浏览器弹窗里控制。</p>
         </div>
         <div class="head-actions">
-          <span class="pill off" id="bgState">未启用</span>
-          <label class="switch" aria-label="启用自定义背景">
-            <input id="bgEnabled" type="checkbox">
-            <span class="slider"></span>
-          </label>
+          <span class="pill off" id="bgState">未开启</span>
         </div>
       </div>
 
-      <div class="bg-grid" id="bgDetails" hidden>
+      <div class="bg-grid" id="bgDetails">
         <div class="bg-left">
           <div class="preview" id="bgPreview">
             <img id="bgThumb" alt="背景预览" hidden>
@@ -109,7 +105,7 @@
       </div>
     </section>
 
-    <section class="card" id="color-section">
+    <section class="card panel" id="color-section" hidden>
       <div class="card-head">
         <div>
           <h2>页面颜色</h2>
@@ -120,7 +116,7 @@
       <div class="colors" id="colors"></div>
     </section>
 
-    <section class="card" id="editor">
+    <section class="card panel" id="editor" hidden>
       <div class="card-head">
         <div>
           <h2>编辑器</h2>
@@ -150,7 +146,7 @@
       </details>
     </section>
 
-    <section class="card note" id="about">
+    <section class="card note panel" id="about" hidden>
       <strong>生效范围</strong>
       <p>背景和颜色仅作用于 <code>/tasks/...</code> 答题页，且主题开启时生效；主页、课堂、作业详情保持平台原样。</p>
     </section>
