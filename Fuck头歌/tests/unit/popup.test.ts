@@ -16,6 +16,8 @@ function buildDom(): void {
       <button class="opt" data-name="github"></button>
     </div>
     <input id="tb" type="checkbox">
+    <input id="ts" type="checkbox">
+    <input id="tw" type="checkbox">
     <a id="bgPick" hidden></a>
     <div id="msg"></div>`;
 }
@@ -117,6 +119,35 @@ describe("popup 初始化", () => {
     el("tb").click();
     await sleep(10);
     expect(store.fuckTougeCustom.background.enabled).toBe(false);
+  });
+
+  it("编辑器开关读写 storage", async () => {
+    const { api } = makeApi();
+    const store: Record<string, any> = {
+      fuckTougeCustom: {
+        version: 1,
+        background: { enabled: false },
+        colors: {},
+        editor: { smoothScrolling: true },
+      },
+    };
+    api.storage = {
+      local: {
+        get: (_keys, callback) => callback({ ...store }),
+        set: (items, callback) => {
+          Object.assign(store, items);
+          callback?.();
+        },
+      },
+    };
+    initPopup(api);
+    await sleep(20);
+
+    expect(el("ts").checked).toBe(true);
+    expect(el("tw").checked).toBe(false);
+    el("tw").click();
+    await sleep(10);
+    expect(store.fuckTougeCustom.editor.mouseWheelZoom).toBe(true);
   });
 });
 

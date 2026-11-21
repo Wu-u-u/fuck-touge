@@ -1,4 +1,5 @@
 import { CUSTOM_CONFIG_KEY, normalizeCustomConfig } from "../shared/custom";
+import { deleteEditorPath, setEditorPath } from "../shared/editor-options";
 import type { PublicSettings } from "../shared/types";
 
 /** 最小 Chrome API 面（便于单测注入；真实弹窗用全局 chrome） */
@@ -39,49 +40,68 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   const msg = doc.getElementById("msg") as HTMLElement;
   const tb = doc.getElementById("tb") as HTMLInputElement | null;
   const bgPick = doc.getElementById("bgPick") as HTMLElement | null;
+  const ts = doc.getElementById("ts") as HTMLInputElement | null;
+  const tw = doc.getElementById("tw") as HTMLInputElement | null;
 
   const setMsg = (text: string, warn = false): void => {
     msg.textContent = text;
     msg.className = warn ? "desc warn" : "desc";
   };
 
-  /* 背景开关独立于页面：不依赖当前标签页是否头歌，也不走 __fuckTougeUI */
-  const bgStorage = chromeApi.storage?.local;
-  let bgImage = "";
-  const renderBg = (enabled: boolean, image: string): void => {
-    bgImage = image;
-    if (tb) tb.checked = enabled;
+  /* 背景/编辑器开关独立于页面：不依赖当前标签页是否头歌，也不走 __fuckTougeUI */
+  const customStorage = chromeApi.storage?.local;
+  let customCfg = normalizeCustomConfig(null);
+
+  const renderCustom = (): void => {
+    if (tb) tb.checked = customCfg.background.enabled;
     if (bgPick) {
-      bgPick.hidden = !enabled;
-      bgPick.textContent = image ? "更换背景图 →" : "选择背景图 →";
+      bgPick.hidden = !customCfg.background.enabled;
+      bgPick.textContent = customCfg.background.image ? "更换背景图 →" : "选择背景图 →";
     }
+    if (ts) ts.checked = customCfg.editor.smoothScrolling === true;
+    if (tw) tw.checked = customCfg.editor.mouseWheelZoom === true;
   };
-  const readBg = (): void => {
-    if (!bgStorage) return;
+
+  const writeCustom = (): void => {
     try {
-      bgStorage.get(CUSTOM_CONFIG_KEY, (items) => {
-        const cfg = normalizeCustomConfig(items?.[CUSTOM_CONFIG_KEY]);
-        renderBg(cfg.background.enabled, cfg.background.image);
+      customStorage?.set({ [CUSTOM_CONFIG_KEY]: customCfg });
+    } catch (e) {}
+  };
+
+  const readCustom = (): void => {
+    if (!customStorage) return;
+    try {
+      customStorage.get(CUSTOM_CONFIG_KEY, (items) => {
+        customCfg = normalizeCustomConfig(items?.[CUSTOM_CONFIG_KEY]);
+        renderCustom();
       });
     } catch (e) {}
   };
 
-  if (!bgStorage) {
-    if (tb) tb.disabled = true;
+  if (!customStorage) {
+    for (const input of [tb, ts, tw]) {
+      if (input) input.disabled = true;
+    }
     if (bgPick) bgPick.hidden = true;
   } else {
     tb?.addEventListener("change", () => {
-      const enabled = !!tb.checked;
-      renderBg(enabled, bgImage);
-      try {
-        bgStorage.get(CUSTOM_CONFIG_KEY, (items) => {
-          const cfg = normalizeCustomConfig(items?.[CUSTOM_CONFIG_KEY]);
-          cfg.background.enabled = enabled;
-          bgStorage.set?.({ [CUSTOM_CONFIG_KEY]: cfg });
-        });
-      } catch (e) {}
+      customCfg.background.enabled = !!tb.checked;
+      renderCustom();
+      writeCustom();
     });
-    readBg();
+    ts?.addEventListener("change", () => {
+      if (ts.checked) setEditorPath(customCfg.editor, "smoothScrolling", true);
+      else deleteEditorPath(customCfg.editor, "smoothScrolling");
+      renderCustom();
+      writeCustom();
+    });
+    tw?.addEventListener("change", () => {
+      if (tw.checked) setEditorPath(customCfg.editor, "mouseWheelZoom", true);
+      else deleteEditorPath(customCfg.editor, "mouseWheelZoom");
+      renderCustom();
+      writeCustom();
+    });
+    readCustom();
   }
 
   async function withPage<T>(

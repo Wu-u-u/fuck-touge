@@ -52,6 +52,16 @@
   }
   .bg-pick:hover { border-color: #585b70; background: rgba(137, 180, 250, .12); }
   .bg-pick:focus-visible { outline: 2px solid #cba6f7; outline-offset: 3px; }
+  [hidden] { display: none !important; }
+  .section {
+    margin: 14px 0 2px;
+    padding-top: 10px;
+    border-top: 1px solid #313244;
+    color: #7f849c;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .4px;
+  }
   .advanced {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
     margin-top: 12px; padding: 9px 12px; border: 1px solid #313244; border-radius: 8px;
@@ -82,6 +92,18 @@
       <div><label class="lab" for="tc">光标动画</label><div class="sub">平滑移动 · 打字时也会滑动</div></div>
       <label class="switch"><input type="checkbox" id="tc"><span class="slider"></span></label>
     </div>
+
+    <div class="section">编辑器</div>
+    <div class="row">
+      <div><label class="lab" for="ts">平滑滚动</label><div class="sub">滚轮滚动更柔和</div></div>
+      <label class="switch"><input type="checkbox" id="ts"><span class="slider"></span></label>
+    </div>
+    <div class="row">
+      <div><label class="lab" for="tw">Ctrl + 滚轮缩放</label><div class="sub">按住 Ctrl 滚动缩放字号</div></div>
+      <label class="switch"><input type="checkbox" id="tw"><span class="slider"></span></label>
+    </div>
+
+    <div class="section">页面</div>
     <div class="row">
       <div><label class="lab" for="tb">自定义背景</label><div class="sub">图片 · 透明度 · 编辑器区域</div></div>
       <label class="switch"><input type="checkbox" id="tb"><span class="slider"></span></label>
@@ -89,7 +111,7 @@
     <a class="bg-pick" id="bgPick" href="options.html#background" target="_blank" rel="noreferrer" hidden>选择背景图 →</a>
     <div class="desc" id="msg" aria-live="polite">读取中… ⏳</div>
     <a class="advanced" href="options.html" target="_blank" rel="noreferrer">
-      <span>高级设置</span><span class="arrow">背景与颜色 →</span>
+      <span>高级设置</span><span class="arrow">背景 · 颜色 · 编辑器 →</span>
     </a>
   </div>
   <script src="popup.js"></script>
