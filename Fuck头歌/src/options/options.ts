@@ -1,8 +1,10 @@
 import {
   COLOR_DEFS,
   CUSTOM_CONFIG_KEY,
+  activeWallpaper,
   isHexColor,
   normalizeCustomConfig,
+  MAX_WALLPAPERS,
 } from "../shared/custom";
 import {
   EDITOR_DIRECT_OPTIONS,
@@ -35,8 +37,15 @@ const els = {
   bgEditorOpacity: $<HTMLInputElement>("#bgEditorOpacity"),
   bgEditorOpacityVal: $<HTMLOutputElement>("#bgEditorOpacityVal"),
   bgFit: $<HTMLSelectElement>("#bgFit"),
-  bgFixed: $<HTMLInputElement>("#bgFixed"),
   bgMeta: $<HTMLDivElement>("#bgMeta"),
+  wallpaperList: $<HTMLDivElement>("#wallpaperList"),
+  cropDialog: $<HTMLDialogElement>("#cropDialog"),
+  cropStage: $<HTMLDivElement>("#cropStage"),
+  cropImage: $<HTMLImageElement>("#cropImage"),
+  cropZoom: $<HTMLInputElement>("#cropZoom"),
+  cropZoomVal: $<HTMLOutputElement>("#cropZoomVal"),
+  cropCancel: $<HTMLButtonElement>("#cropCancel"),
+  cropSave: $<HTMLButtonElement>("#cropSave"),
   materialYou: $<HTMLInputElement>("#materialYou"),
   materialYouHint: $<HTMLDivElement>("#materialYouHint"),
   colors: $<HTMLDivElement>("#colors"),
@@ -66,6 +75,21 @@ let colorRows = new Map<CustomColorKey, {
 
 let editorDirectInputs = new Map<string, HTMLInputElement>();
 let editorFieldControls = new Map<string, HTMLInputElement | HTMLSelectElement>();
+
+interface CropState {
+  dataUrl: string;
+  name: string;
+  nw: number;
+  nh: number;
+  baseScale: number;
+  zoom: number;
+  x: number;
+  y: number;
+  stageW: number;
+  stageH: number;
+}
+let cropState: CropState | null = null;
+let cropDrag: { sx: number; sy: number; x: number; y: number } | null = null;
 
 const setStatus = (text: string, kind: "ok" | "err" | "idle" = "idle"): void => {
   els.status.textContent = text;
@@ -123,8 +147,9 @@ const saveNow = (): void => {
 };
 
 const applyMaterialPreview = (): void => {
-  if (config.materialYou && config.materialSeed) {
-    applyMaterialPalette(document.documentElement, config.materialSeed);
+  const seed = activeWallpaper(config)?.seed || config.materialSeed;
+  if (config.materialYou && seed) {
+    applyMaterialPalette(document.documentElement, seed);
   } else {
     clearMaterialPalette(document.documentElement);
   }
@@ -132,18 +157,19 @@ const applyMaterialPreview = (): void => {
 
 const renderBackground = (): void => {
   const bg = config.background;
-  const hasImage = !!bg.image;
+  const active = activeWallpaper(config);
+  const hasImage = !!active;
   els.bgThumb.hidden = !hasImage;
   els.bgEmpty.hidden = hasImage;
-  if (hasImage) {
-    els.bgThumb.src = bg.image;
+  if (active) {
+    els.bgThumb.src = active.image;
     els.bgPreview.classList.add("has-image");
   } else {
     els.bgThumb.removeAttribute("src");
     els.bgPreview.classList.remove("has-image");
   }
 
-  els.bgState.textContent = bg.enabled ? "已开启" : "未开启";
+  els.bgState.textContent = bg.enabled ? (hasImage ? "已开启" : "待添加壁纸") : "未开启";
   els.bgState.classList.toggle("off", !bg.enabled);
   const transparency = Math.round((1 - bg.opacity) * 100);
   els.bgOpacity.value = String(transparency);
@@ -153,26 +179,66 @@ const renderBackground = (): void => {
   els.bgEditorOpacity.value = String(Math.round(bg.editorOpacity * 100));
   els.bgEditorOpacityVal.textContent = `${Math.round(bg.editorOpacity * 100)}%`;
   els.bgFit.value = bg.fit;
-  els.bgFixed.checked = bg.fixed;
   els.removeBg.disabled = !hasImage;
-  const canMaterial = hasImage && !!config.materialSeed;
+  els.pickImage.disabled = bg.wallpapers.length >= MAX_WALLPAPERS;
+
+  const canMaterial = !!active?.seed;
   els.materialYou.disabled = !canMaterial;
   els.materialYou.checked = canMaterial && config.materialYou;
   els.materialYouHint.textContent = !hasImage
-    ? "先选择背景图，再从图片取色"
-    : !config.materialSeed
+    ? "先添加一张壁纸，再从图片取色"
+    : !active?.seed
       ? "正在从图片取色…"
       : config.materialYou
-        ? "已启用 · 从背景图取色，只影响弹窗和高级设置"
-        : "从背景图取色，只影响弹窗和高级设置";
+        ? "已启用 · 跟随当前壁纸取色，只影响弹窗和高级设置"
+        : "从当前壁纸取色，只影响弹窗和高级设置";
 
-  if (!hasImage) {
-    els.bgMeta.textContent = "未选择图片";
-  } else if (/^data:image\//i.test(bg.image)) {
-    els.bgMeta.textContent = `本地图片 · 约 ${formatBytes(estimateDataUrlBytes(bg.image))} · 已压缩`;
+  if (!active) {
+    els.bgMeta.textContent = "未选择壁纸";
+  } else if (/^data:image\//i.test(active.image)) {
+    els.bgMeta.textContent = `${active.name} · ${active.animated ? "GIF 动图" : "静态图"} · 约 ${formatBytes(estimateDataUrlBytes(active.image))}`;
   } else {
-    els.bgMeta.textContent = "外链图片 · 加载速度取决于源站";
+    els.bgMeta.textContent = `${active.name} · 外链图片`;
   }
+
+  renderWallpapers();
+};
+
+const renderWallpapers = (): void => {
+  const bg = config.background;
+  els.wallpaperList.innerHTML = "";
+
+  for (const wp of bg.wallpapers) {
+    const item = document.createElement("div");
+    item.className = "wallpaper-item" + (wp.id === bg.activeId ? " active" : "");
+    item.title = wp.name;
+    item.addEventListener("click", () => selectWallpaper(wp.id));
+
+    const img = document.createElement("img");
+    img.src = wp.image;
+    img.alt = wp.name;
+    item.appendChild(img);
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "del";
+    del.textContent = "×";
+    del.title = "删除这张壁纸";
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeWallpaper(wp.id);
+    });
+    item.appendChild(del);
+    els.wallpaperList.appendChild(item);
+  }
+
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "wallpaper-add";
+  add.disabled = bg.wallpapers.length >= MAX_WALLPAPERS;
+  add.innerHTML = "<b>＋</b><span>添加壁纸</span>";
+  add.addEventListener("click", () => els.bgFile.click());
+  els.wallpaperList.appendChild(add);
 };
 
 const renderColors = (): void => {
@@ -538,14 +604,205 @@ const compressImage = async (
   return { dataUrl, width, height, bytes };
 };
 
-const setBackground = (image: string, seed: string): void => {
+const newWallpaperId = (): string =>
+  `wp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const addWallpaper = (image: string, name: string, animated: boolean, seed: string): boolean => {
+  if (config.background.wallpapers.length >= MAX_WALLPAPERS) {
+    setStatus("最多 5 张壁纸，先删一张再添加", "err");
+    return false;
+  }
+  const total = config.background.wallpapers.reduce((n, w) => n + estimateDataUrlBytes(w.image), 0);
+  if (total + estimateDataUrlBytes(image) > 8.5 * 1024 * 1024) {
+    setStatus("壁纸总大小接近 8.5MB 上限，先删一张或换小图", "err");
+    return false;
+  }
+  const wp = { id: newWallpaperId(), name: name || `壁纸 ${config.background.wallpapers.length + 1}`, image, animated, seed };
+  config.background.wallpapers.push(wp);
+  config.background.activeId = wp.id;
   config.background.image = image;
   config.background.enabled = true;
   config.materialSeed = seed;
   saveNow();
   render();
   applyMaterialPreview();
+  return true;
 };
+
+const selectWallpaper = (id: string): void => {
+  const wp = config.background.wallpapers.find((w) => w.id === id);
+  if (!wp || wp.id === config.background.activeId) return;
+  config.background.activeId = wp.id;
+  config.background.image = wp.image;
+  config.materialSeed = wp.seed;
+  saveNow();
+  render();
+  applyMaterialPreview();
+  setStatus(`已切换到「${wp.name}」`, "ok");
+};
+
+const removeWallpaper = (id: string): void => {
+  const list = config.background.wallpapers;
+  const idx = list.findIndex((w) => w.id === id);
+  if (idx < 0) return;
+  list.splice(idx, 1);
+  if (!list.length) {
+    config.background.activeId = "";
+    config.background.image = "";
+    config.background.enabled = false;
+    config.materialSeed = "";
+    config.materialYou = false;
+  } else {
+    const next = list[Math.min(idx, list.length - 1)];
+    config.background.activeId = next.id;
+    config.background.image = next.image;
+    config.materialSeed = next.seed;
+  }
+  saveNow();
+  render();
+  applyMaterialPreview();
+  setStatus("壁纸已移除", "ok");
+};
+
+const readFileAsDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result || ""));
+    fr.onerror = () => reject(new Error("文件读取失败"));
+    fr.readAsDataURL(file);
+  });
+
+const applyCropView = (): void => {
+  if (!cropState) return;
+  const c = cropState;
+  const scale = c.baseScale * c.zoom;
+  const w = c.nw * scale;
+  const h = c.nh * scale;
+  const minX = c.stageW - w;
+  const minY = c.stageH - h;
+  c.x = Math.min(0, Math.max(minX, c.x));
+  c.y = Math.min(0, Math.max(minY, c.y));
+  els.cropImage.style.width = `${w}px`;
+  els.cropImage.style.height = `${h}px`;
+  els.cropImage.style.left = `${c.x}px`;
+  els.cropImage.style.top = `${c.y}px`;
+  els.cropZoom.value = String(Math.round(c.zoom * 100));
+  els.cropZoomVal.textContent = `${Math.round(c.zoom * 100)}%`;
+};
+
+const openCrop = async (dataUrl: string, name: string): Promise<void> => {
+  cropState = null;
+  cropDrag = null;
+  els.cropImage.src = dataUrl;
+  try {
+    await els.cropImage.decode();
+  } catch (e) {
+    setStatus("图片解码失败，换一张试试", "err");
+    return;
+  }
+  els.cropDialog.showModal();
+  const stage = els.cropStage.getBoundingClientRect();
+  const nw = els.cropImage.naturalWidth;
+  const nh = els.cropImage.naturalHeight;
+  if (!nw || !nh || !stage.width || !stage.height) {
+    els.cropDialog.close();
+    setStatus("无法读取图片尺寸", "err");
+    return;
+  }
+  const baseScale = Math.max(stage.width / nw, stage.height / nh);
+  cropState = {
+    dataUrl,
+    name,
+    nw,
+    nh,
+    baseScale,
+    zoom: 1,
+    x: (stage.width - nw * baseScale) / 2,
+    y: (stage.height - nh * baseScale) / 2,
+    stageW: stage.width,
+    stageH: stage.height,
+  };
+  applyCropView();
+};
+
+els.cropZoom.addEventListener("input", () => {
+  if (!cropState) return;
+  const c = cropState;
+  const oldScale = c.baseScale * c.zoom;
+  const cx = c.x + (c.nw * oldScale) / 2;
+  const cy = c.y + (c.nh * oldScale) / 2;
+  c.zoom = Math.max(1, Math.min(3, Number(els.cropZoom.value) / 100));
+  const newScale = c.baseScale * c.zoom;
+  c.x = cx - (c.nw * newScale) / 2;
+  c.y = cy - (c.nh * newScale) / 2;
+  applyCropView();
+});
+
+els.cropStage.addEventListener("pointerdown", (e) => {
+  if (!cropState) return;
+  cropDrag = { sx: e.clientX, sy: e.clientY, x: cropState.x, y: cropState.y };
+  els.cropStage.setPointerCapture?.(e.pointerId);
+});
+
+els.cropStage.addEventListener("pointermove", (e) => {
+  if (!cropState || !cropDrag) return;
+  cropState.x = cropDrag.x + (e.clientX - cropDrag.sx);
+  cropState.y = cropDrag.y + (e.clientY - cropDrag.sy);
+  applyCropView();
+});
+
+const endCropDrag = (e: PointerEvent): void => {
+  cropDrag = null;
+  try {
+    els.cropStage.releasePointerCapture?.(e.pointerId);
+  } catch (err) {}
+};
+els.cropStage.addEventListener("pointerup", endCropDrag);
+els.cropStage.addEventListener("pointercancel", endCropDrag);
+
+els.cropCancel.addEventListener("click", () => {
+  cropState = null;
+  els.cropDialog.close();
+});
+
+els.cropSave.addEventListener("click", () => {
+  if (!cropState) return;
+  const c = cropState;
+  const scale = c.baseScale * c.zoom;
+  const sx = -c.x / scale;
+  const sy = -c.y / scale;
+  const sw = c.stageW / scale;
+  const sh = c.stageH / scale;
+  const canvas = document.createElement("canvas");
+  canvas.width = 1920;
+  canvas.height = 1080;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    setStatus("无法创建裁剪画布", "err");
+    return;
+  }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(els.cropImage, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  const cropped = canvas.toDataURL("image/webp", 0.9);
+  if (!cropped.startsWith("data:image/")) {
+    setStatus("裁剪失败，换一张图片试试", "err");
+    return;
+  }
+  void (async () => {
+    const seed = (await seedFromImage(cropped)) || "#cba6f7";
+    if (addWallpaper(cropped, c.name, false, seed)) {
+      setStatus("壁纸已裁剪并添加", "ok");
+      els.cropDialog.close();
+      cropState = null;
+    }
+  })();
+});
+
+els.cropDialog.addEventListener("close", () => {
+  cropState = null;
+  cropDrag = null;
+});
 
 const load = (): void => {
   try {
@@ -594,13 +851,32 @@ els.bgFile.addEventListener("change", async () => {
     setStatus("请选择图片文件", "err");
     return;
   }
+  if (file.type === "image/gif") {
+    if (file.size > 4 * 1024 * 1024) {
+      setStatus("GIF 太大（超过 4MB），换一张小一点的动图", "err");
+      return;
+    }
+    els.pickImage.disabled = true;
+    setStatus("正在读取 GIF…");
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const seed = (await seedFromImage(dataUrl)) || "#cba6f7";
+      if (addWallpaper(dataUrl, file.name.replace(/\.gif$/i, ""), true, seed)) {
+        setStatus(`已添加 GIF 壁纸 · ${formatBytes(file.size)}`, "ok");
+      }
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "GIF 读取失败", "err");
+    } finally {
+      els.pickImage.disabled = false;
+    }
+    return;
+  }
+
   els.pickImage.disabled = true;
   setStatus("正在压缩图片…");
   try {
     const result = await compressImage(file);
-    const seed = (await seedFromImage(result.dataUrl)) || "#cba6f7";
-    setBackground(result.dataUrl, seed);
-    setStatus(`背景已更新 · ${result.width}×${result.height} · ${formatBytes(result.bytes)}`, "ok");
+    openCrop(result.dataUrl, file.name.replace(/\.[^.]+$/, ""));
   } catch (e) {
     setStatus(e instanceof Error ? e.message : "图片处理失败", "err");
   } finally {
@@ -609,18 +885,13 @@ els.bgFile.addEventListener("change", async () => {
 });
 
 els.removeBg.addEventListener("click", () => {
-  config.background.image = "";
-  config.background.enabled = false;
-  config.materialSeed = "";
-  config.materialYou = false;
-  saveNow();
-  render();
-  applyMaterialPreview();
-  setStatus("背景已移除", "ok");
+  const active = activeWallpaper(config);
+  if (active) removeWallpaper(active.id);
 });
 
 els.materialYou.addEventListener("change", () => {
-  config.materialYou = els.materialYou.checked && !!config.materialSeed;
+  const active = activeWallpaper(config);
+  config.materialYou = els.materialYou.checked && !!active?.seed;
   saveNow();
   applyMaterialPreview();
   renderBackground();
@@ -649,11 +920,6 @@ els.bgEditorOpacity.addEventListener("input", () => {
 
 els.bgFit.addEventListener("change", () => {
   config.background.fit = els.bgFit.value as BackgroundFit;
-  saveNow();
-});
-
-els.bgFixed.addEventListener("change", () => {
-  config.background.fixed = els.bgFixed.checked;
   saveNow();
 });
 

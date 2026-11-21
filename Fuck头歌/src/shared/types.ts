@@ -9,13 +9,26 @@ export type ThemeName = "catppuccin" | "github";
 
 export type BackgroundFit = "cover" | "stretch" | "contain";
 
+export interface Wallpaper {
+  id: string;
+  name: string;
+  /** data:image/webp 或 data:image/gif；GIF 保留动画 */
+  image: string;
+  animated: boolean;
+  seed: string;
+}
+
 export interface BackgroundConfig {
   enabled: boolean;
+  /** 当前壁纸的 image（兼容旧代码/旧配置；真实列表见 wallpapers） */
   image: string;
+  wallpapers: Wallpaper[];
+  activeId: string;
   opacity: number;
   panelOpacity: number;
   editorOpacity: number;
   fit: BackgroundFit;
+  /** 旧字段；2.7 起固定为 true，不再在 UI 暴露 */
   fixed: boolean;
 }
 

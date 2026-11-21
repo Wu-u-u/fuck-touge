@@ -1,14 +1,18 @@
 import type { EditorOptions } from "./editor-options";
-import type { BackgroundFit, CustomColorKey, CustomConfig } from "./types";
+import type { BackgroundFit, CustomColorKey, CustomConfig, Wallpaper } from "./types";
 
 /** chrome.storage.local 键；与页面 localStorage 的旧设置完全分开 */
 export const CUSTOM_CONFIG_KEY = "fuckTougeCustom";
+
+export const MAX_WALLPAPERS = 5;
 
 export const DEFAULT_CUSTOM_CONFIG: CustomConfig = {
   version: 1,
   background: {
     enabled: false,
     image: "",
+    wallpapers: [],
+    activeId: "",
     opacity: 0.4,
     panelOpacity: 0.8,
     editorOpacity: 1,
@@ -20,6 +24,11 @@ export const DEFAULT_CUSTOM_CONFIG: CustomConfig = {
   materialYou: false,
   materialSeed: "",
 };
+
+export function activeWallpaper(cfg: CustomConfig): Wallpaper | null {
+  const bg = cfg.background;
+  return bg.wallpapers.find((w) => w.id === bg.activeId) || bg.wallpapers[0] || null;
+}
 
 export interface ColorDef {
   key: CustomColorKey;
@@ -84,7 +93,8 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
     ? src.background
     : {}) as Record<string, unknown>;
 
-  const image = isImageSource(bgRaw.image) ? String(bgRaw.image).trim() : "";
+  const legacyImage = isImageSource(bgRaw.image) ? String(bgRaw.image).trim() : "";
+  const legacySeed = isHexColor(src.materialSeed) ? String(src.materialSeed).trim().toLowerCase() : "";
   // 开关可以独立于图片存在：先开启，再选择图片（旧配置也兼容）
   const enabled = bgRaw.enabled === true;
   const opacity =
@@ -102,7 +112,37 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
   const fit = FITS.includes(bgRaw.fit as BackgroundFit)
     ? (bgRaw.fit as BackgroundFit)
     : DEFAULT_CUSTOM_CONFIG.background.fit;
-  const fixed = typeof bgRaw.fixed === "boolean" ? bgRaw.fixed : true;
+  const fixed = true; // 2.7 起始终固定
+
+  const wallpapers: Wallpaper[] = [];
+  const listRaw = Array.isArray(bgRaw.wallpapers) ? bgRaw.wallpapers : [];
+  for (let i = 0; i < listRaw.length && wallpapers.length < MAX_WALLPAPERS; i++) {
+    const w = (listRaw[i] && typeof listRaw[i] === "object" ? listRaw[i] : {}) as Record<string, unknown>;
+    const image = isImageSource(w.image) ? String(w.image).trim() : "";
+    if (!image) continue;
+    const seed = isHexColor(w.seed) ? String(w.seed).trim().toLowerCase() : (legacySeed || "#cba6f7");
+    const id = typeof w.id === "string" && w.id.trim() ? w.id.trim().slice(0, 80) : `wp-${i + 1}`;
+    const name = typeof w.name === "string" && w.name.trim() ? w.name.trim().slice(0, 60) : `壁纸 ${wallpapers.length + 1}`;
+    const animated = w.animated === true || /^data:image\/gif/i.test(image);
+    wallpapers.push({ id, name, image, animated, seed });
+  }
+  // 旧版单图迁移成第一张壁纸
+  if (!wallpapers.length && legacyImage) {
+    wallpapers.push({
+      id: "legacy-1",
+      name: "壁纸 1",
+      image: legacyImage,
+      animated: /^data:image\/gif/i.test(legacyImage),
+      seed: legacySeed || "#cba6f7",
+    });
+  }
+  const activeId = wallpapers.some((w) => w.id === bgRaw.activeId)
+    ? String(bgRaw.activeId)
+    : (wallpapers[0]?.id || "");
+  const active = wallpapers.find((w) => w.id === activeId) || null;
+  const image = active?.image || "";
+  const materialSeed = active?.seed || legacySeed;
+  const materialYou = src.materialYou === true && !!materialSeed;
 
   const colorsRaw = (src.colors && typeof src.colors === "object"
     ? src.colors
@@ -113,12 +153,9 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
     if (isHexColor(value)) colors[def.key] = value.trim().toLowerCase();
   }
 
-  const materialSeed = isHexColor(src.materialSeed) ? String(src.materialSeed).trim().toLowerCase() : "";
-  const materialYou = src.materialYou === true && !!materialSeed;
-
   return {
     version: 1,
-    background: { enabled, image, opacity, panelOpacity, editorOpacity, fit, fixed },
+    background: { enabled, image, wallpapers, activeId, opacity, panelOpacity, editorOpacity, fit, fixed },
     colors,
     editor: copyEditorOptions(src.editor),
     materialYou,

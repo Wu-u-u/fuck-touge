@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { contrastText, isHexColor, isImageSource, normalizeCustomConfig } from "../../src/shared/custom";
+import { MAX_WALLPAPERS, activeWallpaper, contrastText, isHexColor, isImageSource, normalizeCustomConfig } from "../../src/shared/custom";
 import { createCustomVisual } from "../../src/features/custom-visual";
 import type { CustomConfig } from "../../src/shared/types";
 
@@ -48,7 +48,7 @@ function mount(cfg: CustomConfig, themeOn = true, answer = true): void {
 describe("custom config", () => {
   it("默认值", () => {
     const cfg = normalizeCustomConfig(null);
-    expect(cfg.background).toEqual({ enabled: false, image: "", opacity: 0.4, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", fixed: true });
+    expect(cfg.background).toEqual({ enabled: false, image: "", wallpapers: [], activeId: "", opacity: 0.4, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", fixed: true });
     expect(cfg.colors).toEqual({});
   });
 
@@ -69,7 +69,7 @@ describe("custom config", () => {
     const cfg = normalizeCustomConfig({
       background: { enabled: true, image: "javascript:alert(1)", opacity: 9, fit: "wat", fixed: "no" },
     });
-    expect(cfg.background).toEqual({ enabled: true, image: "", opacity: 1, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", fixed: true });
+    expect(cfg.background).toEqual({ enabled: true, image: "", wallpapers: [], activeId: "", opacity: 1, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", fixed: true });
   });
 
   it("开关可以先开启、后选图", () => {
@@ -99,8 +99,46 @@ describe("custom config", () => {
       background: { enabled: true, image: IMG, opacity: .35, panelOpacity: .75, editorOpacity: .9, fit: "contain", fixed: false },
       colors: { bg: "#ABC", text: "#aabbcc", border: "#11223344", bad: "#fff" },
     });
-    expect(cfg.background).toEqual({ enabled: true, image: IMG, opacity: .35, panelOpacity: .75, editorOpacity: .9, fit: "contain", fixed: false });
+    expect(cfg.background).toEqual({
+      enabled: true,
+      image: IMG,
+      wallpapers: [{ id: "legacy-1", name: "壁纸 1", image: IMG, animated: false, seed: "#cba6f7" }],
+      activeId: "legacy-1",
+      opacity: .35,
+      panelOpacity: .75,
+      editorOpacity: .9,
+      fit: "contain",
+      fixed: true,
+    });
     expect(cfg.colors).toEqual({ bg: "#abc", text: "#aabbcc", border: "#11223344" });
+  });
+
+  it("多壁纸：保留 activeId / seed，并最多 5 张", () => {
+    const list = Array.from({ length: 7 }, (_, i) => ({
+      id: `w${i + 1}`,
+      name: `图 ${i + 1}`,
+      image: IMG,
+      animated: i === 1,
+      seed: "#aabbcc",
+    }));
+    const cfg = normalizeCustomConfig({ background: { enabled: true, wallpapers: list, activeId: "w3" } });
+    expect(cfg.background.wallpapers).toHaveLength(MAX_WALLPAPERS);
+    expect(cfg.background.activeId).toBe("w3");
+    expect(cfg.background.image).toBe(IMG);
+    expect(activeWallpaper(cfg)?.name).toBe("图 3");
+  });
+
+  it("单图旧配置迁移成壁纸列表，Material 使用当前壁纸 seed", () => {
+    const cfg = normalizeCustomConfig({
+      background: { enabled: true, image: IMG },
+      materialYou: true,
+      materialSeed: "#123456",
+    });
+    expect(cfg.background.wallpapers).toHaveLength(1);
+    expect(cfg.background.activeId).toBe("legacy-1");
+    expect(cfg.background.wallpapers[0].seed).toBe("#123456");
+    expect(cfg.materialSeed).toBe("#123456");
+    expect(cfg.materialYou).toBe(true);
   });
 
   it("hex / 图片来源 / 对比色", () => {
@@ -138,9 +176,8 @@ describe("custom visual", () => {
   it("fit 三态 + 滚动层", () => {
     mount(makeConfig({ background: { enabled: true, image: IMG, opacity: .4, fit: "stretch", fixed: false } }));
     const layer = document.getElementById("ft-bg") as HTMLDivElement;
-    expect(layer.style.position).toBe("absolute");
+    expect(layer.style.position).toBe("fixed");
     expect(layer.style.backgroundSize).toBe("100% 100%");
-    expect(document.getElementById("ft-custom-visual")!.textContent).toContain("position: relative");
 
     controller!.apply();
     // 重新发配置，切成 contain

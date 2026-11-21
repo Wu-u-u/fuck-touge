@@ -1,4 +1,4 @@
-import { CUSTOM_CONFIG_KEY, normalizeCustomConfig } from "../shared/custom";
+import { CUSTOM_CONFIG_KEY, activeWallpaper, normalizeCustomConfig } from "../shared/custom";
 import {
   MAX_SCRIPT_LOGS,
   SCRIPT_LOGS_KEY,
@@ -18,14 +18,28 @@ const post = (config: unknown): void => {
   } catch (e) {}
 };
 
+// 页面只需要当前壁纸；不要把 5 张图全量 postMessage 过去
+const pageView = (cfg: ReturnType<typeof normalizeCustomConfig>) => {
+  const active = activeWallpaper(cfg);
+  return {
+    ...cfg,
+    materialSeed: active?.seed || cfg.materialSeed,
+    background: {
+      ...cfg.background,
+      image: active?.image || "",
+      wallpapers: active ? [{ ...active }] : [],
+    },
+  };
+};
+
 const push = (): void => {
   try {
     chrome.storage.local.get(CUSTOM_CONFIG_KEY, (result) => {
       if (chrome.runtime?.lastError) return;
-      post(normalizeCustomConfig(result?.[CUSTOM_CONFIG_KEY]));
+      post(pageView(normalizeCustomConfig(result?.[CUSTOM_CONFIG_KEY])));
     });
   } catch (e) {
-    post(normalizeCustomConfig(null));
+    post(pageView(normalizeCustomConfig(null)));
   }
 };
 
@@ -108,13 +122,31 @@ window.addEventListener("message", (e: MessageEvent): void => {
     return;
   }
 
-  if (data.source === MAIN_SOURCE && data.type === "config-request") push();
+  if (data.source === MAIN_SOURCE && data.type === "config-request") {
+    push();
+    return;
+  }
+
+  if (data.source === MAIN_SOURCE && data.type === "cycle-wallpaper") {
+    void (async () => {
+      const current = await storageGet(CUSTOM_CONFIG_KEY);
+      const cfg = normalizeCustomConfig(current[CUSTOM_CONFIG_KEY]);
+      const list = cfg.background.wallpapers;
+      if (!cfg.background.enabled || list.length < 2) return;
+      const idx = list.findIndex((w) => w.id === cfg.background.activeId);
+      const next = list[(idx + 1 + list.length) % list.length];
+      cfg.background.activeId = next.id;
+      cfg.background.image = next.image;
+      cfg.materialSeed = next.seed;
+      await storageSet({ [CUSTOM_CONFIG_KEY]: cfg });
+    })();
+  }
 });
 
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local" || !changes[CUSTOM_CONFIG_KEY]) return;
-    post(normalizeCustomConfig(changes[CUSTOM_CONFIG_KEY].newValue));
+    post(pageView(normalizeCustomConfig(changes[CUSTOM_CONFIG_KEY].newValue)));
   });
 } catch (e) {}
 

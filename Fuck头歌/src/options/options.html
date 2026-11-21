@@ -56,9 +56,12 @@
             <div class="preview-empty" id="bgEmpty">
               <span class="preview-icon">🖼️</span>
               <span>还没有背景图</span>
-              <small>支持 PNG / JPG / WebP</small>
+              <small>支持 PNG / JPG / WebP / GIF</small>
             </div>
           </div>
+
+          <div class="wallpaper-list" id="wallpaperList"></div>
+          <div class="wallpaper-hint">Ctrl + Alt + W 切换壁纸 · 最多 5 张</div>
 
           <div class="mat-you">
             <div class="mat-copy">
@@ -80,17 +83,13 @@
             </select>
           </label>
 
-          <label class="check">
-            <input id="bgFixed" type="checkbox" checked>
-            <span>背景固定（滚动时不动）</span>
-          </label>
         </div>
 
         <div class="bg-controls">
           <div class="actions">
-            <button class="btn primary" id="pickImage" type="button">选择图片</button>
-            <input id="bgFile" type="file" accept="image/*" hidden>
-            <button class="btn ghost" id="removeBg" type="button">移除背景</button>
+            <button class="btn primary" id="pickImage" type="button">添加壁纸</button>
+            <input id="bgFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+            <button class="btn ghost" id="removeBg" type="button">移除当前</button>
           </div>
 
           <label class="field">
@@ -234,6 +233,27 @@
     </footer>
   </main>
 </div>
+
+<dialog id="cropDialog" class="crop-dialog">
+  <div class="crop-head">
+    <strong>裁剪壁纸</strong>
+    <span>拖动图片 · 滑块缩放 · 16:9</span>
+  </div>
+  <div class="crop-stage" id="cropStage">
+    <img id="cropImage" alt="待裁剪的壁纸">
+    <div class="crop-grid" aria-hidden="true"></div>
+  </div>
+  <div class="crop-controls">
+    <span>缩放</span>
+    <input id="cropZoom" type="range" min="100" max="300" step="1" value="100">
+    <output id="cropZoomVal">100%</output>
+  </div>
+  <div class="crop-actions">
+    <button class="btn ghost" id="cropCancel" type="button">取消</button>
+    <button class="btn primary" id="cropSave" type="button">使用裁剪</button>
+  </div>
+</dialog>
+
 <script src="options.js"></script>
 </body>
 </html>

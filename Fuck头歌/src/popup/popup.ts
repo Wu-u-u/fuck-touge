@@ -1,4 +1,4 @@
-import { CUSTOM_CONFIG_KEY, normalizeCustomConfig } from "../shared/custom";
+import { CUSTOM_CONFIG_KEY, activeWallpaper, normalizeCustomConfig } from "../shared/custom";
 import { deleteEditorPath, setEditorPath } from "../shared/editor-options";
 import { applyMaterialPalette, clearMaterialPalette } from "../shared/material-theme";
 import {
@@ -98,8 +98,9 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   };
 
   const applyMaterial = (): void => {
-    if (customCfg.materialYou && customCfg.materialSeed) {
-      applyMaterialPalette(document.documentElement, customCfg.materialSeed);
+    const seed = activeWallpaper(customCfg)?.seed || customCfg.materialSeed;
+    if (customCfg.materialYou && seed) {
+      applyMaterialPalette(document.documentElement, seed);
     } else {
       clearMaterialPalette(document.documentElement);
     }

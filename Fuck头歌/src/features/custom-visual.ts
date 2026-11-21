@@ -1,9 +1,11 @@
-import { COLOR_DEFS, contrastText, isImageSource, normalizeCustomConfig } from "../shared/custom";
+import { COLOR_DEFS, activeWallpaper, contrastText, normalizeCustomConfig } from "../shared/custom";
+import { toast } from "../ui/toast";
 import type { CustomConfig } from "../shared/types";
 import { isAnswerPage } from "./theme/skin";
 
 const STYLE_ID = "ft-custom-visual";
 const BG_ID = "ft-bg";
+const BG_NEXT_ID = "ft-bg-next";
 const BRIDGE_SOURCE = "fuck-touge-bridge";
 const MAIN_SOURCE = "fuck-touge-main";
 
@@ -38,6 +40,9 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   const onTopFrame = deps.isTopFrame || defaultTopFrame;
   let config: CustomConfig = normalizeCustomConfig(null);
   let retryTimer = 0;
+  let currentId = "";
+  let currentLayer: HTMLDivElement | null = null;
+  let switchTimer = 0;
 
   const clearRetry = (): void => {
     if (retryTimer) {
@@ -72,35 +77,141 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     } catch (e) {}
   };
 
+  const clearSwitch = (): void => {
+    if (switchTimer) {
+      clearTimeout(switchTimer);
+      switchTimer = 0;
+    }
+  };
+
   const removeBg = (): void => {
+    clearSwitch();
+    currentId = "";
+    currentLayer = null;
     try {
       document.getElementById(BG_ID)?.remove();
+      document.getElementById(BG_NEXT_ID)?.remove();
     } catch (e) {}
   };
 
-  const ensureBg = (bg: CustomConfig["background"]): void => {
-    if (!document.body) {
-      scheduleRetry();
-      return;
-    }
-    let el = document.getElementById(BG_ID) as HTMLDivElement | null;
-    if (!el) {
-      el = document.createElement("div");
-      el.id = BG_ID;
-      el.setAttribute("aria-hidden", "true");
-      document.body.appendChild(el);
-    }
-    // JSON.stringify 给 url() 做转义，data URL / 外链里的引号不会破坏 CSS
-    el.style.backgroundImage = `url(${JSON.stringify(bg.image)})`;
+  const createLayer = (id: string): HTMLDivElement => {
+    const el = document.createElement("div");
+    el.id = id;
+    el.setAttribute("aria-hidden", "true");
+    return el;
+  };
+
+  const styleLayer = (el: HTMLDivElement, bg: CustomConfig["background"], image: string): void => {
+    el.style.backgroundImage = `url(${JSON.stringify(image)})`;
     el.style.backgroundSize =
       bg.fit === "stretch" ? "100% 100%" : bg.fit === "contain" ? "contain" : "cover";
     el.style.backgroundPosition = "center";
     el.style.backgroundRepeat = "no-repeat";
     el.style.opacity = String(bg.opacity);
-    el.style.position = bg.fixed ? "fixed" : "absolute";
+    el.style.position = "fixed";
     el.style.inset = "0";
     el.style.zIndex = "-1";
     el.style.pointerEvents = "none";
+    el.style.willChange = "transform, opacity";
+  };
+
+  const prefersReducedMotion = (): boolean => {
+    try {
+      return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const ensureBg = (cfg: CustomConfig): void => {
+    if (!document.body) {
+      scheduleRetry();
+      return;
+    }
+    const wp = activeWallpaper(cfg);
+    const bg = cfg.background;
+    if (!wp) {
+      removeBg();
+      return;
+    }
+
+    // 上一次切换还没结束：直接清掉两层，按一次新切换处理
+    if (switchTimer) {
+      clearSwitch();
+      document.getElementById(BG_ID)?.remove();
+      document.getElementById(BG_NEXT_ID)?.remove();
+      currentLayer = null;
+      currentId = "";
+    }
+
+    if (!currentLayer || !currentLayer.isConnected) {
+      const el = createLayer(BG_ID);
+      styleLayer(el, bg, wp.image);
+      document.body.appendChild(el);
+      currentLayer = el;
+      currentId = wp.id;
+      return;
+    }
+
+    if (currentId === wp.id) {
+      styleLayer(currentLayer, bg, wp.image);
+      return;
+    }
+
+    const old = currentLayer;
+    const oldId = currentId;
+    currentId = wp.id;
+    if (!old.animate || prefersReducedMotion()) {
+      const el = createLayer(BG_ID);
+      styleLayer(el, bg, wp.image);
+      document.body.appendChild(el);
+      old.remove();
+      currentLayer = el;
+      return;
+    }
+
+    const next = createLayer(BG_NEXT_ID);
+    styleLayer(next, bg, wp.image);
+    next.style.opacity = "0";
+    document.body.appendChild(next);
+    currentLayer = next;
+
+    try {
+      const duration = 420;
+      const easing = "cubic-bezier(.22,1,.36,1)";
+      const oldAnim = old.animate(
+        [
+          { transform: "translateX(0) scale(1)", opacity: bg.opacity },
+          { transform: "translateX(-10%) scale(.98)", opacity: 0 },
+        ],
+        { duration, easing, fill: "both" },
+      );
+      const nextAnim = next.animate(
+        [
+          { transform: "translateX(10%) scale(1.03)", opacity: 0 },
+          { transform: "translateX(0) scale(1)", opacity: bg.opacity },
+        ],
+        { duration, easing, fill: "both" },
+      );
+      switchTimer = window.setTimeout(() => {
+        switchTimer = 0;
+        old.remove();
+        nextAnim.cancel?.();
+        oldAnim.cancel?.();
+        next.removeAttribute("style");
+        styleLayer(next, bg, wp.image);
+        next.id = BG_ID;
+        currentLayer = next;
+      }, duration + 20);
+    } catch (e) {
+      old.remove();
+      next.removeAttribute("style");
+      styleLayer(next, bg, wp.image);
+      next.id = BG_ID;
+      currentLayer = next;
+    }
+
+    if (oldId) toast(`已切换壁纸 · ${wp.name} 😋`);
   };
 
   const buildCss = (cfg: CustomConfig, withBg: boolean): string => {
@@ -128,9 +239,6 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       const editorAlpha = `${Math.round(cfg.background.editorOpacity * 100)}%`;
       rules.push(`html[data-ft-skin][data-ft-bg] { --ft-panel-alpha: ${panelAlpha}; --ft-editor-alpha: ${editorAlpha}; }`);
       rules.push(`html[data-ft-skin][data-ft-bg] body { background: transparent !important; }`);
-      if (!cfg.background.fixed) {
-        rules.push(`html[data-ft-skin][data-ft-bg] body { position: relative; }`);
-      }
       rules.push(`html[data-ft-skin][data-ft-bg] :is(
   .left-panel, .task-header,
   [class*="task-header"], [class*="tab-nav"], [class*="tabs___"],
@@ -167,7 +275,8 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     }
 
     const active = deps.isThemeOn() && onAnswerPage() && onTopFrame();
-    const bgOn = active && config.background.enabled && isImageSource(config.background.image);
+    const activeWp = activeWallpaper(config);
+    const bgOn = active && config.background.enabled && !!activeWp;
     const hasColors = active && Object.keys(config.colors).length > 0;
 
     if (!active) {
@@ -189,7 +298,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     if (css) ensureStyle(css);
     else removeStyle();
 
-    if (bgOn) ensureBg(config.background);
+    if (bgOn) ensureBg(config);
     else {
       clearRetry();
       removeBg();
@@ -207,9 +316,26 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     } catch (e) {}
   };
 
+  const onKeyDown = (e: KeyboardEvent): void => {
+    if (!e.ctrlKey || !e.altKey || e.code !== "KeyW") return;
+    if (!deps.isThemeOn() || !onAnswerPage() || !onTopFrame()) return;
+    if (!config.background.enabled) return;
+    const wp = activeWallpaper(config);
+    if (!wp) {
+      toast("先添加一张壁纸 🤔");
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      window.postMessage({ source: MAIN_SOURCE, type: "cycle-wallpaper" }, "*");
+    } catch (err) {}
+  };
+
   return {
     install: (): void => {
       window.addEventListener("message", onMessage);
+      window.addEventListener("keydown", onKeyDown, true);
       try {
         window.postMessage({ source: MAIN_SOURCE, type: "config-request" }, "*");
       } catch (e) {}
@@ -222,6 +348,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     getConfig: () => config,
     dispose: (): void => {
       window.removeEventListener("message", onMessage);
+      window.removeEventListener("keydown", onKeyDown, true);
       clearRetry();
       removeStyle();
       removeBg();
