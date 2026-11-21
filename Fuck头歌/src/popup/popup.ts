@@ -1,5 +1,15 @@
 import { CUSTOM_CONFIG_KEY, normalizeCustomConfig } from "../shared/custom";
 import { deleteEditorPath, setEditorPath } from "../shared/editor-options";
+import {
+  MAX_SCRIPT_LOGS,
+  SCRIPT_LOGS_KEY,
+  SCRIPT_STATUS_KEY,
+  normalizeScriptLogs,
+  normalizeScriptStatus,
+  scriptStatusIsStale,
+  type ScriptLogEntry,
+  type ScriptStatus,
+} from "../shared/script-status";
 import type { PublicSettings } from "../shared/types";
 
 /** 最小 Chrome API 面（便于单测注入；真实弹窗用全局 chrome） */
@@ -19,8 +29,17 @@ export interface PopupChromeApi {
   };
   storage?: {
     local: {
-      get(keys: string, callback: (items: Record<string, unknown>) => void): void;
+      get(keys: string | string[], callback: (items: Record<string, unknown>) => void): void;
       set(items: Record<string, unknown>, callback?: () => void): void;
+      remove(keys: string | string[], callback?: () => void): void;
+    };
+    onChanged?: {
+      addListener(
+        callback: (
+          changes: Record<string, { newValue?: unknown; oldValue?: unknown }>,
+          area: string,
+        ) => void,
+      ): void;
     };
   };
 }
@@ -42,6 +61,15 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   const bgPick = doc.getElementById("bgPick") as HTMLElement | null;
   const ts = doc.getElementById("ts") as HTMLInputElement | null;
   const tw = doc.getElementById("tw") as HTMLInputElement | null;
+  const scriptCard = doc.getElementById("scriptCard") as HTMLElement | null;
+  const scriptTitle = doc.getElementById("scriptTitle") as HTMLElement | null;
+  const scriptSlot = doc.getElementById("scriptSlot") as HTMLElement | null;
+  const scriptMeta = doc.getElementById("scriptMeta") as HTMLElement | null;
+  const scriptMsg = doc.getElementById("scriptMsg") as HTMLElement | null;
+  const logCount = doc.getElementById("logCount") as HTMLElement | null;
+  const logList = doc.getElementById("logList") as HTMLElement | null;
+  const copyLogsBtn = doc.getElementById("copyLogs") as HTMLButtonElement | null;
+  const clearLogsBtn = doc.getElementById("clearLogs") as HTMLButtonElement | null;
 
   const setMsg = (text: string, warn = false): void => {
     msg.textContent = text;
@@ -102,6 +130,229 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
       writeCustom();
     });
     readCustom();
+  }
+
+  /* 答题脚本状态 / 日志：只展示当前槽位，不提供启动/停止控制 */
+  const scriptStorage = chromeApi.storage?.local;
+  let scriptStatus: ScriptStatus | null = null;
+  let scriptLogs: ScriptLogEntry[] = [];
+  let statusTimer = 0;
+
+  const pad2 = (n: number): string => String(n).padStart(2, "0");
+  const clockText = (at: number): string => {
+    const d = new Date(at);
+    if (!Number.isFinite(d.getTime())) return "--:--:--";
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  };
+  const fullTimeText = (at: number): string => {
+    const d = new Date(at);
+    if (!Number.isFinite(d.getTime())) return "--";
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${clockText(at)}`;
+  };
+  const agoText = (at: number): string => {
+    const sec = Math.max(0, Math.round((Date.now() - at) / 1000));
+    if (sec < 2) return "刚刚";
+    if (sec < 60) return `${sec} 秒前`;
+    return `${Math.floor(sec / 60)} 分钟前`;
+  };
+
+  const renderScriptStatus = (): void => {
+    if (!scriptCard) return;
+    const status = scriptStatus;
+    const now = Date.now();
+    let tone: "green" | "yellow" | "red" = "red";
+    let title = "刷题脚本未执行";
+    let slot = "槽位 --";
+    let meta = "启动答题脚本后这里会显示状态";
+    let message = "";
+
+    if (status) {
+      slot = `槽位 ${status.slot || "--"}`;
+      const context = [status.course, status.chapter, status.level].filter(Boolean).join(" · ");
+      const stale = scriptStatusIsStale(status, now);
+
+      if (stale) {
+        title = "刷题脚本未执行";
+        meta = `最后心跳 ${agoText(status.updatedAt)}`;
+        message = "超过 10.31 秒没有收到心跳";
+      } else if (status.state === "running") {
+        tone = "green";
+        title = "运行中";
+        meta = context || `最后心跳 ${agoText(status.updatedAt)}`;
+        message = status.message;
+      } else if (status.state === "waiting") {
+        tone = "yellow";
+        title = "等待中";
+        meta = context || `最后心跳 ${agoText(status.updatedAt)}`;
+        message = status.message;
+      } else if (status.state === "stopped") {
+        tone = "yellow";
+        title = "已停止";
+        meta = context || `最后更新 ${agoText(status.updatedAt)}`;
+        message = status.message;
+      } else {
+        tone = "red";
+        title = "脚本错误";
+        meta = context || `最后更新 ${agoText(status.updatedAt)}`;
+        message = status.message || "脚本报告错误";
+      }
+    }
+
+    scriptCard.dataset.state = tone;
+    if (scriptTitle) scriptTitle.textContent = title;
+    if (scriptSlot) scriptSlot.textContent = slot;
+    if (scriptMeta) {
+      scriptMeta.textContent = meta;
+      scriptMeta.title = meta;
+    }
+    if (scriptMsg) {
+      scriptMsg.textContent = message;
+      scriptMsg.title = message;
+    }
+  };
+
+  const renderScriptLogs = (): void => {
+    if (!logList) return;
+    scriptLogs = normalizeScriptLogs(scriptLogs);
+    logList.textContent = "";
+    if (logCount) {
+      logCount.textContent = String(scriptLogs.length);
+      logCount.title = `最多保留 ${MAX_SCRIPT_LOGS} 条`;
+    }
+    const empty = !scriptLogs.length;
+    if (copyLogsBtn) copyLogsBtn.disabled = empty;
+    if (clearLogsBtn) clearLogsBtn.disabled = empty;
+
+    if (empty) {
+      const row = doc.createElement("div");
+      row.className = "log-empty";
+      row.textContent = "暂无日志";
+      logList.appendChild(row);
+      return;
+    }
+
+    for (const log of scriptLogs) {
+      const row = doc.createElement("div");
+      row.className = "log-item";
+      row.title = [log.course, log.chapter, log.levelName].filter(Boolean).join(" · ");
+
+      const time = doc.createElement("span");
+      time.className = "log-time";
+      time.textContent = clockText(log.at);
+
+      const level = doc.createElement("span");
+      const lv = (log.level || "info").toLowerCase();
+      level.className = "log-level" + (lv.includes("err") ? " error" : lv.includes("warn") ? " warn" : "");
+      level.textContent = log.level || "info";
+
+      const body = doc.createElement("span");
+      body.className = "log-text";
+      body.textContent = log.levelName ? `${log.levelName} · ${log.text}` : log.text;
+
+      row.append(time, level, body);
+      logList.appendChild(row);
+    }
+    logList.scrollTop = logList.scrollHeight;
+  };
+
+  const copyLogText = (): string =>
+    scriptLogs
+      .map((log) => {
+        const ctx = [log.course, log.chapter, log.levelName].filter(Boolean).join(" / ");
+        return `[${fullTimeText(log.at)}] [${log.level}] [槽${log.slot || "--"}]${ctx ? ` ${ctx}` : ""} ${log.text}`;
+      })
+      .join("\n");
+
+  const flashCopy = (ok: boolean): void => {
+    if (!copyLogsBtn) return;
+    const old = "复制";
+    copyLogsBtn.textContent = ok ? "已复制" : "复制失败";
+    window.setTimeout(() => {
+      if (copyLogsBtn) copyLogsBtn.textContent = old;
+    }, 1200);
+  };
+
+  const fallbackCopy = (text: string): boolean => {
+    try {
+      const ta = doc.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      doc.body.appendChild(ta);
+      ta.select();
+      const ok = doc.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const readScriptState = (): void => {
+    if (!scriptStorage) {
+      renderScriptStatus();
+      renderScriptLogs();
+      return;
+    }
+    try {
+      scriptStorage.get([SCRIPT_STATUS_KEY, SCRIPT_LOGS_KEY], (items) => {
+        scriptStatus = normalizeScriptStatus(items?.[SCRIPT_STATUS_KEY]);
+        scriptLogs = normalizeScriptLogs(items?.[SCRIPT_LOGS_KEY]);
+        renderScriptStatus();
+        renderScriptLogs();
+      });
+    } catch (e) {
+      renderScriptStatus();
+      renderScriptLogs();
+    }
+  };
+
+  copyLogsBtn?.addEventListener("click", () => {
+    if (!scriptLogs.length) return;
+    const text = copyLogText();
+    try {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(
+          () => flashCopy(true),
+          () => flashCopy(fallbackCopy(text)),
+        );
+      } else {
+        flashCopy(fallbackCopy(text));
+      }
+    } catch (e) {
+      flashCopy(fallbackCopy(text));
+    }
+  });
+
+  clearLogsBtn?.addEventListener("click", () => {
+    scriptLogs = [];
+    renderScriptLogs();
+    try {
+      scriptStorage?.remove(SCRIPT_LOGS_KEY);
+    } catch (e) {}
+  });
+
+  if (scriptCard) {
+    readScriptState();
+    try {
+      chromeApi.storage?.onChanged?.addListener((changes, area) => {
+        if (area !== "local") return;
+        if (changes[SCRIPT_STATUS_KEY]) {
+          scriptStatus = normalizeScriptStatus(changes[SCRIPT_STATUS_KEY].newValue);
+          renderScriptStatus();
+        }
+        if (changes[SCRIPT_LOGS_KEY]) {
+          scriptLogs = normalizeScriptLogs(changes[SCRIPT_LOGS_KEY].newValue);
+          renderScriptLogs();
+        }
+      });
+    } catch (e) {}
+    statusTimer = window.setInterval(() => {
+      if (scriptStatus) renderScriptStatus();
+    }, 1000);
+    window.addEventListener("unload", () => {
+      if (statusTimer) clearInterval(statusTimer);
+    });
   }
 
   async function withPage<T>(

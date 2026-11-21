@@ -52,6 +52,75 @@
   }
   .bg-pick:hover { border-color: #585b70; background: rgba(137, 180, 250, .12); }
   .bg-pick:focus-visible { outline: 2px solid #cba6f7; outline-offset: 3px; }
+
+  .script-card {
+    margin-top: 8px;
+    padding: 9px 11px;
+    border: 1px solid #313244;
+    border-radius: 9px;
+    background: #1e1e2e;
+  }
+  .script-card[data-state="green"] {
+    border-color: rgba(166, 227, 161, .38);
+    background: rgba(166, 227, 161, .07);
+  }
+  .script-card[data-state="yellow"] {
+    border-color: rgba(249, 226, 175, .38);
+    background: rgba(249, 226, 175, .07);
+  }
+  .script-card[data-state="red"] {
+    border-color: rgba(243, 139, 168, .38);
+    background: rgba(243, 139, 168, .07);
+  }
+  .script-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .script-dot {
+    width: 8px; height: 8px; flex: none; border-radius: 50%;
+    background: #f38ba8; box-shadow: 0 0 8px rgba(243, 139, 168, .6);
+  }
+  .script-card[data-state="green"] .script-dot { background: #a6e3a1; box-shadow: 0 0 8px rgba(166, 227, 161, .6); }
+  .script-card[data-state="yellow"] .script-dot { background: #f9e2af; box-shadow: 0 0 8px rgba(249, 226, 175, .55); }
+  .script-card[data-state="red"] .script-dot { background: #f38ba8; box-shadow: 0 0 8px rgba(243, 139, 168, .6); }
+  .script-title { min-width: 0; font-size: 13px; font-weight: 650; }
+  .script-slot { margin-left: auto; flex: none; color: #7f849c; font-size: 10.5px; }
+  .script-meta {
+    margin-top: 3px; overflow: hidden; color: #a6adc8; font-size: 10.5px;
+    white-space: nowrap; text-overflow: ellipsis;
+  }
+  .script-msg { margin-top: 2px; color: #cdd6f4; font-size: 11px; overflow-wrap: anywhere; }
+  .script-msg:empty { display: none; }
+
+  .log-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 10px; color: #7f849c; font-size: 11px;
+  }
+  .log-actions { display: flex; gap: 4px; }
+  .log-actions button {
+    padding: 3px 7px; border: 1px solid #313244; border-radius: 6px;
+    background: #1e1e2e; color: #a6adc8; font: inherit; font-size: 10.5px; cursor: pointer;
+  }
+  .log-actions button:hover:not(:disabled) { border-color: #585b70; color: #cdd6f4; }
+  .log-actions button:focus-visible { outline: 2px solid #cba6f7; outline-offset: 2px; }
+  .log-actions button:disabled { opacity: .4; cursor: default; }
+
+  .log-list {
+    max-height: 132px; margin-top: 6px; padding: 5px 8px;
+    overflow-y: auto; border: 1px solid #313244; border-radius: 8px;
+    background: #11111b; font-size: 10.5px; line-height: 1.55;
+  }
+  .log-item {
+    display: flex; gap: 5px; padding: 2px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, .04);
+  }
+  .log-item:last-child { border-bottom: 0; }
+  .log-time { flex: none; color: #7f849c; font-variant-numeric: tabular-nums; }
+  .log-level {
+    flex: none; height: 16px; padding: 0 4px; border-radius: 4px;
+    background: #313244; color: #a6adc8; font-size: 9.5px; line-height: 16px;
+  }
+  .log-level.warn { background: rgba(249, 226, 175, .14); color: #f9e2af; }
+  .log-level.error { background: rgba(243, 139, 168, .14); color: #f38ba8; }
+  .log-text { min-width: 0; color: #cdd6f4; overflow-wrap: anywhere; }
+  .log-empty { padding: 8px 0; color: #7f849c; text-align: center; }
   [hidden] { display: none !important; }
   .section {
     margin: 14px 0 2px;
@@ -110,6 +179,29 @@
     </div>
     <a class="bg-pick" id="bgPick" href="options.html#background" target="_blank" rel="noreferrer" hidden>选择背景图 →</a>
     <div class="desc" id="msg" aria-live="polite">读取中… ⏳</div>
+
+    <div class="section">脚本状态</div>
+    <div class="script-card" id="scriptCard" data-state="red" aria-live="polite">
+      <div class="script-top">
+        <span class="script-dot"></span>
+        <span class="script-title" id="scriptTitle">刷题脚本未执行</span>
+        <span class="script-slot" id="scriptSlot">槽位 --</span>
+      </div>
+      <div class="script-meta" id="scriptMeta">等待脚本状态…</div>
+      <div class="script-msg" id="scriptMsg"></div>
+    </div>
+
+    <div class="log-head">
+      <span>日志 <span id="logCount">0</span>/25</span>
+      <div class="log-actions">
+        <button type="button" id="copyLogs" disabled>复制</button>
+        <button type="button" id="clearLogs" disabled>清空</button>
+      </div>
+    </div>
+    <div class="log-list" id="logList">
+      <div class="log-empty">暂无日志</div>
+    </div>
+
     <a class="advanced" href="options.html" target="_blank" rel="noreferrer">
       <span>高级设置</span><span class="arrow">背景 · 颜色 · 编辑器 →</span>
     </a>

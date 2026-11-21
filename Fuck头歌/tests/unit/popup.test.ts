@@ -109,6 +109,10 @@ describe("popup 初始化", () => {
           Object.assign(store, items);
           callback?.();
         },
+        remove: (keys, callback) => {
+          for (const key of Array.isArray(keys) ? keys : [keys]) delete store[key];
+          callback?.();
+        },
       },
     };
     initPopup(api);

@@ -1,4 +1,13 @@
 import { CUSTOM_CONFIG_KEY, normalizeCustomConfig } from "../shared/custom";
+import {
+  MAX_SCRIPT_LOGS,
+  SCRIPT_LOGS_KEY,
+  SCRIPT_SOURCE,
+  SCRIPT_STATUS_KEY,
+  normalizeScriptLog,
+  normalizeScriptLogs,
+  normalizeScriptStatus,
+} from "../shared/script-status";
 
 const BRIDGE_SOURCE = "fuck-touge-bridge";
 const MAIN_SOURCE = "fuck-touge-main";
@@ -20,12 +29,86 @@ const push = (): void => {
   }
 };
 
-// MAIN world 在 document_start 可能还没装好监听；它准备好后会主动发 config-request。
+const storageGet = (keys: string | string[]): Promise<Record<string, unknown>> =>
+  new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(keys, (result) => resolve(result || {}));
+    } catch (e) {
+      resolve({});
+    }
+  });
+
+const storageSet = (items: Record<string, unknown>): Promise<void> =>
+  new Promise((resolve) => {
+    try {
+      chrome.storage.local.set(items, () => resolve());
+    } catch (e) {
+      resolve();
+    }
+  });
+
+// 脚本可能连续发多条日志；串行化 read-modify-write，避免日志互相覆盖
+let scriptQueue: Promise<void> = Promise.resolve();
+const enqueueScript = (fn: () => Promise<void>): void => {
+  scriptQueue = scriptQueue.then(fn, fn);
+};
+
+const appendLogs = async (raws: unknown[]): Promise<void> => {
+  if (!raws.length) return;
+  const current = await storageGet(SCRIPT_LOGS_KEY);
+  const logs = normalizeScriptLogs(current[SCRIPT_LOGS_KEY]);
+  for (const raw of raws) {
+    const log = normalizeScriptLog(raw);
+    if (log) logs.push(log);
+  }
+  await storageSet({ [SCRIPT_LOGS_KEY]: logs.slice(-MAX_SCRIPT_LOGS) });
+};
+
+const handleScriptMessage = (data: Record<string, unknown>): void => {
+  const type = data.type;
+  const payload = data.payload;
+
+  if (type === "status") {
+    const status = normalizeScriptStatus(payload);
+    if (!status) return;
+    enqueueScript(async () => {
+      await storageSet({ [SCRIPT_STATUS_KEY]: status });
+      const p = payload as Record<string, unknown> | null;
+      const extras: unknown[] = [];
+      if (p && Array.isArray(p.logs)) extras.push(...p.logs);
+      if (p && p.log) extras.push(p.log);
+      if (extras.length) await appendLogs(extras);
+    });
+    return;
+  }
+
+  if (type === "log") {
+    const log = normalizeScriptLog(payload);
+    if (log) enqueueScript(() => appendLogs([log]));
+    return;
+  }
+
+  if (type === "logs") {
+    const raw = Array.isArray(payload)
+      ? payload
+      : payload && typeof payload === "object" && Array.isArray((payload as Record<string, unknown>).logs)
+        ? ((payload as Record<string, unknown>).logs as unknown[])
+        : [];
+    if (raw.length) enqueueScript(() => appendLogs(raw));
+  }
+};
+
 window.addEventListener("message", (e: MessageEvent): void => {
   if (e.source !== window) return;
-  const data = e.data as { source?: string; type?: string } | null;
-  if (!data || data.source !== MAIN_SOURCE || data.type !== "config-request") return;
-  push();
+  const data = e.data as Record<string, unknown> | null;
+  if (!data || typeof data !== "object") return;
+
+  if (data.source === SCRIPT_SOURCE) {
+    handleScriptMessage(data);
+    return;
+  }
+
+  if (data.source === MAIN_SOURCE && data.type === "config-request") push();
 });
 
 try {
