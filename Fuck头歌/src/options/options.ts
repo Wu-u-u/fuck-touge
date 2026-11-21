@@ -37,6 +37,7 @@ const els = {
   bgEditorOpacity: $<HTMLInputElement>("#bgEditorOpacity"),
   bgEditorOpacityVal: $<HTMLOutputElement>("#bgEditorOpacityVal"),
   bgFit: $<HTMLSelectElement>("#bgFit"),
+  bgTransition: $<HTMLSelectElement>("#bgTransition"),
   bgMeta: $<HTMLDivElement>("#bgMeta"),
   wallpaperList: $<HTMLDivElement>("#wallpaperList"),
   cropDialog: $<HTMLDialogElement>("#cropDialog"),
@@ -179,6 +180,7 @@ const renderBackground = (): void => {
   els.bgEditorOpacity.value = String(Math.round(bg.editorOpacity * 100));
   els.bgEditorOpacityVal.textContent = `${Math.round(bg.editorOpacity * 100)}%`;
   els.bgFit.value = bg.fit;
+  els.bgTransition.value = bg.transition;
   els.removeBg.disabled = !hasImage;
   els.pickImage.disabled = bg.wallpapers.length >= MAX_WALLPAPERS;
 
@@ -920,6 +922,11 @@ els.bgEditorOpacity.addEventListener("input", () => {
 
 els.bgFit.addEventListener("change", () => {
   config.background.fit = els.bgFit.value as BackgroundFit;
+  saveNow();
+});
+
+els.bgTransition.addEventListener("change", () => {
+  config.background.transition = els.bgTransition.value as import("../shared/types").BackgroundTransition;
   saveNow();
 });
 

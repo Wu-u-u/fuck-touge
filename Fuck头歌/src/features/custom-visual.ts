@@ -161,7 +161,8 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     const old = currentLayer;
     const oldId = currentId;
     currentId = wp.id;
-    if (!old.animate || prefersReducedMotion()) {
+    const effect = bg.transition;
+    if (!old.animate || prefersReducedMotion() || effect === "instant") {
       const el = createLayer(BG_ID);
       styleLayer(el, bg, wp.image);
       document.body.appendChild(el);
@@ -173,26 +174,49 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     const next = createLayer(BG_NEXT_ID);
     styleLayer(next, bg, wp.image);
     next.style.opacity = "0";
+    next.style.transformOrigin = "center";
     document.body.appendChild(next);
     currentLayer = next;
 
     try {
-      const duration = 420;
-      const easing = "cubic-bezier(.22,1,.36,1)";
-      const oldAnim = old.animate(
-        [
+      const duration = effect === "spring" ? 480 : 420;
+      const easing = effect === "spring" ? "cubic-bezier(.18,1.35,.4,1)" : "cubic-bezier(.22,1,.36,1)";
+      let oldKf: Keyframe[];
+      let newKf: Keyframe[];
+      if (effect === "fade") {
+        oldKf = [{ opacity: bg.opacity }, { opacity: 0 }];
+        newKf = [{ opacity: 0 }, { opacity: bg.opacity }];
+      } else if (effect === "zoom") {
+        oldKf = [
+          { transform: "scale(1)", opacity: bg.opacity },
+          { transform: "scale(1.06)", opacity: 0 },
+        ];
+        newKf = [
+          { transform: "scale(.94)", opacity: 0 },
+          { transform: "scale(1)", opacity: bg.opacity },
+        ];
+      } else if (effect === "spring") {
+        oldKf = [
+          { transform: "translateX(0)", opacity: bg.opacity },
+          { transform: "translateX(-12%)", opacity: 0 },
+        ];
+        newKf = [
+          { transform: "translateX(13%) scale(1.02)", opacity: 0 },
+          { transform: "translateX(-1.5%) scale(.995)", opacity: bg.opacity, offset: 0.72 },
+          { transform: "translateX(0) scale(1)", opacity: bg.opacity },
+        ];
+      } else {
+        oldKf = [
           { transform: "translateX(0) scale(1)", opacity: bg.opacity },
           { transform: "translateX(-10%) scale(.98)", opacity: 0 },
-        ],
-        { duration, easing, fill: "both" },
-      );
-      const nextAnim = next.animate(
-        [
+        ];
+        newKf = [
           { transform: "translateX(10%) scale(1.03)", opacity: 0 },
           { transform: "translateX(0) scale(1)", opacity: bg.opacity },
-        ],
-        { duration, easing, fill: "both" },
-      );
+        ];
+      }
+      const oldAnim = old.animate(oldKf, { duration, easing, fill: "both" });
+      const nextAnim = next.animate(newKf, { duration, easing, fill: "both" });
       switchTimer = window.setTimeout(() => {
         switchTimer = 0;
         old.remove();

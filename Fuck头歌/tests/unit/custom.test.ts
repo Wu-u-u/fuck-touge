@@ -48,7 +48,7 @@ function mount(cfg: CustomConfig, themeOn = true, answer = true): void {
 describe("custom config", () => {
   it("默认值", () => {
     const cfg = normalizeCustomConfig(null);
-    expect(cfg.background).toEqual({ enabled: false, image: "", wallpapers: [], activeId: "", opacity: 0.4, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", fixed: true });
+    expect(cfg.background).toEqual({ enabled: false, image: "", wallpapers: [], activeId: "", opacity: 0.4, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", transition: "slide", fixed: true });
     expect(cfg.colors).toEqual({});
   });
 
@@ -69,7 +69,7 @@ describe("custom config", () => {
     const cfg = normalizeCustomConfig({
       background: { enabled: true, image: "javascript:alert(1)", opacity: 9, fit: "wat", fixed: "no" },
     });
-    expect(cfg.background).toEqual({ enabled: true, image: "", wallpapers: [], activeId: "", opacity: 1, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", fixed: true });
+    expect(cfg.background).toEqual({ enabled: true, image: "", wallpapers: [], activeId: "", opacity: 1, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", transition: "slide", fixed: true });
   });
 
   it("开关可以先开启、后选图", () => {
@@ -108,6 +108,7 @@ describe("custom config", () => {
       panelOpacity: .75,
       editorOpacity: .9,
       fit: "contain",
+      transition: "slide",
       fixed: true,
     });
     expect(cfg.colors).toEqual({ bg: "#abc", text: "#aabbcc", border: "#11223344" });
@@ -126,6 +127,11 @@ describe("custom config", () => {
     expect(cfg.background.activeId).toBe("w3");
     expect(cfg.background.image).toBe(IMG);
     expect(activeWallpaper(cfg)?.name).toBe("图 3");
+  });
+
+  it("切换效果：保留合法值，非法值回 slide", () => {
+    expect(normalizeCustomConfig({ background: { transition: "zoom" } }).background.transition).toBe("zoom");
+    expect(normalizeCustomConfig({ background: { transition: "wat" } }).background.transition).toBe("slide");
   });
 
   it("单图旧配置迁移成壁纸列表，Material 使用当前壁纸 seed", () => {

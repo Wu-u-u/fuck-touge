@@ -8,6 +8,7 @@ import type { EditorOptions } from "./editor-options";
 export type ThemeName = "catppuccin" | "github";
 
 export type BackgroundFit = "cover" | "stretch" | "contain";
+export type BackgroundTransition = "slide" | "fade" | "zoom" | "spring" | "instant";
 
 export interface Wallpaper {
   id: string;
@@ -28,6 +29,7 @@ export interface BackgroundConfig {
   panelOpacity: number;
   editorOpacity: number;
   fit: BackgroundFit;
+  transition: BackgroundTransition;
   /** 旧字段；2.7 起固定为 true，不再在 UI 暴露 */
   fixed: boolean;
 }

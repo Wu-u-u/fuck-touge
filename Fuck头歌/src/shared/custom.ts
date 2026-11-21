@@ -1,5 +1,5 @@
 import type { EditorOptions } from "./editor-options";
-import type { BackgroundFit, CustomColorKey, CustomConfig, Wallpaper } from "./types";
+import type { BackgroundFit, BackgroundTransition, CustomColorKey, CustomConfig, Wallpaper } from "./types";
 
 /** chrome.storage.local 键；与页面 localStorage 的旧设置完全分开 */
 export const CUSTOM_CONFIG_KEY = "fuckTougeCustom";
@@ -17,6 +17,7 @@ export const DEFAULT_CUSTOM_CONFIG: CustomConfig = {
     panelOpacity: 0.8,
     editorOpacity: 1,
     fit: "cover",
+    transition: "slide",
     fixed: true,
   },
   colors: {},
@@ -52,6 +53,7 @@ export const COLOR_DEFS: ColorDef[] = [
 
 const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const FITS: BackgroundFit[] = ["cover", "stretch", "contain"];
+const TRANSITIONS: BackgroundTransition[] = ["slide", "fade", "zoom", "spring", "instant"];
 
 export const isHexColor = (value: unknown): value is string =>
   typeof value === "string" && HEX_RE.test(value.trim());
@@ -112,6 +114,9 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
   const fit = FITS.includes(bgRaw.fit as BackgroundFit)
     ? (bgRaw.fit as BackgroundFit)
     : DEFAULT_CUSTOM_CONFIG.background.fit;
+  const transition = TRANSITIONS.includes(bgRaw.transition as BackgroundTransition)
+    ? (bgRaw.transition as BackgroundTransition)
+    : DEFAULT_CUSTOM_CONFIG.background.transition;
   const fixed = true; // 2.7 起始终固定
 
   const wallpapers: Wallpaper[] = [];
@@ -155,7 +160,7 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
 
   return {
     version: 1,
-    background: { enabled, image, wallpapers, activeId, opacity, panelOpacity, editorOpacity, fit, fixed },
+    background: { enabled, image, wallpapers, activeId, opacity, panelOpacity, editorOpacity, fit, transition, fixed },
     colors,
     editor: copyEditorOptions(src.editor),
     materialYou,
