@@ -649,6 +649,38 @@ els.applyEditorJson.addEventListener("click", () => {
   }
 });
 
+const navLinks = [...document.querySelectorAll<HTMLAnchorElement>(".nav a[data-section]")];
+const navSections = navLinks
+  .map((a) => document.getElementById(a.dataset.section || ""))
+  .filter((s): s is HTMLElement => !!s);
+
+const setActiveNav = (id: string): void => {
+  navLinks.forEach((a) => {
+    const on = a.dataset.section === id;
+    a.classList.toggle("active", on);
+    if (on) a.setAttribute("aria-current", "true");
+    else a.removeAttribute("aria-current");
+  });
+};
+
+if (navSections.length) {
+  navLinks.forEach((a) => {
+    a.addEventListener("click", (e) => {
+      const id = a.dataset.section || "";
+      const target = document.getElementById(id);
+      if (!target) return;
+      e.preventDefault();
+      target.scrollIntoView({ behavior: "auto", block: "start" });
+      setActiveNav(id);
+      try {
+        history.replaceState(null, "", `#${id}`);
+      } catch (err) {}
+    });
+  });
+  const initial = location.hash.replace(/^#/, "");
+  setActiveNav(navSections.some((s) => s.id === initial) ? initial : navSections[0].id);
+}
+
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && saveTimer) saveNow();
 });

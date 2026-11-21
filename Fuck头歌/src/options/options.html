@@ -7,137 +7,160 @@
 <link rel="stylesheet" href="options.css">
 </head>
 <body>
-<main class="wrap">
-  <header class="hero">
-    <div>
-      <h1>Fuck 头歌 <span class="badge">高级设置</span></h1>
-      <p>背景和颜色只作用于答题页，并且需要开启主题。</p>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">F</div>
+      <div class="brand-text">
+        <strong>Fuck 头歌</strong>
+        <span>高级设置</span>
+      </div>
     </div>
-    <span class="version" id="version"></span>
-  </header>
 
-  <section class="card" id="background">
-    <div class="card-head">
+    <nav class="nav" aria-label="设置分类">
+      <a href="#background" data-section="background" class="active">背景</a>
+      <a href="#color-section" data-section="color-section">颜色</a>
+      <a href="#editor" data-section="editor">编辑器</a>
+      <a href="#about" data-section="about">关于</a>
+    </nav>
+
+    <div class="side-foot">
+      <span class="version" id="version"></span>
+      <span class="side-note">仅答题页生效</span>
+    </div>
+  </aside>
+
+  <main class="content">
+    <header class="page-head">
       <div>
-        <h2>自定义背景</h2>
-        <p>图片会自动压缩到 2560px WebP；GIF 会变成静态图。</p>
+        <h1>高级设置</h1>
+        <p>背景、颜色和编辑器选项。修改会自动保存。</p>
       </div>
-      <div class="head-actions">
-        <span class="pill off" id="bgState">未启用</span>
-        <label class="switch" aria-label="启用自定义背景">
-          <input id="bgEnabled" type="checkbox">
-          <span class="slider"></span>
-        </label>
-      </div>
-    </div>
+    </header>
 
-    <div class="bg-grid" id="bgDetails" hidden>
-      <div class="bg-left">
-        <div class="preview" id="bgPreview">
-          <img id="bgThumb" alt="背景预览" hidden>
-          <div class="preview-empty" id="bgEmpty">
-            <span class="preview-icon">🖼️</span>
-            <span>还没有背景图</span>
-            <small>支持 PNG / JPG / WebP</small>
+    <section class="card" id="background">
+      <div class="card-head">
+        <div>
+          <h2>自定义背景</h2>
+          <p>图片会自动压缩到 2560px WebP；GIF 会变成静态图。</p>
+        </div>
+        <div class="head-actions">
+          <span class="pill off" id="bgState">未启用</span>
+          <label class="switch" aria-label="启用自定义背景">
+            <input id="bgEnabled" type="checkbox">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="bg-grid" id="bgDetails" hidden>
+        <div class="bg-left">
+          <div class="preview" id="bgPreview">
+            <img id="bgThumb" alt="背景预览" hidden>
+            <div class="preview-empty" id="bgEmpty">
+              <span class="preview-icon">🖼️</span>
+              <span>还没有背景图</span>
+              <small>支持 PNG / JPG / WebP</small>
+            </div>
           </div>
+
+          <label class="field">
+            <span>填充方式</span>
+            <select id="bgFit">
+              <option value="cover">裁剪填充</option>
+              <option value="stretch">拉伸填充</option>
+              <option value="contain">完整显示</option>
+            </select>
+          </label>
+
+          <label class="check">
+            <input id="bgFixed" type="checkbox" checked>
+            <span>背景固定（滚动时不动）</span>
+          </label>
         </div>
 
-        <label class="field">
-          <span>填充方式</span>
-          <select id="bgFit">
-            <option value="cover">裁剪填充</option>
-            <option value="stretch">拉伸填充</option>
-            <option value="contain">完整显示</option>
-          </select>
-        </label>
+        <div class="bg-controls">
+          <div class="actions">
+            <button class="btn primary" id="pickImage" type="button">选择图片</button>
+            <input id="bgFile" type="file" accept="image/*" hidden>
+            <button class="btn ghost" id="removeBg" type="button">移除背景</button>
+          </div>
 
-        <label class="check">
-          <input id="bgFixed" type="checkbox" checked>
-          <span>背景固定（滚动时不动）</span>
-        </label>
-      </div>
+          <label class="field">
+            <span>图片透明度 <output id="bgOpacityVal">60%</output></span>
+            <input id="bgOpacity" type="range" min="0" max="100" step="1" value="60">
+          </label>
+          <div class="meta">数值越高越透明；0% = 原图完全不透明，100% = 完全隐藏。</div>
 
-      <div class="bg-controls">
-        <div class="actions">
-          <button class="btn primary" id="pickImage" type="button">选择图片</button>
-          <input id="bgFile" type="file" accept="image/*" hidden>
-          <button class="btn ghost" id="removeBg" type="button">移除背景</button>
+          <label class="field">
+            <span>面板不透明度 <output id="bgPanelOpacityVal">80%</output></span>
+            <input id="bgPanelOpacity" type="range" min="50" max="100" step="1" value="80">
+          </label>
+          <div class="meta">作用于左侧任务区、顶部标签、测试结果等；越低背景越明显。</div>
+
+          <label class="field">
+            <span>编辑器区域不透明度 <output id="bgEditorOpacityVal">100%</output></span>
+            <input id="bgEditorOpacity" type="range" min="50" max="100" step="1" value="100">
+          </label>
+          <div class="meta">只影响右侧写代码的区域（Monaco）；文字始终不透明。</div>
+
+          <div class="meta" id="bgMeta">未选择图片</div>
         </div>
-
-        <label class="field">
-          <span>图片透明度 <output id="bgOpacityVal">60%</output></span>
-          <input id="bgOpacity" type="range" min="0" max="100" step="1" value="60">
-        </label>
-        <div class="meta">数值越高越透明；0% = 原图完全不透明，100% = 完全隐藏。</div>
-
-        <label class="field">
-          <span>面板不透明度 <output id="bgPanelOpacityVal">80%</output></span>
-          <input id="bgPanelOpacity" type="range" min="50" max="100" step="1" value="80">
-        </label>
-        <div class="meta">作用于左侧任务区、顶部标签、测试结果等；越低背景越明显。</div>
-
-        <label class="field">
-          <span>编辑器区域不透明度 <output id="bgEditorOpacityVal">100%</output></span>
-          <input id="bgEditorOpacity" type="range" min="50" max="100" step="1" value="100">
-        </label>
-        <div class="meta">只影响右侧写代码的区域（Monaco）；文字始终不透明。</div>
-
-        <div class="meta" id="bgMeta">未选择图片</div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <section class="card">
-    <div class="card-head">
-      <div>
-        <h2>页面颜色</h2>
-        <p>未勾选“覆盖”的项跟随当前主题；勾选后只覆盖这一项。</p>
+    <section class="card" id="color-section">
+      <div class="card-head">
+        <div>
+          <h2>页面颜色</h2>
+          <p>未勾选“覆盖”的项跟随当前主题；勾选后只覆盖这一项。</p>
+        </div>
+        <button class="btn ghost" id="resetColors" type="button">恢复默认颜色</button>
       </div>
-      <button class="btn ghost" id="resetColors" type="button">恢复默认颜色</button>
-    </div>
-    <div class="colors" id="colors"></div>
-  </section>
+      <div class="colors" id="colors"></div>
+    </section>
 
-  <section class="card" id="editor">
-    <div class="card-head">
-      <div>
-        <h2>编辑器</h2>
-        <p>常用选项直接放这里；“更多”按分类展开。修改后对现有和后续打开的编辑器生效。</p>
+    <section class="card" id="editor">
+      <div class="card-head">
+        <div>
+          <h2>编辑器</h2>
+          <p>常用选项直接放这里；“更多”按分类展开。修改后对现有和后续打开的编辑器生效。</p>
+        </div>
+        <span class="pill off" id="editorCount">0 项覆盖</span>
       </div>
-      <span class="pill off" id="editorCount">0 项覆盖</span>
-    </div>
 
-    <div class="editor-direct" id="editorDirect"></div>
+      <div class="editor-direct" id="editorDirect"></div>
 
-    <details class="more" id="moreEditor">
-      <summary>更多编辑器选项 <span id="moreHint">按分类展开</span></summary>
-      <div id="editorGroups"></div>
+      <details class="more" id="moreEditor">
+        <summary>更多编辑器选项 <span id="moreHint">按分类展开</span></summary>
+        <div id="editorGroups"></div>
 
-      <details class="editor-group">
-        <summary>高级 JSON</summary>
-        <textarea id="editorJson" spellcheck="false" placeholder='{ "fontSize": 15, "lineHeight": 24 }'></textarea>
-        <div class="editor-json-actions">
-          <button class="btn small" id="applyEditorJson" type="button">应用 JSON</button>
-          <span id="editorJsonMsg" class="meta"></span>
+        <details class="editor-group">
+          <summary>高级 JSON</summary>
+          <textarea id="editorJson" spellcheck="false" placeholder='{ "fontSize": 15, "lineHeight": 24 }'></textarea>
+          <div class="editor-json-actions">
+            <button class="btn small" id="applyEditorJson" type="button">应用 JSON</button>
+            <span id="editorJsonMsg" class="meta"></span>
+          </div>
+        </details>
+
+        <div class="editor-actions">
+          <button class="btn ghost" id="resetEditor" type="button">恢复默认编辑器选项</button>
         </div>
       </details>
+    </section>
 
-      <div class="editor-actions">
-        <button class="btn ghost" id="resetEditor" type="button">恢复默认编辑器选项</button>
-      </div>
-    </details>
-  </section>
+    <section class="card note" id="about">
+      <strong>生效范围</strong>
+      <p>背景和颜色仅作用于 <code>/tasks/...</code> 答题页，且主题开启时生效；主页、课堂、作业详情保持平台原样。</p>
+    </section>
 
-  <section class="card note">
-    <strong>生效范围</strong>
-    <p>背景和颜色仅作用于 <code>/tasks/...</code> 答题页，且主题开启时生效；主页、课堂、作业详情保持平台原样。</p>
-  </section>
-
-  <footer class="statusbar">
-    <span id="status" role="status" aria-live="polite">读取中…</span>
-    <span class="status-hint">修改会自动保存</span>
-  </footer>
-</main>
+    <footer class="statusbar">
+      <span id="status" role="status" aria-live="polite">读取中…</span>
+      <span class="status-hint">修改会自动保存</span>
+    </footer>
+  </main>
+</div>
 <script src="options.js"></script>
 </body>
 </html>
