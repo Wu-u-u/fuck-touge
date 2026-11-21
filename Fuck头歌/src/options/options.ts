@@ -108,6 +108,51 @@ const formatBytes = (bytes: number): string => {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 };
 
+const mediaCache = new Map<string, string>();
+const mediaMissing = new Set<string>();
+
+const mediaFor = (wp: { image: string; mediaKey?: string }): string =>
+  (wp.mediaKey ? mediaCache.get(wp.mediaKey) : "") || wp.image || "";
+
+const loadMediaFor = async (wp: { image: string; mediaKey?: string }): Promise<string> => {
+  const cached = mediaFor(wp);
+  if (cached) return cached;
+  if (!wp.mediaKey) return "";
+  const r = await new Promise<Record<string, unknown>>((resolve) => {
+    try { chrome.storage.local.get(wp.mediaKey!, (x) => resolve(x || {})); }
+    catch (e) { resolve({}); }
+  });
+  const data = typeof r[wp.mediaKey] === "string" ? String(r[wp.mediaKey]) : "";
+  if (data) mediaCache.set(wp.mediaKey, data);
+  return data;
+};
+
+const hydrateMedia = async (): Promise<void> => {
+  let changed = false;
+  for (const wp of config.background.wallpapers) {
+    if (wp.image && !wp.mediaKey) {
+      const key = `fuckTougeMedia:${wp.id}`;
+      await new Promise<void>((resolve) => {
+        try { chrome.storage.local.set({ [key]: wp.image }, () => resolve()); }
+        catch (e) { resolve(); }
+      });
+      mediaCache.set(key, wp.image);
+      wp.mediaKey = key;
+      wp.image = "";
+      changed = true;
+    } else if (wp.mediaKey && !mediaCache.has(wp.mediaKey)) {
+      const data = await loadMediaFor(wp);
+      if (data) changed = true;
+    }
+  }
+  if (changed) {
+    lastSaved = JSON.stringify(config);
+    saveNow();
+    render();
+    applyMaterialPreview();
+  }
+};
+
 const estimateDataUrlBytes = (dataUrl: string): number => {
   const comma = dataUrl.indexOf(",");
   if (comma < 0) return 0;
@@ -164,18 +209,32 @@ const applyMaterialPreview = (): void => {
 const renderBackground = (): void => {
   const bg = config.background;
   const active = activeWallpaper(config);
-  const hasImage = !!active;
-  els.bgThumb.hidden = !hasImage;
-  els.bgEmpty.hidden = hasImage;
-  if (active) {
-    els.bgThumb.src = active.image;
+  const media = active ? mediaFor(active) : "";
+  const isVideo = active?.kind === "video";
+  if (active && !media && active.mediaKey && !mediaMissing.has(active.mediaKey)) {
+    void loadMediaFor(active).then((loaded) => {
+      if (!loaded) mediaMissing.add(active.mediaKey);
+      if (activeWallpaper(config)?.id === active.id) renderBackground();
+    });
+  }
+  els.bgThumb.hidden = !media || isVideo;
+  els.bgThumbVideo.hidden = !media || !isVideo;
+  els.bgEmpty.hidden = !!media;
+  if (media) {
+    if (isVideo) {
+      els.bgThumbVideo.src = media;
+      els.bgThumbVideo.play?.().catch(() => {});
+    } else {
+      els.bgThumb.src = media;
+    }
     els.bgPreview.classList.add("has-image");
   } else {
     els.bgThumb.removeAttribute("src");
+    els.bgThumbVideo.removeAttribute("src");
     els.bgPreview.classList.remove("has-image");
   }
 
-  els.bgState.textContent = bg.enabled ? (hasImage ? "已开启" : "待添加壁纸") : "未开启";
+  els.bgState.textContent = bg.enabled ? (active ? "已开启" : "待添加壁纸") : "未开启";
   els.bgState.classList.toggle("off", !bg.enabled);
   const transparency = Math.round((1 - bg.opacity) * 100);
   els.bgOpacity.value = String(transparency);
@@ -185,15 +244,15 @@ const renderBackground = (): void => {
   els.bgEditorOpacity.value = String(Math.round(bg.editorOpacity * 100));
   els.bgEditorOpacityVal.textContent = `${Math.round(bg.editorOpacity * 100)}%`;
   els.bgFit.value = bg.fit;
-  els.removeBg.disabled = !hasImage;
+  els.removeBg.disabled = !active;
   els.pickImage.disabled = bg.wallpapers.length >= MAX_WALLPAPERS;
 
   const canMaterial = !!active?.seed;
   els.materialYou.disabled = !canMaterial;
   els.materialYou.checked = canMaterial && config.materialYou;
-  els.materialYouHint.textContent = !hasImage
+  els.materialYouHint.textContent = !active
     ? "先添加一张壁纸，再从图片取色"
-    : !active?.seed
+    : !active.seed
       ? "正在从图片取色…"
       : config.materialYou
         ? "已启用 · 跟随当前壁纸取色，只影响弹窗和高级设置"
@@ -201,11 +260,11 @@ const renderBackground = (): void => {
 
   if (!active) {
     els.bgMeta.textContent = "未选择壁纸";
-  } else if (/^data:(?:image|video)\//i.test(active.image)) {
+  } else if (media) {
     const label = active.kind === "video" ? "视频" : active.kind === "gif" ? "GIF 动图" : "静态图";
-    els.bgMeta.textContent = `${active.name} · ${label} · 约 ${formatBytes(estimateDataUrlBytes(active.image))}`;
+    els.bgMeta.textContent = `${active.name} · ${label} · 约 ${formatBytes(estimateDataUrlBytes(media))}`;
   } else {
-    els.bgMeta.textContent = `${active.name} · 媒体`;
+    els.bgMeta.textContent = `${active.name} · 媒体加载中…`;
   }
 
   renderWallpapers();
@@ -221,9 +280,16 @@ const renderWallpapers = (): void => {
     item.title = wp.name;
     item.addEventListener("click", () => selectWallpaper(wp.id));
 
+    const media = mediaFor(wp);
+    if (!media && wp.mediaKey && !mediaMissing.has(wp.mediaKey)) {
+      void loadMediaFor(wp).then((loaded) => {
+        if (!loaded) mediaMissing.add(wp.mediaKey);
+        renderWallpapers();
+      });
+    }
     if (wp.kind === "video") {
       const video = document.createElement("video");
-      video.src = wp.image;
+      if (media) video.src = media;
       video.muted = true;
       video.loop = true;
       video.playsInline = true;
@@ -233,7 +299,7 @@ const renderWallpapers = (): void => {
       item.appendChild(video);
     } else {
       const img = document.createElement("img");
-      img.src = wp.image;
+      if (media) img.src = media;
       img.alt = wp.name;
       item.appendChild(img);
     }
@@ -245,7 +311,9 @@ const renderWallpapers = (): void => {
     recrop.title = "重新裁剪";
     recrop.addEventListener("click", (e) => {
       e.stopPropagation();
-      void openCrop(wp.image, wp.name, wp.kind, wp.width, wp.height, wp.id);
+      void loadMediaFor(wp).then((media) => {
+        if (media) void openCrop(media, wp.name, wp.kind, wp.width, wp.height, wp.id);
+      });
     });
     item.appendChild(recrop);
 
@@ -637,7 +705,7 @@ const compressImage = async (
 const newWallpaperId = (): string =>
   `wp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-const addWallpaper = (
+const addWallpaper = async (
   image: string,
   name: string,
   kind: WallpaperKind,
@@ -645,15 +713,23 @@ const addWallpaper = (
   crop: WallpaperCrop,
   width: number,
   height: number,
-): boolean => {
+): Promise<boolean> => {
   if (config.background.wallpapers.length >= MAX_WALLPAPERS) {
     setStatus("最多 5 张壁纸，先删一张再添加", "err");
     return false;
   }
+  const id = newWallpaperId();
+  const mediaKey = `fuckTougeMedia:${id}`;
+  await new Promise<void>((resolve) => {
+    try { chrome.storage.local.set({ [mediaKey]: image }, () => resolve()); }
+    catch (e) { resolve(); }
+  });
+  mediaCache.set(mediaKey, image);
   const wp = {
-    id: newWallpaperId(),
+    id,
     name: name || `壁纸 ${config.background.wallpapers.length + 1}`,
-    image,
+    image: "",
+    mediaKey,
     kind,
     animated: kind !== "image",
     seed,
@@ -663,7 +739,7 @@ const addWallpaper = (
   };
   config.background.wallpapers.push(wp);
   config.background.activeId = wp.id;
-  config.background.image = image;
+  config.background.image = "";
   config.background.enabled = true;
   config.materialSeed = seed;
   saveNow();
@@ -713,7 +789,7 @@ const selectWallpaper = (id: string): void => {
   const wp = config.background.wallpapers.find((w) => w.id === id);
   if (!wp || wp.id === config.background.activeId) return;
   config.background.activeId = wp.id;
-  config.background.image = wp.image;
+  config.background.image = "";
   config.materialSeed = wp.seed;
   saveNow();
   render();
@@ -725,7 +801,12 @@ const removeWallpaper = (id: string): void => {
   const list = config.background.wallpapers;
   const idx = list.findIndex((w) => w.id === id);
   if (idx < 0) return;
+  const removed = list[idx];
   list.splice(idx, 1);
+  if (removed.mediaKey) {
+    try { chrome.storage.local.remove(removed.mediaKey); } catch (e) {}
+    mediaCache.delete(removed.mediaKey);
+  }
   if (!list.length) {
     config.background.activeId = "";
     config.background.image = "";
@@ -735,7 +816,7 @@ const removeWallpaper = (id: string): void => {
   } else {
     const next = list[Math.min(idx, list.length - 1)];
     config.background.activeId = next.id;
-    config.background.image = next.image;
+    config.background.image = "";
     config.materialSeed = next.seed;
   }
   saveNow();
@@ -887,7 +968,7 @@ els.cropSave.addEventListener("click", () => {
       cropState = null;
       return;
     }
-    if (addWallpaper(c.dataUrl, c.name, c.kind, seed, crop, c.nw, c.nh)) {
+    if (await addWallpaper(c.dataUrl, c.name, c.kind, seed, crop, c.nw, c.nh)) {
       setStatus("壁纸已添加 · 原图保留，裁剪只记录区域", "ok");
       els.cropDialog.close();
       cropState = null;
@@ -914,6 +995,7 @@ const load = (): void => {
       }
       render();
       applyMaterialPreview();
+      void hydrateMedia();
     });
   } catch (e) {
     config = normalizeCustomConfig(null);
@@ -934,6 +1016,7 @@ try {
     config = next;
     render();
     applyMaterialPreview();
+    void hydrateMedia();
     setStatus("已同步弹窗开关", "ok");
   });
 } catch (e) {}

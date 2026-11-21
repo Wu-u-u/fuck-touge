@@ -22,8 +22,10 @@ export interface WallpaperCrop {
 export interface Wallpaper {
   id: string;
   name: string;
-  /** 原始 data URL（图片/GIF/视频都保留原图，裁剪只是元数据） */
+  /** 兼容旧配置：原始 data URL；新配置通常为空，媒体在独立 storage key */
   image: string;
+  /** 独立媒体键：fuckTougeMedia:<id>；配置本身保持轻量 */
+  mediaKey: string;
   kind: WallpaperKind;
   animated: boolean;
   seed: string;

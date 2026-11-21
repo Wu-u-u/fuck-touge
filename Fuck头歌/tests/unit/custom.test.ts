@@ -104,7 +104,7 @@ describe("custom config", () => {
       image: IMG,
       wallpapers: [{
         id: "legacy-1", name: "壁纸 1", image: IMG, kind: "image", animated: false,
-        seed: "#cba6f7", crop: { x: 0, y: 0, w: 1, h: 1 }, width: 0, height: 0,
+        seed: "#cba6f7", mediaKey: "", crop: { x: 0, y: 0, w: 1, h: 1 }, width: 0, height: 0,
       }],
       activeId: "legacy-1",
       opacity: .35,

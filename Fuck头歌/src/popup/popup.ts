@@ -85,7 +85,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     if (tb) tb.checked = customCfg.background.enabled;
     if (bgPick) {
       bgPick.hidden = !customCfg.background.enabled;
-      bgPick.textContent = customCfg.background.image ? "更换背景图 →" : "选择背景图 →";
+      bgPick.textContent = customCfg.background.wallpapers.length ? "更换背景图 →" : "选择背景图 →";
     }
     if (ts) ts.checked = customCfg.editor.smoothScrolling === true;
     if (tw) tw.checked = customCfg.editor.mouseWheelZoom === true;

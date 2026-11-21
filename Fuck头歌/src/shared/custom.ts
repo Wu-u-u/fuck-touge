@@ -71,6 +71,11 @@ export const isMediaSource = (value: unknown): value is string => {
   return /^data:(?:image|video)\/[a-z0-9.+-]+(?:[;,])/i.test(value.trim());
 };
 
+export const isMediaKey = (value: unknown): value is string =>
+  typeof value === "string" && /^fuckTougeMedia:[A-Za-z0-9_-]{1,100}$/.test(value);
+
+export const mediaStorageKey = (id: string): string => `fuckTougeMedia:${id}`;
+
 export const wallpaperKind = (src: string): WallpaperKind =>
   /^data:video\//i.test(src) ? "video" : /^data:image\/gif/i.test(src) ? "gif" : "image";
 
@@ -146,14 +151,15 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
   for (let i = 0; i < listRaw.length && wallpapers.length < MAX_WALLPAPERS; i++) {
     const w = (listRaw[i] && typeof listRaw[i] === "object" ? listRaw[i] : {}) as Record<string, unknown>;
     const image = isMediaSource(w.image) ? String(w.image).trim() : "";
-    if (!image) continue;
+    const mediaKey = isMediaKey(w.mediaKey) ? w.mediaKey : "";
+    if (!image && !mediaKey) continue;
     const seed = isHexColor(w.seed) ? String(w.seed).trim().toLowerCase() : (legacySeed || "#cba6f7");
     const id = typeof w.id === "string" && w.id.trim() ? w.id.trim().slice(0, 80) : `wp-${i + 1}`;
     const name = typeof w.name === "string" && w.name.trim() ? w.name.trim().slice(0, 60) : `壁纸 ${wallpapers.length + 1}`;
-    const kind = w.kind === "video" || w.kind === "gif" || w.kind === "image" ? w.kind : wallpaperKind(image);
+    const kind = w.kind === "video" || w.kind === "gif" || w.kind === "image" ? w.kind : wallpaperKind(image || "");
     const width = typeof w.width === "number" && w.width > 0 ? w.width : 0;
     const height = typeof w.height === "number" && w.height > 0 ? w.height : 0;
-    wallpapers.push({ id, name, image, kind, animated: kind !== "image", seed, crop: normalizeCrop(w.crop), width, height });
+    wallpapers.push({ id, name, image, mediaKey, kind, animated: kind !== "image", seed, crop: normalizeCrop(w.crop), width, height });
   }
   // 旧版单图迁移成第一张壁纸
   if (!wallpapers.length && legacyImage) {
@@ -161,6 +167,7 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
       id: "legacy-1",
       name: "壁纸 1",
       image: legacyImage,
+      mediaKey: "",
       kind: wallpaperKind(legacyImage),
       animated: /^data:image\/gif/i.test(legacyImage),
       seed: legacySeed || "#cba6f7",

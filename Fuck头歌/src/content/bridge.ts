@@ -32,11 +32,20 @@ const pageView = (cfg: ReturnType<typeof normalizeCustomConfig>) => {
   };
 };
 
+const resolveActive = async (cfg: ReturnType<typeof normalizeCustomConfig>) => {
+  const active = activeWallpaper(cfg);
+  if (active && !active.image && active.mediaKey) {
+    const data = await storageGet(active.mediaKey);
+    active.image = typeof data[active.mediaKey] === "string" ? String(data[active.mediaKey]) : "";
+  }
+  return pageView(cfg);
+};
+
 const push = (): void => {
   try {
-    chrome.storage.local.get(CUSTOM_CONFIG_KEY, (result) => {
+    chrome.storage.local.get(CUSTOM_CONFIG_KEY, async (result) => {
       if (chrome.runtime?.lastError) return;
-      post(pageView(normalizeCustomConfig(result?.[CUSTOM_CONFIG_KEY])));
+      post(await resolveActive(normalizeCustomConfig(result?.[CUSTOM_CONFIG_KEY])));
     });
   } catch (e) {
     post(pageView(normalizeCustomConfig(null)));
@@ -136,7 +145,7 @@ window.addEventListener("message", (e: MessageEvent): void => {
       const idx = list.findIndex((w) => w.id === cfg.background.activeId);
       const next = list[(idx + 1 + list.length) % list.length];
       cfg.background.activeId = next.id;
-      cfg.background.image = next.image;
+      cfg.background.image = "";
       cfg.materialSeed = next.seed;
       await storageSet({ [CUSTOM_CONFIG_KEY]: cfg });
     })();
