@@ -17,29 +17,26 @@
     --red: #f38ba8;
   }
   * { box-sizing: border-box; }
-  ::-webkit-scrollbar { width: 8px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--border) 80%, transparent); border-radius: 4px; }
-  html, body { background: transparent !important; }
   body {
     margin: 0;
     width: 340px;
-    padding: 0;
+    padding: 9px;
     font: 13px/1.6 system-ui, "Noto Sans CJK SC", sans-serif;
     color: var(--text);
+    background:
+      radial-gradient(420px 260px at 12% -10%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
+      radial-gradient(380px 260px at 100% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 65%),
+      var(--bg);
   }
   .box {
     padding: 16px 18px 14px;
     border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-    border-radius: 20px;
-    background:
-      radial-gradient(420px 260px at 12% -10%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
-      radial-gradient(380px 260px at 100% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 65%),
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--panel) 90%, transparent),
-        color-mix(in srgb, var(--panel2) 78%, transparent)
-      );
+    border-radius: 18px;
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel) 84%, transparent),
+      color-mix(in srgb, var(--panel2) 68%, transparent)
+    );
     box-shadow:
       0 18px 48px rgba(0, 0, 0, .34),
       inset 0 1px 0 rgba(255, 255, 255, .05);
