@@ -582,7 +582,7 @@ check("playwright 后端不碰 connect_browser", calls["connect_browser"].called
 check("playwright 后端不启动/关闭浏览器",
       calls["launch_edge"].called is False and calls["stop_browser"].called is False)
 check("playwright 后端更新运行状态", calls["update_state"].called is True)
-check("playwright 后端不再自动最大化窗口", calls["ensure_window_size"].called is False)
+check("playwright 后端执行窗口兜底", calls["ensure_window_size"].called is True)
 
 got, code, out, calls = run_ensure("playwright", alive=False)
 check("playwright 端口不通返回退出码 2", code == 2, f"code={code}")

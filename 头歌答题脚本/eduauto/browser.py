@@ -136,10 +136,7 @@ def connect_configured(cfg: dict, attempts: int = 20) -> BrowserLike:
 
 
 def ensure_window_size(browser: BrowserLike, min_w: int = 1400, min_h: int = 900) -> None:
-    """仅保留手动/测试用：窗口太小时最大化。
-
-    生产流程不再自动调用它，避免启动浏览器时抢当前工作区焦点。
-    """
+    """窗口太小时最大化：头歌是宽布局，窗口窄会把按钮挤出视口导致点不到。"""
     pages = browser.pages()
     if not pages:
         return
@@ -219,7 +216,7 @@ def _ensure_browser_playwright(cfg: dict) -> BrowserLike:
         update_state(running=cur, running_profile=cur_profile)
 
     close_blank_tabs(browser)
-    # 不再自动最大化：保留原窗口大小，避免抢用户当前工作区焦点。
+    ensure_window_size(browser)
     try:
         ext = browser.ensure_extension(cfg["edge"]["extension"])
         if ext:
@@ -271,7 +268,7 @@ def ensure_browser(cfg: dict) -> BrowserLike:
                  running_profile=os.path.expanduser(str(cfg["edge"]["profile"])))
     browser = connect_browser(port)
     close_blank_tabs(browser)
-    # 不再自动最大化：保留原窗口大小，避免抢用户当前工作区焦点。
+    ensure_window_size(browser)
     try:
         ext = browser.ensure_extension(cfg["edge"]["extension"])
         if ext:
