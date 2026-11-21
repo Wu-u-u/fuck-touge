@@ -94,6 +94,7 @@ interface CropState {
   stageH: number;
 }
 let cropState: CropState | null = null;
+let cropTargetId = "";
 let cropDrag: { sx: number; sy: number; x: number; y: number } | null = null;
 
 const setStatus = (text: string, kind: "ok" | "err" | "idle" = "idle"): void => {
@@ -228,6 +229,7 @@ const renderWallpapers = (): void => {
       video.playsInline = true;
       video.preload = "metadata";
       video.setAttribute("aria-label", wp.name);
+      video.addEventListener("loadedmetadata", () => { try { video.currentTime = 0.1; } catch (e) {} }, { once: true });
       item.appendChild(video);
     } else {
       const img = document.createElement("img");
@@ -235,6 +237,17 @@ const renderWallpapers = (): void => {
       img.alt = wp.name;
       item.appendChild(img);
     }
+
+    const recrop = document.createElement("button");
+    recrop.type = "button";
+    recrop.className = "recrop";
+    recrop.textContent = "裁";
+    recrop.title = "重新裁剪";
+    recrop.addEventListener("click", (e) => {
+      e.stopPropagation();
+      void openCrop(wp.image, wp.name, wp.kind, wp.width, wp.height, wp.id);
+    });
+    item.appendChild(recrop);
 
     const del = document.createElement("button");
     del.type = "button";
@@ -758,8 +771,9 @@ const applyCropView = (): void => {
   els.cropZoomVal.textContent = `${Math.round(c.zoom * 100)}%`;
 };
 
-const openCrop = async (dataUrl: string, name: string, kind: WallpaperKind, nw: number, nh: number): Promise<void> => {
+const openCrop = async (dataUrl: string, name: string, kind: WallpaperKind, nw: number, nh: number, targetId = ""): Promise<void> => {
   cropState = null;
+  cropTargetId = targetId;
   cropDrag = null;
   const isVideo = kind === "video";
   els.cropImage.hidden = isVideo;
@@ -835,6 +849,7 @@ els.cropStage.addEventListener("pointercancel", endCropDrag);
 
 els.cropCancel.addEventListener("click", () => {
   cropState = null;
+  cropTargetId = "";
   els.cropDialog.close();
 });
 
@@ -854,6 +869,24 @@ els.cropSave.addEventListener("click", () => {
   };
   void (async () => {
     const seed = c.kind === "video" ? await seedFromVideo(c.dataUrl) : ((await seedFromImage(c.dataUrl)) || "#cba6f7");
+    if (cropTargetId) {
+      const wp = config.background.wallpapers.find((w) => w.id === cropTargetId);
+      if (wp) {
+        wp.crop = crop;
+        wp.seed = seed;
+        config.background.activeId = wp.id;
+        config.background.image = wp.image;
+        config.materialSeed = seed;
+        saveNow();
+        render();
+        applyMaterialPreview();
+        setStatus("已重新裁剪 · 原图保留", "ok");
+      }
+      cropTargetId = "";
+      els.cropDialog.close();
+      cropState = null;
+      return;
+    }
     if (addWallpaper(c.dataUrl, c.name, c.kind, seed, crop, c.nw, c.nh)) {
       setStatus("壁纸已添加 · 原图保留，裁剪只记录区域", "ok");
       els.cropDialog.close();
@@ -864,6 +897,7 @@ els.cropSave.addEventListener("click", () => {
 
 els.cropDialog.addEventListener("close", () => {
   cropState = null;
+  cropTargetId = "";
   cropDrag = null;
 });
 
