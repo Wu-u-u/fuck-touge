@@ -204,8 +204,8 @@ check("显式 playwright 走 Playwright 适配器",
 check("playwright 不碰 connect_browser", calls["connect_browser"].called is False)
 check("playwright 不启动/不关闭共享浏览器",
       calls["launch_edge"].called is False and calls["stop_browser"].called is False)
-check("playwright 仍执行窗口尺寸兜底",
-      calls["ensure_window_size"].called is True)
+check("playwright 不再自动最大化窗口",
+      calls["ensure_window_size"].called is False)
 check("playwright 匹配槽位时更新运行状态",
       calls["update_state"].called is True)
 
