@@ -177,6 +177,28 @@
         </div>
       </div>
 
+      <div class="about-block full">
+        <h3>实现细节（开发者向）</h3>
+        <ul class="about-list">
+          <li>Manifest V3；内容脚本只在 <code>*.educoder.net</code> 运行，<code>world: MAIN</code>，<code>document_start</code>。</li>
+          <li>主题/字体/光标存在页面 <code>localStorage</code>；背景/颜色/编辑器选项存在 <code>chrome.storage.local</code>，通过 isolated-world bridge 同步。</li>
+          <li>自动下一关同时识别庆祝弹层和选择题 <code>.test-result.success</code>，两条路径共用 <code>claimJump()</code> 去重。</li>
+          <li>编辑器选项基于 Monaco <code>updateOptions</code>，按每个编辑器的原始快照恢复；支持直接开关、分类折叠和高级 JSON。</li>
+          <li>所有配置和图片只留在本机；上传图片在本地压到 2560px WebP，不上传服务器；剪贴板只在页面内处理。</li>
+          <li>构建：TypeScript + esbuild，多入口 IIFE；源码在 <code>Fuck头歌/src/</code>，构建产物在 <code>dist/</code>。</li>
+        </ul>
+      </div>
+
+      <div class="about-block full">
+        <h3>许可与声明</h3>
+        <ul class="about-list">
+          <li>代码许可：<strong>MIT License</strong>（见仓库根目录 <code>LICENSE</code>，再分发需保留版权声明）。</li>
+          <li>内置 Maple Mono 字体：<strong>SIL Open Font License 1.1</strong>（见 <code>fonts/LICENSE.txt</code>）。</li>
+          <li>使用声明：仅用于学习交流，<strong>禁止倒卖、盈利或商业分发</strong>。</li>
+          <li>头歌平台内容、题目和界面版权归平台及原作者；本扩展只做页面增强。</li>
+        </ul>
+      </div>
+
       <div class="about-links">
         <a class="about-link" href="https://github.com/Wu-u-u/fuck-touge" target="_blank" rel="noreferrer">
           <span>GitHub 仓库</span><span>↗</span>
