@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from eduauto.ai import (AIError, cmd_ai, draft_answer, normalize_answer,  # noqa: E402
-                        record_draft)
+                        record_draft, save_draft)
 
 passed = failed = 0
 
@@ -111,6 +111,14 @@ with tempfile.TemporaryDirectory() as td:
     stored = idx.read_text(encoding="utf-8").split("\t", 1)[1].strip()
     check("草稿索引保存绝对路径",
           Path(stored).is_absolute() and Path(stored) == draft.resolve(), stored)
+
+with tempfile.TemporaryDirectory() as td:
+    target = Path(td) / "draft.txt"
+    save_draft(target, "line1\nline2")
+    check("草稿原子写入内容正确",
+          target.read_text(encoding="utf-8") == "line1\nline2\n",
+          repr(target.read_text(encoding="utf-8")))
+    check("草稿写入无临时文件残留", not target.with_name(target.name + ".tmp").exists())
 
 srv.shutdown()
 
