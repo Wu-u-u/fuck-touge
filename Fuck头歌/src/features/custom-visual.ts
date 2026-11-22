@@ -54,7 +54,8 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   let lastEffect = "";
   let switchSeq = 0;
   let activeShader: ShaderTransitionHandle | null = null;
-  const layerWp = new Map<HTMLDivElement, Wallpaper>();
+  // WeakMap：旧图层移除后自动释放，不需要每次切换手动 delete
+  const layerWp = new WeakMap<HTMLDivElement, Wallpaper>();
 
   const clearRetry = (): void => {
     if (retryTimer) {
@@ -109,7 +110,6 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     currentId = "";
     currentLayer = null;
     mediaUrl = "";
-    layerWp.clear();
     try {
       document.getElementById(BG_ID)?.remove();
       document.getElementById(BG_NEXT_ID)?.remove();
@@ -751,8 +751,10 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       window.addEventListener("message", onMessage);
       document.addEventListener("visibilitychange", onVisibility);
       window.addEventListener("resize", () => {
-        for (const [el, wp] of layerWp) {
-          if (el.isConnected) layoutLayer(el, wp, config.background);
+        for (const id of [BG_ID, BG_NEXT_ID]) {
+          const el = document.getElementById(id) as HTMLDivElement | null;
+          const wp = el ? layerWp.get(el) : null;
+          if (el && wp && el.isConnected) layoutLayer(el, wp, config.background);
         }
       });
       window.addEventListener("keydown", onKeyDown, true);

@@ -83,6 +83,29 @@ export function normalizeScriptLogs(raw: unknown): ScriptLogEntry[] {
   return out.slice(-MAX_SCRIPT_LOGS);
 }
 
+const logKey = (log: ScriptLogEntry): string =>
+  `${log.at}|${log.level}|${log.slot}|${log.course}|${log.chapter}|${log.levelName}|${log.text}`;
+
+/**
+ * 合并日志并去重：脚本可能把同一批 logs 随每次 heartbeat 重发，
+ * 相同时间戳/级别/上下文的条目只保留一条，避免 25 条额度被重复日志占满。
+ */
+export function mergeScriptLogs(
+  current: ScriptLogEntry[],
+  incoming: ScriptLogEntry[],
+  max = MAX_SCRIPT_LOGS,
+): ScriptLogEntry[] {
+  const merged: ScriptLogEntry[] = [];
+  const seen = new Set<string>();
+  for (const log of [...current, ...incoming]) {
+    const key = logKey(log);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(log);
+  }
+  return merged.slice(-max);
+}
+
 /** 非 stopped 的状态超过 10.31s 没心跳 → 视为脚本没在跑 */
 export const scriptStatusIsStale = (status: ScriptStatus, now = Date.now()): boolean =>
   status.state !== "stopped" && now - status.updatedAt > SCRIPT_STALE_MS;

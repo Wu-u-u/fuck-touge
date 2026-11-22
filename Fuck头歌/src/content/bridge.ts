@@ -6,6 +6,7 @@ import {
   SCRIPT_LOGS_KEY,
   SCRIPT_SOURCE,
   SCRIPT_STATUS_KEY,
+  mergeScriptLogs,
   normalizeScriptLog,
   normalizeScriptLogs,
   normalizeScriptStatus,
@@ -91,11 +92,9 @@ const enqueueScript = (fn: () => Promise<void>): void => {
 const appendLogs = async (raws: unknown[]): Promise<void> => {
   if (!raws.length) return;
   const current = await storageGet(SCRIPT_LOGS_KEY);
-  const logs = normalizeScriptLogs(current[SCRIPT_LOGS_KEY]);
-  for (const raw of raws) {
-    const log = normalizeScriptLog(raw);
-    if (log) logs.push(log);
-  }
+  const existing = normalizeScriptLogs(current[SCRIPT_LOGS_KEY]);
+  const incoming = raws.map((raw) => normalizeScriptLog(raw)).filter((log): log is NonNullable<typeof log> => !!log);
+  const logs = mergeScriptLogs(existing, incoming);
   await storageSet({ [SCRIPT_LOGS_KEY]: logs.slice(-MAX_SCRIPT_LOGS) });
 };
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_SCRIPT_LOGS,
+  mergeScriptLogs,
   normalizeScriptLog,
   normalizeScriptLogs,
   normalizeScriptStatus,
@@ -42,6 +43,21 @@ describe("script status normalization", () => {
     expect(logs[0].text).toBe("log-5");
     expect(logs[logs.length - 1].text).toBe("log-29");
     expect(normalizeScriptLog({ text: "" })).toBeNull();
+  });
+
+  it("日志合并按 时间/级别/槽位/上下文/文本 去重，并保留上限", () => {
+    const log = (at: number, text: string) => normalizeScriptLog({ at, level: "info", slot: "1", text })!;
+    const first = log(1000, "评测成功");
+    const second = log(2000, "进入下一关");
+    expect(mergeScriptLogs([first, second], [log(1000, "评测成功"), log(3000, "新日志")])).toHaveLength(3);
+    // 已有重复也会收敛
+    expect(mergeScriptLogs([first, first, second], [])).toHaveLength(2);
+    // 同一文本但时间不同 → 是两条
+    expect(mergeScriptLogs([first], [log(1001, "评测成功")])).toHaveLength(2);
+    const many = Array.from({ length: 24 }, (_, i) => log(10_000 + i, `old-${i}`));
+    const merged = mergeScriptLogs(many, [log(20_001, "a"), log(20_002, "b"), log(20_003, "c")]);
+    expect(merged).toHaveLength(MAX_SCRIPT_LOGS);
+    expect(merged[merged.length - 1].text).toBe("c");
   });
 
   it("10.31s 心跳阈值：stopped 永不过期", () => {
