@@ -102,7 +102,10 @@ def _build_app():
                 d = json.loads(path.read_text(encoding="utf-8"))
                 state = {"running": "运行中", "waiting": "等待中", "stopped": "已停止", "error": "错误"}.get(d.get("state"), d.get("state") or "?")
                 ctx = " · ".join(x for x in (d.get("course"), d.get("chapter"), d.get("level")) if x)
+                msg = str(d.get("message") or "").strip()
                 text = f"{state}  槽位 {d.get('slot', '--')}" + (f"  {ctx}" if ctx else "")
+                if msg:
+                    text += "  " + msg[:100]
             except (OSError, json.JSONDecodeError):
                 pass
             try:

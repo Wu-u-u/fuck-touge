@@ -25,7 +25,8 @@ def check(name, cond, detail=""):
 
 with tempfile.TemporaryDirectory() as td:
     state = Path(td) / "state.status.json"
-    state.write_text(json.dumps({"state": "running", "slot": "1", "message": "test"}),
+    state.write_text(json.dumps({"state": "running", "slot": "1", "message": "test",
+                                  "logs": [{"level": "info", "text": f"log{i}"} for i in range(25)]}),
                      encoding="utf-8")
     srv = create_server(0, state)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -35,6 +36,7 @@ with tempfile.TemporaryDirectory() as td:
     check("首页返回 HTML", "Fuck 头歌" in html)
     check("首页包含状态卡片与日志", "最近日志" in html and "id=\"logs\"" in html)
     check("状态接口返回 JSON", data.get("state") == "running" and data.get("slot") == "1", repr(data))
+    check("状态接口保留日志历史", len(data.get("logs", [])) == 25, str(len(data.get("logs", []))))
     try:
         urllib.request.urlopen(base + "/nope", timeout=3)
         check("未知路径 404", False)
