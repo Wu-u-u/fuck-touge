@@ -328,6 +328,9 @@ def _run_selftest() -> None:
             assert app.query_one("#save_draft") is not None
             assert app.query_one("#copy_draft") is not None
             assert app.query_one("#clear_preview") is not None
+            app._last_ai = "旧草稿"
+            app._clear_preview()
+            assert app._last_ai == ""
             assert app.query_one("#webui") is not None
             assert app.query_one("#recent_drafts") is not None
             assert app.query_one("#load_recent") is not None
