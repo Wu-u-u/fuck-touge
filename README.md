@@ -54,7 +54,7 @@
 ### 一、浏览器扩展（Fuck头歌）
 
 1. 构建（需要 Node.js ≥ 20）：`cd Fuck头歌 && npm ci && npm run build`，产物在 `Fuck头歌/dist/`；
-   也可以直接下载 **Releases** 里的 `FuckTouge-v2.7.0-rc.20.zip`（已构建好，解压即用）。
+   也可以直接下载 **Releases** 里的 `FuckTouge-v2.7.0-rc.21.zip`（已构建好，解压即用）。
 2. Edge → 扩展 → 管理扩展 → 打开「开发人员选项」→「加载解压缩的扩展」→ 选择 `Fuck头歌/dist` 文件夹
    （用 zip 的话，选择解压后的 `Fuck头歌` 文件夹）；
 3. 打开头歌页面刷新即生效。

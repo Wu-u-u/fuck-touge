@@ -696,11 +696,17 @@ export async function startShaderTransition(
     resolveDone = resolve;
   });
 
+  const hasVideo = opts.oldMedia instanceof HTMLVideoElement || opts.newMedia instanceof HTMLVideoElement;
+  let lastVideoUpload = 0;
   const draw = (now: number): void => {
     if (cancelled) return;
     const progress = Math.min(1, Math.max(0, (now - start) / opts.duration));
-    if (opts.oldMedia instanceof HTMLVideoElement && isReady(opts.oldMedia)) upload(gl, tex1, opts.oldMedia);
-    if (opts.newMedia instanceof HTMLVideoElement && isReady(opts.newMedia)) upload(gl, tex2, opts.newMedia);
+    // 4K 视频每帧 texImage2D 很贵；过渡只有 1.5s，30fps 足够顺滑
+    if (hasVideo && now - lastVideoUpload >= 33) {
+      lastVideoUpload = now;
+      if (opts.oldMedia instanceof HTMLVideoElement && isReady(opts.oldMedia)) upload(gl, tex1, opts.oldMedia);
+      if (opts.newMedia instanceof HTMLVideoElement && isReady(opts.newMedia)) upload(gl, tex2, opts.newMedia);
+    }
     gl.uniform1f(uniforms.progress, progress);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, tex1);

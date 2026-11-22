@@ -167,7 +167,9 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     const sec = Math.max(0, Math.round((Date.now() - at) / 1000));
     if (sec < 2) return "刚刚";
     if (sec < 60) return `${sec} 秒前`;
-    return `${Math.floor(sec / 60)} 分钟前`;
+    if (sec < 3600) return `${Math.floor(sec / 60)} 分钟前`;
+    if (sec < 86_400) return `${Math.floor(sec / 3600)} 小时前`;
+    return `${Math.floor(sec / 86_400)} 天前`;
   };
 
   const renderScriptStatus = (): void => {
@@ -225,8 +227,12 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     }
   };
 
+  let logsRendered = false;
   const renderScriptLogs = (): void => {
     if (!logList) return;
+    const stickToBottom = !logsRendered
+      || logList.scrollHeight - logList.scrollTop - logList.clientHeight < 24;
+    logsRendered = true;
     scriptLogs = normalizeScriptLogs(scriptLogs);
     logList.textContent = "";
     if (logCount) {
@@ -266,7 +272,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
       row.append(time, level, body);
       logList.appendChild(row);
     }
-    logList.scrollTop = logList.scrollHeight;
+    if (stickToBottom) logList.scrollTop = logList.scrollHeight;
   };
 
   const copyLogText = (): string =>
