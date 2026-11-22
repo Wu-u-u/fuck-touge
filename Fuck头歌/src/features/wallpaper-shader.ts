@@ -451,15 +451,22 @@ const createTexture = (gl: WebGL2RenderingContext): WebGLTexture | null => {
   return tex;
 };
 
+const mediaSize = (media: Media): [number, number] =>
+  media instanceof HTMLVideoElement
+    ? [media.videoWidth, media.videoHeight]
+    : [media.naturalWidth, media.naturalHeight];
+
 const upload = (gl: WebGL2RenderingContext, tex: WebGLTexture, media: Media): boolean => {
   try {
     gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.getError(); // 清掉旧错误，下面的 getError 只反映这次上传
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, media);
-    return true;
+    return gl.getError() === gl.NO_ERROR;
   } catch (e) {
     return false;
   }
 };
+
 
 export interface ShaderTransitionOptions {
   oldMedia: Media;
@@ -468,6 +475,8 @@ export interface ShaderTransitionOptions {
   newWallpaper: Wallpaper;
   effect: TransitionEffect;
   duration: number;
+  /** 异步等待媒体期间，调用方可能已经开始了下一次切换 */
+  isCurrent?: () => boolean;
 }
 
 export interface ShaderTransitionHandle {
@@ -478,28 +487,57 @@ export interface ShaderTransitionHandle {
 
 const SHADER_CANVAS_ID = "ft-bg-shader";
 
-const makeCanvas = (): HTMLCanvasElement => {
-  let canvas = document.getElementById(SHADER_CANVAS_ID) as HTMLCanvasElement | null;
-  if (!canvas) {
-    canvas = document.createElement("canvas");
-    canvas.id = SHADER_CANVAS_ID;
-    canvas.setAttribute("aria-hidden", "true");
-  }
-  return canvas;
-};
+interface Uniforms {
+  scale1: WebGLUniformLocation | null;
+  offset1: WebGLUniformLocation | null;
+  scale2: WebGLUniformLocation | null;
+  offset2: WebGLUniformLocation | null;
+  effect: WebGLUniformLocation | null;
+  aspect: WebGLUniformLocation | null;
+  direction: WebGLUniformLocation | null;
+  centerX: WebGLUniformLocation | null;
+  centerY: WebGLUniformLocation | null;
+  smoothness: WebGLUniformLocation | null;
+  cellSize: WebGLUniformLocation | null;
+  stripeCount: WebGLUniformLocation | null;
+  angle: WebGLUniformLocation | null;
+  progress: WebGLUniformLocation | null;
+}
 
-/**
- * 启动一次 GPU 过渡。返回 null 表示环境不支持/媒体未就绪，调用方应回退 CSS。
- * 注意：调用方负责把 canvas 插入 DOM；`cancel()` 后 canvas 由调用方移除。
- */
-export async function startShaderTransition(
-  opts: ShaderTransitionOptions,
-): Promise<ShaderTransitionHandle | null> {
-  if (typeof document === "undefined") return null;
-  if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return null;
-  if (!isReady(opts.oldMedia)) return null;
+interface ShaderRenderer {
+  canvas: HTMLCanvasElement;
+  gl: WebGL2RenderingContext;
+  program: WebGLProgram;
+  buffer: WebGLBuffer;
+  tex1: WebGLTexture;
+  tex2: WebGLTexture;
+  posLoc: number;
+  uniforms: Uniforms;
+}
 
-  const canvas = makeCanvas();
+let cachedRenderer: ShaderRenderer | null = null;
+
+/** 关闭背景/卸载时释放 GPU 资源；正常切换之间复用 program/纹理。 */
+export function releaseShaderRenderer(): void {
+  const r = cachedRenderer;
+  cachedRenderer = null;
+  if (!r) return;
+  try {
+    r.gl.deleteProgram(r.program);
+    r.gl.deleteBuffer(r.buffer);
+    r.gl.deleteTexture(r.tex1);
+    r.gl.deleteTexture(r.tex2);
+    r.gl.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch (e) {}
+  try {
+    r.canvas.remove();
+  } catch (e) {}
+}
+
+const createRenderer = (): ShaderRenderer | null => {
+  const canvas = document.createElement("canvas");
+  canvas.id = SHADER_CANVAS_ID;
+  canvas.setAttribute("aria-hidden", "true");
   const gl = canvas.getContext("webgl2", {
     alpha: false,
     antialias: false,
@@ -532,15 +570,67 @@ export async function startShaderTransition(
   const buffer = gl.createBuffer();
   const tex1 = createTexture(gl);
   const tex2 = createTexture(gl);
-  if (!buffer || !tex1 || !tex2) return null;
-
-  if (!(await waitReady(opts.newMedia, 600))) {
+  if (!buffer || !tex1 || !tex2) {
     gl.deleteProgram(program);
-    gl.deleteBuffer(buffer);
-    gl.deleteTexture(tex1);
-    gl.deleteTexture(tex2);
+    if (buffer) gl.deleteBuffer(buffer);
+    if (tex1) gl.deleteTexture(tex1);
+    if (tex2) gl.deleteTexture(tex2);
     return null;
   }
+
+  gl.useProgram(program);
+  gl.uniform1i(gl.getUniformLocation(program, "u_source1"), 0);
+  gl.uniform1i(gl.getUniformLocation(program, "u_source2"), 1);
+
+  const uniforms: Uniforms = {
+    scale1: gl.getUniformLocation(program, "u_scale1"),
+    offset1: gl.getUniformLocation(program, "u_offset1"),
+    scale2: gl.getUniformLocation(program, "u_scale2"),
+    offset2: gl.getUniformLocation(program, "u_offset2"),
+    effect: gl.getUniformLocation(program, "u_effect"),
+    aspect: gl.getUniformLocation(program, "u_aspect"),
+    direction: gl.getUniformLocation(program, "u_direction"),
+    centerX: gl.getUniformLocation(program, "u_centerX"),
+    centerY: gl.getUniformLocation(program, "u_centerY"),
+    smoothness: gl.getUniformLocation(program, "u_smoothness"),
+    cellSize: gl.getUniformLocation(program, "u_cellSize"),
+    stripeCount: gl.getUniformLocation(program, "u_stripeCount"),
+    angle: gl.getUniformLocation(program, "u_angle"),
+    progress: gl.getUniformLocation(program, "u_progress"),
+  };
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]), gl.STATIC_DRAW);
+  const posLoc = gl.getAttribLocation(program, "a_pos");
+  gl.enableVertexAttribArray(posLoc);
+  gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+  return { canvas, gl, program, buffer, tex1, tex2, posLoc, uniforms };
+};
+
+const getRenderer = (): ShaderRenderer | null => {
+  if (cachedRenderer && !cachedRenderer.gl.isContextLost()) return cachedRenderer;
+  releaseShaderRenderer();
+  cachedRenderer = createRenderer();
+  return cachedRenderer;
+};
+
+/**
+ * 启动一次 GPU 过渡。返回 null 表示环境不支持/媒体未就绪，调用方应回退 CSS。
+ * 注意：调用方负责把 canvas 插入 DOM；`cancel()` 后 canvas 由调用方移除。
+ */
+export async function startShaderTransition(
+  opts: ShaderTransitionOptions,
+): Promise<ShaderTransitionHandle | null> {
+  if (typeof document === "undefined") return null;
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return null;
+  if (!isReady(opts.oldMedia)) return null;
+  if (!(await waitReady(opts.newMedia, 600))) return null;
+  if (opts.isCurrent && !opts.isCurrent()) return null;
+
+  const renderer = getRenderer();
+  if (!renderer) return null;
+  const { canvas, gl, program, buffer, tex1, tex2, uniforms } = renderer;
 
   const width = window.innerWidth || 1;
   const height = window.innerHeight || 1;
@@ -560,41 +650,40 @@ export async function startShaderTransition(
   canvas.style.opacity = "1";
   canvas.style.willChange = "opacity";
 
-  const oldT = coverTransform(opts.oldWallpaper, { width: opts.oldMedia instanceof HTMLVideoElement ? opts.oldMedia.videoWidth : opts.oldMedia.naturalWidth, height: opts.oldMedia instanceof HTMLVideoElement ? opts.oldMedia.videoHeight : opts.oldMedia.naturalHeight }, { width, height });
-  const newT = coverTransform(opts.newWallpaper, { width: opts.newMedia instanceof HTMLVideoElement ? opts.newMedia.videoWidth : opts.newMedia.naturalWidth, height: opts.newMedia instanceof HTMLVideoElement ? opts.newMedia.videoHeight : opts.newMedia.naturalHeight }, { width, height });
-  if (!oldT || !newT || !upload(gl, tex1, opts.oldMedia) || !upload(gl, tex2, opts.newMedia)) {
-    gl.deleteProgram(program);
-    gl.deleteBuffer(buffer);
-    gl.deleteTexture(tex1);
-    gl.deleteTexture(tex2);
+  const [oldW, oldH] = mediaSize(opts.oldMedia);
+  const [newW, newH] = mediaSize(opts.newMedia);
+  const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
+  const oldT = coverTransform(opts.oldWallpaper, { width: oldW, height: oldH }, { width, height });
+  const newT = coverTransform(opts.newWallpaper, { width: newW, height: newH }, { width, height });
+  if (
+    !oldT || !newT ||
+    oldW > maxTex || oldH > maxTex || newW > maxTex || newH > maxTex ||
+    !upload(gl, tex1, opts.oldMedia) || !upload(gl, tex2, opts.newMedia)
+  ) {
     return null;
   }
 
   const params = effectParams(opts.effect);
   const aspect = width / height;
   gl.useProgram(program);
-  gl.uniform1i(gl.getUniformLocation(program, "u_source1"), 0);
-  gl.uniform1i(gl.getUniformLocation(program, "u_source2"), 1);
-  gl.uniform2f(gl.getUniformLocation(program, "u_scale1"), oldT.scale[0], oldT.scale[1]);
-  gl.uniform2f(gl.getUniformLocation(program, "u_offset1"), oldT.offset[0], oldT.offset[1]);
-  gl.uniform2f(gl.getUniformLocation(program, "u_scale2"), newT.scale[0], newT.scale[1]);
-  gl.uniform2f(gl.getUniformLocation(program, "u_offset2"), newT.offset[0], newT.offset[1]);
-  gl.uniform1i(gl.getUniformLocation(program, "u_effect"), EFFECT_INDEX[opts.effect]);
-  gl.uniform1f(gl.getUniformLocation(program, "u_aspect"), aspect);
-  gl.uniform1f(gl.getUniformLocation(program, "u_direction"), params.direction);
-  gl.uniform1f(gl.getUniformLocation(program, "u_centerX"), params.centerX);
-  gl.uniform1f(gl.getUniformLocation(program, "u_centerY"), params.centerY);
-  gl.uniform1f(gl.getUniformLocation(program, "u_smoothness"), params.smoothness);
-  gl.uniform1f(gl.getUniformLocation(program, "u_cellSize"), params.cellSize);
-  gl.uniform1f(gl.getUniformLocation(program, "u_stripeCount"), params.stripeCount);
-  gl.uniform1f(gl.getUniformLocation(program, "u_angle"), params.angle);
+  gl.uniform2f(uniforms.scale1, oldT.scale[0], oldT.scale[1]);
+  gl.uniform2f(uniforms.offset1, oldT.offset[0], oldT.offset[1]);
+  gl.uniform2f(uniforms.scale2, newT.scale[0], newT.scale[1]);
+  gl.uniform2f(uniforms.offset2, newT.offset[0], newT.offset[1]);
+  gl.uniform1i(uniforms.effect, EFFECT_INDEX[opts.effect]);
+  gl.uniform1f(uniforms.aspect, aspect);
+  gl.uniform1f(uniforms.direction, params.direction);
+  gl.uniform1f(uniforms.centerX, params.centerX);
+  gl.uniform1f(uniforms.centerY, params.centerY);
+  gl.uniform1f(uniforms.smoothness, params.smoothness);
+  gl.uniform1f(uniforms.cellSize, params.cellSize);
+  gl.uniform1f(uniforms.stripeCount, params.stripeCount);
+  gl.uniform1f(uniforms.angle, params.angle);
 
   gl.viewport(0, 0, rw, rh);
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]), gl.STATIC_DRAW);
-  const posLoc = gl.getAttribLocation(program, "a_pos");
-  gl.enableVertexAttribArray(posLoc);
-  gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(renderer.posLoc);
+  gl.vertexAttribPointer(renderer.posLoc, 2, gl.FLOAT, false, 0, 0);
 
   // 视频需要持续播放并每帧上传，否则纹理停在第一帧
   if (opts.newMedia instanceof HTMLVideoElement) opts.newMedia.play?.().catch(() => {});
@@ -612,7 +701,7 @@ export async function startShaderTransition(
     const progress = Math.min(1, Math.max(0, (now - start) / opts.duration));
     if (opts.oldMedia instanceof HTMLVideoElement && isReady(opts.oldMedia)) upload(gl, tex1, opts.oldMedia);
     if (opts.newMedia instanceof HTMLVideoElement && isReady(opts.newMedia)) upload(gl, tex2, opts.newMedia);
-    gl.uniform1f(gl.getUniformLocation(program, "u_progress"), progress);
+    gl.uniform1f(uniforms.progress, progress);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, tex1);
     gl.activeTexture(gl.TEXTURE1);
@@ -625,19 +714,11 @@ export async function startShaderTransition(
     raf = requestAnimationFrame(draw);
   };
 
-  const cleanup = (): void => {
-    if (raf) cancelAnimationFrame(raf);
-    raf = 0;
-    gl.deleteProgram(program);
-    gl.deleteBuffer(buffer);
-    gl.deleteTexture(tex1);
-    gl.deleteTexture(tex2);
-  };
-
   const finish = (): void => {
     if (cancelled) return;
     cancelled = true;
-    cleanup();
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
     resolveDone();
   };
 
@@ -648,10 +729,7 @@ export async function startShaderTransition(
     canvas,
     done,
     cancel(): void {
-      if (cancelled) return;
-      cancelled = true;
-      cleanup();
-      resolveDone();
+      finish();
     },
   };
 }

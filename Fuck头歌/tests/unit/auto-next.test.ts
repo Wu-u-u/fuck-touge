@@ -124,8 +124,11 @@ describe("autoNext", () => {
     vi.advanceTimersByTime(200);
 
     expect(clicked).toBe(1);
-    expect(toast).toHaveBeenCalledWith("已为您自动跳转至下一关 😋");
+    // 延迟 300ms：整页跳转时当前页 toast 会消失，由落地页补提示，避免重复
+    expect(toast).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(JUMP_KEY)).toContain("next");
+    vi.advanceTimersByTime(300);
+    expect(toast).toHaveBeenCalledWith("已为您自动跳转至下一关 😋");
   });
 
   it("双击/重复 tick 只点一次", () => {
@@ -196,6 +199,7 @@ describe("autoNext", () => {
     ctl.autoNext();
     vi.advanceTimersByTime(200);
     expect(clicked).toBe(1);
+    vi.advanceTimersByTime(300);
     expect(toast).toHaveBeenCalledWith("已经是最后一关了 😋");
   });
 

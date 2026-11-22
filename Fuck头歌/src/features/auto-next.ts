@@ -89,12 +89,14 @@ export function createAutoNext(deps: AutoNextDeps = {}): AutoNextController {
   } catch (e) {}
 
   const jumpNotice = (kind: string): void => {
-    toast(JUMP_MSG[kind] || JUMP_MSG.next);
+    // 先写落地标记，再延迟提示：如果是整页跳转，当前页的 toast 会随卸载消失，
+    // 落地页 createAutoNext 会补一条；SPA 跳转则 300ms 后正常提示。避免同一动作提示两次。
     try {
       sessionStorage.setItem(JUMP_KEY, now() + "|" + (kind || "next"));
       if (jumpTimer) clearTimeout(jumpTimer); // 连续跳转时，别让旧的清除定时器误删新标记
       jumpTimer = setTimeout(() => sessionStorage.removeItem(JUMP_KEY), 5000);
     } catch (e) {}
+    window.setTimeout(() => toast(JUMP_MSG[kind] || JUMP_MSG.next), 300);
   };
 
   // 双路径互斥：结果弹层 / 选择题页面按钮，同一关只允许认领一次（防止连跳两关）

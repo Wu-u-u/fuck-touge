@@ -3,7 +3,7 @@ import { dataUrlToBlob, getCachedMedia, putCachedMedia, pruneCachedMedia } from 
 import { toast } from "../ui/toast";
 import type { CustomConfig, Wallpaper } from "../shared/types";
 import { isAnswerPage } from "./theme/skin";
-import { TRANSITION_EFFECTS, startShaderTransition, type ShaderTransitionHandle, type TransitionEffect } from "./wallpaper-shader";
+import { TRANSITION_EFFECTS, releaseShaderRenderer, startShaderTransition, type ShaderTransitionHandle, type TransitionEffect } from "./wallpaper-shader";
 
 const STYLE_ID = "ft-custom-visual";
 const BG_ID = "ft-bg";
@@ -114,6 +114,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       document.getElementById(BG_ID)?.remove();
       document.getElementById(BG_NEXT_ID)?.remove();
     } catch (e) {}
+    releaseShaderRenderer();
   };
 
   const createLayer = (id: string): HTMLDivElement => {
@@ -481,6 +482,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
         newWallpaper: wp,
         effect,
         duration: 1500,
+        isCurrent: () => seq === switchSeq,
       }).then((handle) => {
         if (seq !== switchSeq) {
           handle?.cancel();
