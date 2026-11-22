@@ -8,6 +8,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import webui  # noqa: E402
 from webui import create_server  # noqa: E402
 
 passed = failed = 0
@@ -37,6 +38,18 @@ with tempfile.TemporaryDirectory() as td:
     check("首页包含状态卡片与日志", "最近日志" in html and "id=\"logs\"" in html)
     check("状态接口返回 JSON", data.get("state") == "running" and data.get("slot") == "1", repr(data))
     check("状态接口保留日志历史", len(data.get("logs", [])) == 25, str(len(data.get("logs", []))))
+    old_index = webui.DRAFT_INDEX
+    try:
+        index = Path(td) / "drafts.tsv"
+        draft = Path(td) / "draft.txt"
+        draft.write_text("草稿正文", encoding="utf-8")
+        index.write_text(f"2026-11-22 12:00:00\t{draft}\n", encoding="utf-8")
+        webui.DRAFT_INDEX = index
+        drafts = json.loads(urllib.request.urlopen(base + "/drafts", timeout=3).read())
+        check("草稿接口只读返回内容",
+              drafts.get("drafts", [{}])[0].get("preview") == "草稿正文", repr(drafts))
+    finally:
+        webui.DRAFT_INDEX = old_index
     try:
         urllib.request.urlopen(base + "/nope", timeout=3)
         check("未知路径 404", False)

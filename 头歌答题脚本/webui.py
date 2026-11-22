@@ -17,6 +17,27 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_STATE = HERE / "state.status.json"
+DRAFT_INDEX = HERE / "ai-drafts" / "index.tsv"
+
+
+def read_drafts(limit: int = 5):
+    """读取最近 AI 草稿的路径/时间/预览；只读。"""
+    out = []
+    try:
+        lines = DRAFT_INDEX.read_text(encoding="utf-8").splitlines()[-limit:]
+    except OSError:
+        return out
+    for line in reversed(lines):
+        parts = line.split("\t", 1)
+        if len(parts) != 2:
+            continue
+        at, path = parts
+        try:
+            body = Path(path).read_text(encoding="utf-8")[:800]
+        except OSError:
+            body = ""
+        out.append({"at": at, "path": path, "preview": body})
+    return out
 
 HTML = """<!doctype html>
 <html lang="zh-CN"><meta charset="utf-8">
@@ -31,7 +52,8 @@ body{font:14px/1.6 system-ui,sans-serif;background:#17171c;color:#e6e6f0;margin:
 </style>
 <div class="wrap"><h1>Fuck 头歌 · 脚本状态</h1>
 <div class="card"><div id="state">加载中…</div><div id="meta"></div><div id="msg"></div></div>
-<div class="card"><div style="color:#b8b8c8;margin-bottom:.5rem">最近日志</div><div id="logs">暂无</div></div></div>
+<div class="card"><div style="color:#b8b8c8;margin-bottom:.5rem">最近日志</div><div id="logs">暂无</div></div>
+<div class="card"><div style="color:#b8b8c8;margin-bottom:.5rem">最近 AI 草稿</div><div id="drafts">暂无</div></div></div>
 <script>
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 async function tick(){
@@ -44,6 +66,8 @@ async function tick(){
   document.getElementById('msg').textContent=d.message||'';
   const logs=Array.isArray(d.logs)?d.logs:[];
   document.getElementById('logs').innerHTML=logs.length?logs.map(x=>'<div class="log">['+esc(x.level||'info')+'] '+esc(x.text||'')+'</div>').join(''):'暂无';
+  const dr=await fetch('/drafts',{cache:'no-store'}).then(r=>r.json()).catch(()=>({drafts:[]}));
+  document.getElementById('drafts').innerHTML=(dr.drafts||[]).length?(dr.drafts).map(x=>'<div class="log">'+esc(x.at)+' · '+esc(x.path)+'<pre>'+esc(x.preview||'')+'</pre></div>').join(''):'暂无';
  }catch(e){document.getElementById('state').textContent='无法读取状态：'+e}
 }
 tick(); setInterval(tick,1000);
@@ -57,6 +81,15 @@ def create_server(port: int = 8765, state_path: Path = DEFAULT_STATE) -> Threadi
                 body = HTML.encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if self.path.split("?", 1)[0] == "/drafts":
+                body = json.dumps({"drafts": read_drafts()}, ensure_ascii=False).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
