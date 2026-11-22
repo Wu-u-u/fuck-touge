@@ -3,6 +3,7 @@ import { dataUrlToBlob, getCachedMedia, putCachedMedia, pruneCachedMedia } from 
 import { toast } from "../ui/toast";
 import type { CustomConfig, Wallpaper } from "../shared/types";
 import { isAnswerPage } from "./theme/skin";
+import { TRANSITION_EFFECTS, startShaderTransition, type ShaderTransitionHandle, type TransitionEffect } from "./wallpaper-shader";
 
 const STYLE_ID = "ft-custom-visual";
 const BG_ID = "ft-bg";
@@ -51,6 +52,8 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   let configSeq = 0;
   let switchTimer = 0;
   let lastEffect = "";
+  let switchSeq = 0;
+  let activeShader: ShaderTransitionHandle | null = null;
   const layerWp = new Map<HTMLDivElement, Wallpaper>();
 
   const clearRetry = (): void => {
@@ -91,6 +94,14 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       clearTimeout(switchTimer);
       switchTimer = 0;
     }
+    switchSeq++;
+    if (activeShader) {
+      activeShader.cancel();
+      activeShader = null;
+    }
+    try {
+      document.getElementById("ft-bg-shader")?.remove();
+    } catch (e) {}
   };
 
   const removeBg = (): void => {
@@ -276,12 +287,10 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
 
     const old = currentLayer;
     const oldId = currentId;
+    const oldWp = layerWp.get(old);
     currentId = wp.id;
-    const effects = [
-      "fade", "wipe", "disc", "stripes", "zoom", "honeycomb",
-      "vortex", "pixel", "diamond", "golden", "melt", "crt",
-    ] as const;
-    let effect = effects[Math.floor(Math.random() * effects.length)];
+    const effects = TRANSITION_EFFECTS;
+    let effect: TransitionEffect = effects[Math.floor(Math.random() * effects.length)];
     if (effect === lastEffect) {
       effect = effects[(effects.indexOf(effect) + 1) % effects.length];
     }
@@ -302,8 +311,12 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     document.body.appendChild(next);
     currentLayer = next;
 
+    const seq = ++switchSeq;
+    switchTimer = window.setTimeout(() => {}, 2600);
+
+    const animateCss = (): void => {
     try {
-      const duration = 1200;
+      const duration = 1500;
       const easing = "cubic-bezier(.22,1,.36,1)";
       const opacity = String(bg.opacity);
       const fadesIn = effect === "fade" || effect === "zoom" || effect === "vortex" || effect === "crt";
@@ -456,6 +469,59 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     }
 
     if (oldId) toast(`已切换壁纸 · ${wp.name} 😋`);
+    };
+
+    const oldMedia = old.firstElementChild as HTMLImageElement | HTMLVideoElement | null;
+    const newMedia = next.firstElementChild as HTMLImageElement | HTMLVideoElement | null;
+    if (bg.fit === "cover" && oldMedia && newMedia && oldWp) {
+      void startShaderTransition({
+        oldMedia,
+        newMedia,
+        oldWallpaper: oldWp,
+        newWallpaper: wp,
+        effect,
+        duration: 1500,
+      }).then((handle) => {
+        if (seq !== switchSeq) {
+          handle?.cancel();
+          return;
+        }
+        if (!handle) {
+          animateCss();
+          return;
+        }
+        activeShader = handle;
+        // canvas 输出已包含旧图，隐藏旧层避免低不透明度时叠加两次
+        old.style.visibility = "hidden";
+        handle.canvas.style.opacity = String(bg.opacity);
+        document.body.appendChild(handle.canvas);
+        void handle.done.then(() => {
+          if (activeShader !== handle) return;
+          activeShader = null;
+          clearSwitch();
+          handle.canvas.remove();
+          old.remove();
+          next.style.opacity = String(bg.opacity);
+          next.style.transform = "none";
+          next.style.clipPath = "";
+          next.style.maskImage = "";
+          next.style.maskSize = "";
+          next.style.maskPosition = "";
+          next.style.maskRepeat = "";
+          next.style.filter = "none";
+          next.id = BG_ID;
+          currentLayer = next;
+          if (oldId) toast(`已切换壁纸 · ${wp.name} 😋`);
+        });
+      }).catch(() => {
+        if (seq !== switchSeq) return;
+        old.style.visibility = "";
+        animateCss();
+      });
+      return;
+    }
+
+    animateCss();
   };
 
   const buildCss = (cfg: CustomConfig, withBg: boolean): string => {
