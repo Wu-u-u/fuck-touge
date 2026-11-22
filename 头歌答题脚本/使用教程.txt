@@ -198,7 +198,7 @@ scan 不再是独立命令：
     python3 答题.py ai --kind choice "题目和选项..."
     python3 答题.py ai --kind code "题目" --out ai-drafts/draft.txt
 
-只输出/保存草稿，不自动写档案、不自动提交。TUI 也提供预览、确认和保存草稿。接口地址/模型可在 config.toml 的 [ai] 里改。
+只输出/保存草稿，不自动写档案、不自动提交；选择题会归一化为选项字母，代码题会去掉 Markdown 围栏。TUI 也提供预览、确认和保存草稿。接口地址/模型可在 config.toml 的 [ai] 里改。
 
 【Textual TUI（实验）】
 

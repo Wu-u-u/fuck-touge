@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -49,6 +50,20 @@ def _system_prompt(kind: str) -> str:
     )
 
 
+def normalize_answer(text: str, kind: str) -> str:
+    """把模型输出收敛成可粘贴格式：choice 只留字母，code 去围栏。"""
+    text = str(text or "").strip()
+    if kind == "choice":
+        letters = sorted(set(re.findall(r"[A-Za-z]", text)))
+        if not letters:
+            raise AIError("AI 没有返回选项字母")
+        return ",".join(letters)
+    match = re.match(r"^```[^\n]*\n(.*?)\n```\s*$", text, re.S)
+    if match:
+        return match.group(1).strip()
+    return text
+
+
 def draft_answer(prompt: str, cfg: dict, *, kind: str = "code",
                  context: str = "") -> str:
     """调用 OpenAI-compatible /chat/completions，返回纯文本草稿。"""
@@ -86,7 +101,7 @@ def draft_answer(prompt: str, cfg: dict, *, kind: str = "code",
         text = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as e:
         raise AIError("AI 返回缺少 choices[0].message.content") from e
-    return str(text).strip()
+    return normalize_answer(str(text), kind)
 
 
 def cmd_ai(args, cfg: dict) -> None:

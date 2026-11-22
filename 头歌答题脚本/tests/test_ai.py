@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from eduauto.ai import AIError, cmd_ai, draft_answer  # noqa: E402
+from eduauto.ai import AIError, cmd_ai, draft_answer, normalize_answer  # noqa: E402
 
 passed = failed = 0
 
@@ -78,6 +78,11 @@ with tempfile.TemporaryDirectory() as td:
     with patch.dict(os.environ, {"TEST_AI_KEY": "test-secret"}):
         cmd_ai(SimpleNamespace(prompt=["题目"], kind="choice", context="", out=str(out)), cfg)
     check("--out 保存纯文本草稿", out.read_text(encoding="utf-8").strip() == "A,B")
+
+check("choice 归一化只留字母",
+      normalize_answer("答案：A、C。", "choice") == "A,C")
+check("code 去掉 Markdown 围栏",
+      normalize_answer("```java\nclass A {}\n```", "code") == "class A {}")
 srv.shutdown()
 
 print(f"\n{passed} passed, {failed} failed")
