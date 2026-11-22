@@ -121,6 +121,23 @@ describe("popup 脚本状态", () => {
     expect(listeners.length).toBe(0);
   });
 
+  it("dispose 后 clipboard promise resolve 不再改复制按钮", async () => {
+    let resolveWrite: (() => void) | null = null;
+    const writeText = vi.fn(() => new Promise<void>((resolve) => { resolveWrite = resolve; }));
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const { api } = makeApi(status(), [log()]);
+    const dispose = initPopup(api);
+    await sleep(20);
+    const copy = document.getElementById("copyLogs") as HTMLButtonElement;
+    copy.click();
+    await sleep(0);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    dispose();
+    resolveWrite?.();
+    await sleep(0);
+    expect(copy.textContent).toBe("");
+  });
+
   it("dispose 后到达的 storage 回调不再渲染", () => {
     const { api, pendingGets } = makeApi(status({ message: "迟到的状态" }), [], true);
     const dispose = initPopup(api);

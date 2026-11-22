@@ -315,15 +315,16 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
       .join("\n");
 
   const flashCopy = (ok: boolean): void => {
-    if (!copyLogsBtn) return;
+    if (!copyLogsBtn || disposed) return;
     const old = "复制";
     copyLogsBtn.textContent = ok ? "已复制" : "复制失败";
     window.setTimeout(() => {
-      if (copyLogsBtn) copyLogsBtn.textContent = old;
+      if (copyLogsBtn && !disposed) copyLogsBtn.textContent = old;
     }, 1200);
   };
 
   const fallbackCopy = (text: string): boolean => {
+    if (disposed) return false;
     try {
       const ta = doc.createElement("textarea");
       ta.value = text;

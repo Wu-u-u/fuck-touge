@@ -900,11 +900,17 @@ const applyCropView = (): void => {
   els.cropZoomVal.textContent = `${Math.round(c.zoom * 100)}%`;
 };
 
+const clearCropPreview = (): void => {
+  resetVideoElement(els.cropVideo);
+  els.cropImage.removeAttribute("src");
+};
+
 const openCrop = async (dataUrl: string, name: string, kind: WallpaperKind, nw: number, nh: number, targetId = ""): Promise<void> => {
   cropState = null;
   cropSaving = false;
   cropTargetId = targetId;
   cropDrag = null;
+  clearCropPreview();
   const isVideo = kind === "video";
   els.cropImage.hidden = isVideo;
   els.cropVideo.hidden = !isVideo;
@@ -918,17 +924,20 @@ const openCrop = async (dataUrl: string, name: string, kind: WallpaperKind, nw: 
       await els.cropImage.decode();
     } catch (e) {
       setStatus("图片解码失败，换一张试试", "err");
+      clearCropPreview();
       return;
     }
   }
   if (!nw || !nh) {
     setStatus("无法读取媒体尺寸", "err");
+    clearCropPreview();
     return;
   }
   els.cropDialog.showModal();
   const stage = els.cropStage.getBoundingClientRect();
   if (!stage.width || !stage.height) {
     els.cropDialog.close();
+    clearCropPreview();
     setStatus("无法读取裁剪区域", "err");
     return;
   }
@@ -1041,6 +1050,7 @@ els.cropSave.addEventListener("click", () => {
 });
 
 els.cropDialog.addEventListener("close", () => {
+  clearCropPreview();
   cropState = null;
   cropTargetId = "";
   cropDrag = null;
