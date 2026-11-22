@@ -147,6 +147,15 @@ window.addEventListener("message", (e: MessageEvent): void => {
     return;
   }
 
+  if (data.source === MAIN_SOURCE && data.type === "media-release") {
+    // 页面关闭背景/离开答题页后不再需要 bridge 持有的 blob URL；下次 media-request 再重建
+    for (const url of mediaBlobUrls.values()) {
+      try { URL.revokeObjectURL(url); } catch (e) {}
+    }
+    mediaBlobUrls.clear();
+    return;
+  }
+
   if (data.source === MAIN_SOURCE && data.type === "media-request") {
     const key = typeof data.key === "string" ? data.key : "";
     if (!isMediaKey(key)) return;

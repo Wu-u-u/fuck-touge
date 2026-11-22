@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_WALLPAPERS, activeWallpaper, contrastText, isHexColor, isImageSource, normalizeCustomConfig, pageViewConfig } from "../../src/shared/custom";
 import { createCustomVisual } from "../../src/features/custom-visual";
 import type { CustomConfig } from "../../src/shared/types";
@@ -297,6 +297,98 @@ describe("custom visual", () => {
     mount(makeConfig({ background: { enabled: true, image: IMG, opacity: .4, fit: "cover", fixed: true } }), true, false);
     expect(document.getElementById("ft-bg")).toBeNull();
     expect(document.getElementById("ft-custom-visual")).toBeNull();
+  });
+
+  it("主题关闭 / 离开答题页通知 bridge 释放媒体，恢复后重建图层", () => {
+    let theme = true;
+    let answer = true;
+    controller = createCustomVisual({
+      isThemeOn: () => theme,
+      isAnswerPage: () => answer,
+      isTopFrame: () => true,
+    });
+    controller.install();
+    const post = vi.spyOn(window, "postMessage");
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          source: "fuck-touge-bridge",
+          type: "config",
+          config: makeConfig({ background: { enabled: true, image: IMG, opacity: .4, fit: "cover", fixed: true } }),
+        },
+        source: window,
+      }),
+    );
+    post.mockClear();
+
+    theme = false;
+    controller.apply();
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "fuck-touge-main", type: "media-release" }),
+      "*",
+    );
+    expect(document.getElementById("ft-bg")).toBeNull();
+
+    theme = true;
+    controller.apply();
+    expect(document.getElementById("ft-bg")).toBeTruthy();
+
+    post.mockClear();
+    answer = false;
+    controller.apply();
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "fuck-touge-main", type: "media-release" }),
+      "*",
+    );
+  });
+
+  it("mediaKey 壁纸在主题重开后重新请求媒体并恢复图层", async () => {
+    const wp = {
+      id: "wp-test", name: "测试", image: "", mediaKey: "fuckTougeMedia:wp-test",
+      kind: "image" as const, animated: false, seed: "#ffffff",
+      crop: { x: 0, y: 0, w: 1, h: 1 }, width: 10, height: 10,
+    };
+    let theme = true;
+    controller = createCustomVisual({
+      isThemeOn: () => theme,
+      isAnswerPage: () => true,
+      isTopFrame: () => true,
+    });
+    controller.install();
+    const post = vi.spyOn(window, "postMessage");
+    window.dispatchEvent(new MessageEvent("message", {
+      data: {
+        source: "fuck-touge-bridge",
+        type: "config",
+        config: makeConfig({ background: { enabled: true, image: "", wallpapers: [wp], activeId: wp.id, opacity: .4, fit: "cover" } }),
+      },
+      source: window,
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: "media-request", key: wp.mediaKey }), "*");
+
+    // 模拟 bridge 返回媒体
+    window.dispatchEvent(new MessageEvent("message", {
+      data: { source: "fuck-touge-bridge", type: "media-url", key: wp.mediaKey, url: "blob:test-media" },
+      source: window,
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.getElementById("ft-bg")).toBeTruthy();
+    post.mockClear();
+
+    theme = false;
+    controller.apply();
+    expect(document.getElementById("ft-bg")).toBeNull();
+    theme = true;
+    controller.apply();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: "media-request", key: wp.mediaKey }), "*");
+    window.dispatchEvent(new MessageEvent("message", {
+      data: { source: "fuck-touge-bridge", type: "media-url", key: wp.mediaKey, url: "blob:test-media-2" },
+      source: window,
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.getElementById("ft-bg")).toBeTruthy();
   });
 
   it("空图片不启用背景", () => {

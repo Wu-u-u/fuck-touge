@@ -46,6 +46,8 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   let currentId = "";
   let currentLayer: HTMLDivElement | null = null;
   let mediaUrl = "";
+  let mediaReleased = false;
+  let mediaReloadKey = "";
   const mediaUrls = new Map<string, string>();
   const mediaPending = new Map<string, { promise: Promise<string | null>; resolve: (url: string | null) => void; timer: number }>();
   const mediaWarned = new Set<string>();
@@ -120,6 +122,11 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       try { URL.revokeObjectURL(url); } catch (e) {}
     }
     mediaUrls.clear();
+    mediaReleased = true;
+    // bridge 也持有同源的 blob URL，通知它一起释放；重新开启时再 media-request
+    try {
+      window.postMessage({ source: MAIN_SOURCE, type: "media-release" }, "*");
+    } catch (e) {}
   };
 
   const createLayer = (id: string): HTMLDivElement => {
@@ -585,6 +592,28 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     return rules.join("\n");
   };
 
+  /** 主题/背景/答题页恢复后，重新取回 removeBg 释放掉的页面媒体 */
+  const reloadReleasedMedia = (key: string): void => {
+    if (mediaReloadKey === key || mediaWarned.has(key)) return;
+    mediaReloadKey = key;
+    void getMediaUrl(key).then((url) => {
+      if (mediaReloadKey === key) mediaReloadKey = "";
+      if (!url) {
+        if (!mediaWarned.has(key)) {
+          mediaWarned.add(key);
+          toast("壁纸文件读取失败，请重新选择 😢");
+        }
+        return;
+      }
+      const current = activeWallpaper(config);
+      if (!current || current.mediaKey !== key) return;
+      if (!deps.isThemeOn() || !onAnswerPage() || !onTopFrame() || !config.background.enabled) return;
+      mediaUrl = url;
+      mediaReleased = false;
+      apply();
+    });
+  };
+
   function apply(): void {
     const root = document.documentElement;
     if (!root) {
@@ -618,10 +647,14 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     if (css) ensureStyle(css);
     else removeStyle();
 
-    if (bgOn) ensureBg(config);
-    else if (!active || !config.background.enabled || !activeWp) {
+    if (bgOn) {
+      mediaReleased = false;
+      ensureBg(config);
+    } else if (!active || !config.background.enabled || !activeWp) {
       clearRetry();
       removeBg();
+    } else if (mediaReleased && activeWp.mediaKey && !mediaUrl) {
+      reloadReleasedMedia(activeWp.mediaKey);
     }
   }
 
@@ -660,6 +693,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     const url = await getMediaUrl(wp.mediaKey);
     if (seq !== configSeq) return;
     mediaUrl = url || "";
+    if (url) mediaReleased = false;
     if (!url && !mediaWarned.has(wp.mediaKey)) {
       mediaWarned.add(wp.mediaKey);
       toast("壁纸文件读取失败，请重新选择 😢");
