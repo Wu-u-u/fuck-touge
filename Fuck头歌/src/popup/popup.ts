@@ -77,6 +77,8 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   const logList = doc.getElementById("logList") as HTMLElement | null;
   const copyLogsBtn = doc.getElementById("copyLogs") as HTMLButtonElement | null;
   const clearLogsBtn = doc.getElementById("clearLogs") as HTMLButtonElement | null;
+  if (copyLogsBtn) copyLogsBtn.title = "复制当前槽位日志";
+  if (clearLogsBtn) clearLogsBtn.title = "清空当前槽位日志";
   const cleanups: Array<() => void> = [];
 
   const setMsg = (text: string, warn = false): void => {
@@ -372,10 +374,15 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   });
 
   clearLogsBtn?.addEventListener("click", () => {
-    scriptLogs = [];
+    const slot = scriptStatus?.slot || "";
+    // 只清当前槽位可见的日志（含旧格式无 slot 的条目），保留其他槽位历史
+    scriptLogs = slot
+      ? scriptLogs.filter((log) => !!log.slot && log.slot !== slot)
+      : [];
     renderScriptLogs();
     try {
-      scriptStorage?.remove(SCRIPT_LOGS_KEY);
+      if (scriptLogs.length) scriptStorage?.set({ [SCRIPT_LOGS_KEY]: scriptLogs });
+      else scriptStorage?.remove(SCRIPT_LOGS_KEY);
     } catch (e) {}
   });
 

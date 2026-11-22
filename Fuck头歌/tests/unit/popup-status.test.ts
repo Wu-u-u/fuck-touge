@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initPopup, type PopupChromeApi } from "../../src/popup/popup";
 import {
   SCRIPT_LOGS_KEY,
@@ -222,6 +222,57 @@ describe("popup 脚本状态", () => {
     expect(document.getElementById("scriptCard")!.dataset.state).toBe("red");
     expect(document.getElementById("scriptTitle")!.textContent).toBe("刷题脚本未执行");
     expect(document.getElementById("scriptMsg")!.textContent).toContain("10.31");
+  });
+
+  it("复制只包含当前槽位日志，槽位切换后跟随", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const { api, listeners } = makeApi(status({ slot: "1" }), [
+      log({ slot: "1", text: "槽位一日志" }),
+      log({ slot: "2", text: "槽位二日志" }),
+    ]);
+    initPopup(api);
+    await sleep(20);
+    const copy = document.getElementById("copyLogs") as HTMLButtonElement;
+
+    copy.click();
+    await sleep(0);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText.mock.calls[0][0]).toContain("槽位一日志");
+    expect(writeText.mock.calls[0][0]).not.toContain("槽位二日志");
+
+    listeners.forEach((cb) => cb({ [SCRIPT_STATUS_KEY]: { newValue: status({ slot: "2" }) } }, "local"));
+    copy.click();
+    await sleep(0);
+    expect(writeText).toHaveBeenCalledTimes(2);
+    expect(writeText.mock.calls[1][0]).toContain("槽位二日志");
+    expect(writeText.mock.calls[1][0]).not.toContain("槽位一日志");
+  });
+
+  it("清空只清当前槽位，其他槽位历史保留", async () => {
+    const { api, listeners, items } = makeApi(status({ slot: "1" }), [
+      log({ slot: "1", text: "槽位一日志" }),
+      log({ slot: "2", text: "槽位二日志" }),
+    ]);
+    initPopup(api);
+    await sleep(20);
+
+    (document.getElementById("clearLogs") as HTMLButtonElement).click();
+    await sleep(10);
+    expect(document.getElementById("logList")!.textContent).toContain("暂无日志");
+    expect((items[SCRIPT_LOGS_KEY] as Array<{ text: string }>).map((x) => x.text)).toEqual(["槽位二日志"]);
+
+    listeners.forEach((cb) => cb({ [SCRIPT_STATUS_KEY]: { newValue: status({ slot: "2" }) } }, "local"));
+    expect(document.getElementById("logList")!.textContent).toContain("槽位二日志");
+    expect((document.getElementById("copyLogs") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("当前槽位无日志时复制/清空禁用（其他槽位有日志）", async () => {
+    const { api } = makeApi(status({ slot: "3" }), [log({ slot: "1", text: "别的槽位" })]);
+    initPopup(api);
+    await sleep(20);
+    expect((document.getElementById("copyLogs") as HTMLButtonElement).disabled).toBe(true);
+    expect((document.getElementById("clearLogs") as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("清空日志：按钮禁用，storage.remove 被调用", async () => {
