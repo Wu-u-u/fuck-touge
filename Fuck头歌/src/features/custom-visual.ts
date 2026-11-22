@@ -583,15 +583,30 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
 
   const onMessage = (e: MessageEvent): void => {
     if (e.source !== window) return;
-    const data = e.data as { source?: string; type?: string; config?: unknown; key?: string; data?: string } | null;
+    const data = e.data as { source?: string; type?: string; config?: unknown; key?: string; data?: string; url?: string } | null;
     if (!data || data.source !== BRIDGE_SOURCE) return;
 
-    if ((data.type === "media" || data.type === "media-missing") && typeof data.key === "string") {
-      const pending = mediaPending.get(data.key);
+    if ((data.type === "media" || data.type === "media-missing" || data.type === "media-url") && typeof data.key === "string") {
+      const key = data.key;
+      const pending = mediaPending.get(key);
       if (!pending) return;
       clearTimeout(pending.timer);
-      mediaPending.delete(data.key);
-      if (data.type === "media-missing" || typeof data.data !== "string") {
+      mediaPending.delete(key);
+      if (data.type === "media-missing") {
+        pending.resolve(null);
+        return;
+      }
+      if (data.type === "media-url" && typeof data.url === "string") {
+        // bridge 的 blob URL 同源可用；后台再落一次页面 IDB，刷新后直接命中
+        mediaUrls.set(key, data.url);
+        pending.resolve(data.url);
+        void fetch(data.url)
+          .then((r) => r.blob())
+          .then((blob) => putCachedMedia(key, blob))
+          .catch(() => {});
+        return;
+      }
+      if (typeof data.data !== "string") {
         pending.resolve(null);
         return;
       }
@@ -601,9 +616,9 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
           pending.resolve(null);
           return;
         }
-        await putCachedMedia(data.key!, blob);
+        await putCachedMedia(key, blob);
         const url = URL.createObjectURL(blob);
-        mediaUrls.set(data.key!, url);
+        mediaUrls.set(key, url);
         pending.resolve(url);
       })();
       return;

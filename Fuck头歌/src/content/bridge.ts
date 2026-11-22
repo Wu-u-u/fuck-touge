@@ -1,4 +1,5 @@
 import { CUSTOM_CONFIG_KEY, activeWallpaper, isMediaKey, normalizeCustomConfig, pageViewConfig } from "../shared/custom";
+import { dataUrlToBlob } from "../features/media-cache";
 import {
   MAX_SCRIPT_LOGS,
   SCRIPT_LOGS_KEY,
@@ -11,6 +12,9 @@ import {
 
 const BRIDGE_SOURCE = "fuck-touge-bridge";
 const MAIN_SOURCE = "fuck-touge-main";
+
+/** bridge 生命周期内复用 blob URL；页面 reload 后由页面 IDB 接管 */
+const mediaBlobUrls = new Map<string, string>();
 
 const post = (config: unknown): void => {
   try {
@@ -118,6 +122,11 @@ window.addEventListener("message", (e: MessageEvent): void => {
     if (!isMediaKey(key)) return;
     void (async () => {
       try {
+        const cachedUrl = mediaBlobUrls.get(key);
+        if (cachedUrl) {
+          window.postMessage({ source: BRIDGE_SOURCE, type: "media-url", key, url: cachedUrl }, "*");
+          return;
+        }
         const current = await storageGet(CUSTOM_CONFIG_KEY);
         const cfg = normalizeCustomConfig(current[CUSTOM_CONFIG_KEY]);
         const active = activeWallpaper(cfg);
@@ -125,12 +134,19 @@ window.addEventListener("message", (e: MessageEvent): void => {
         let media = typeof raw[key] === "string" ? String(raw[key]) : "";
         // 迁移期兼容：config 里可能还留着 data URL
         if (!media && active && active.mediaKey === key) media = active.image;
-        window.postMessage(
-          media
-            ? { source: BRIDGE_SOURCE, type: "media", key, data: media }
-            : { source: BRIDGE_SOURCE, type: "media-missing", key },
-          "*",
-        );
+        if (!media) {
+          window.postMessage({ source: BRIDGE_SOURCE, type: "media-missing", key }, "*");
+          return;
+        }
+        // blob URL 同源可被 MAIN world fetch/使用；只传短 URL，不再复制 63MB 字符串
+        const blob = await dataUrlToBlob(media);
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          mediaBlobUrls.set(key, url);
+          window.postMessage({ source: BRIDGE_SOURCE, type: "media-url", key, url }, "*");
+          return;
+        }
+        window.postMessage({ source: BRIDGE_SOURCE, type: "media", key, data: media }, "*");
       } catch (e) {}
     })();
     return;
