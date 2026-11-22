@@ -300,6 +300,19 @@ describe("popup 脚本状态", () => {
     expect((document.getElementById("copyLogs") as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("重载/重开时 marker 仍过滤清空前的旧日志", async () => {
+    const now = Date.now();
+    const oldLog = log({ slot: "1", text: "marker-old", at: now - 5000 });
+    const freshLog = log({ slot: "1", text: "marker-fresh", at: now + 1000 });
+    const { api, items } = makeApi(status({ slot: "1" }), [oldLog, freshLog]);
+    items[SCRIPT_LOGS_CLEARED_KEY] = { "1": now };
+    initPopup(api);
+    await sleep(20);
+    expect(document.getElementById("logList")!.textContent).toContain("marker-fresh");
+    expect(document.getElementById("logList")!.textContent).not.toContain("marker-old");
+    expect(document.getElementById("logCount")!.textContent).toBe("1");
+  });
+
   it("清空后 bridge 并发写回旧日志会被 marker 过滤", async () => {
     const oldLog = log({ slot: "1", text: "旧日志", at: Date.now() - 1000 });
     const { api, listeners, items } = makeApi(status({ slot: "1" }), [oldLog]);
