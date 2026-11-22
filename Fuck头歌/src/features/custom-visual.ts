@@ -1,4 +1,5 @@
 import { COLOR_DEFS, activeWallpaper, contrastText, normalizeCustomConfig } from "../shared/custom";
+import { dataUrlToBlob, getCachedMedia, putCachedMedia } from "./media-cache";
 import { toast } from "../ui/toast";
 import type { CustomConfig, Wallpaper } from "../shared/types";
 import { isAnswerPage } from "./theme/skin";
@@ -43,6 +44,10 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   let currentId = "";
   let currentLayer: HTMLDivElement | null = null;
   let mediaUrl = "";
+  const mediaUrls = new Map<string, string>();
+  const mediaPending = new Map<string, { promise: Promise<string | null>; resolve: (url: string | null) => void; timer: number }>();
+  const mediaWarned = new Set<string>();
+  let configSeq = 0;
   let switchTimer = 0;
   let lastEffect = "";
   const layerWp = new Map<HTMLDivElement, Wallpaper>();
@@ -91,6 +96,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     clearSwitch();
     currentId = "";
     currentLayer = null;
+    mediaUrl = "";
     layerWp.clear();
     try {
       document.getElementById(BG_ID)?.remove();
@@ -129,6 +135,37 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     media.style.height = `${nh * sy}px`;
     media.style.left = `${(W - cw * sx) / 2 - crop.x * nw * sx}px`;
     media.style.top = `${(H - ch * sy) / 2 - crop.y * nh * sy}px`;
+  };
+
+  const getMediaUrl = async (key: string): Promise<string | null> => {
+    const ready = mediaUrls.get(key);
+    if (ready) return ready;
+    const blob = await getCachedMedia(key);
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      mediaUrls.set(key, url);
+      return url;
+    }
+    const pending = mediaPending.get(key);
+    if (pending) return pending.promise;
+
+    let resolve: (url: string | null) => void = () => {};
+    const promise = new Promise<string | null>((r) => { resolve = r; });
+    const timer = window.setTimeout(() => {
+      const p = mediaPending.get(key);
+      if (!p) return;
+      mediaPending.delete(key);
+      p.resolve(null);
+    }, 30_000);
+    mediaPending.set(key, { promise, resolve, timer });
+    try {
+      window.postMessage({ source: MAIN_SOURCE, type: "media-request", key }, "*");
+    } catch (e) {
+      clearTimeout(timer);
+      mediaPending.delete(key);
+      resolve(null);
+    }
+    return promise;
   };
 
   const createMedia = (
@@ -182,6 +219,12 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     if (!sameKind) {
       const media = createMedia(wp, bg, el, src);
       el.replaceChildren(media);
+    } else if (existing) {
+      const currentSrc = (existing as HTMLImageElement | HTMLVideoElement).src;
+      if (currentSrc !== src) {
+        (existing as HTMLImageElement | HTMLVideoElement).src = src;
+        if (existing instanceof HTMLVideoElement) existing.play?.().catch(() => {});
+      }
     }
     layerWp.set(el, wp);
     layoutLayer(el, wp, bg);
@@ -465,7 +508,9 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
 
     const active = deps.isThemeOn() && onAnswerPage() && onTopFrame();
     const activeWp = activeWallpaper(config);
-    const bgOn = active && config.background.enabled && !!activeWp;
+    const mediaReady = !!activeWp && (!activeWp.mediaKey || !!mediaUrl || !!activeWp.image);
+    const bgOn = active && config.background.enabled && !!activeWp && mediaReady;
+    const bgPresent = bgOn || (active && config.background.enabled && !!activeWp && !!currentLayer);
     const hasColors = active && Object.keys(config.colors).length > 0;
 
     if (!active) {
@@ -480,7 +525,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     if (hasColors) root.setAttribute("data-ft-custom", "");
     else root.removeAttribute("data-ft-custom");
 
-    if (bgOn) root.setAttribute("data-ft-bg", "");
+    if (bgPresent) root.setAttribute("data-ft-bg", "");
     else root.removeAttribute("data-ft-bg");
 
     const css = buildCss(config, bgOn);
@@ -488,7 +533,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     else removeStyle();
 
     if (bgOn) ensureBg(config);
-    else {
+    else if (!active || !config.background.enabled || !activeWp) {
       clearRetry();
       removeBg();
     }
@@ -503,15 +548,69 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     });
   };
 
+  const handleConfig = async (raw: unknown): Promise<void> => {
+    const seq = ++configSeq;
+    const cfg = normalizeCustomConfig(raw);
+    config = cfg;
+    try {
+      deps.onConfig?.(cfg);
+    } catch (e) {}
+
+    const wp = activeWallpaper(cfg);
+    if (!wp || !cfg.background.enabled) {
+      mediaUrl = "";
+      apply();
+      return;
+    }
+    if (!wp.mediaKey) {
+      mediaUrl = wp.image || "";
+      apply();
+      return;
+    }
+
+    // 先保留旧图层，等媒体从 IndexedDB / bridge 就绪后再切
+    mediaUrl = "";
+    apply();
+    const url = await getMediaUrl(wp.mediaKey);
+    if (seq !== configSeq) return;
+    mediaUrl = url || "";
+    if (!url && !mediaWarned.has(wp.mediaKey)) {
+      mediaWarned.add(wp.mediaKey);
+      toast("壁纸文件读取失败，请重新选择 😢");
+    }
+    apply();
+  };
+
   const onMessage = (e: MessageEvent): void => {
     if (e.source !== window) return;
-    const data = e.data as { source?: string; type?: string; config?: unknown } | null;
-    if (!data || data.source !== BRIDGE_SOURCE || data.type !== "config") return;
-    config = normalizeCustomConfig(data.config);
-    apply();
-    try {
-      deps.onConfig?.(config);
-    } catch (e) {}
+    const data = e.data as { source?: string; type?: string; config?: unknown; key?: string; data?: string } | null;
+    if (!data || data.source !== BRIDGE_SOURCE) return;
+
+    if ((data.type === "media" || data.type === "media-missing") && typeof data.key === "string") {
+      const pending = mediaPending.get(data.key);
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      mediaPending.delete(data.key);
+      if (data.type === "media-missing" || typeof data.data !== "string") {
+        pending.resolve(null);
+        return;
+      }
+      void (async () => {
+        const blob = await dataUrlToBlob(data.data!);
+        if (!blob) {
+          pending.resolve(null);
+          return;
+        }
+        await putCachedMedia(data.key!, blob);
+        const url = URL.createObjectURL(blob);
+        mediaUrls.set(data.key!, url);
+        pending.resolve(url);
+      })();
+      return;
+    }
+
+    if (data.type !== "config") return;
+    void handleConfig(data.config);
   };
 
   const onKeyDown = (e: KeyboardEvent): void => {

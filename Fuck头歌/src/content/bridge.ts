@@ -1,4 +1,4 @@
-import { CUSTOM_CONFIG_KEY, activeWallpaper, normalizeCustomConfig } from "../shared/custom";
+import { CUSTOM_CONFIG_KEY, activeWallpaper, isMediaKey, normalizeCustomConfig } from "../shared/custom";
 import {
   MAX_SCRIPT_LOGS,
   SCRIPT_LOGS_KEY,
@@ -12,41 +12,35 @@ import {
 const BRIDGE_SOURCE = "fuck-touge-bridge";
 const MAIN_SOURCE = "fuck-touge-main";
 
-const post = (config: unknown, media: Blob | null = null): void => {
+const post = (config: unknown): void => {
   try {
-    window.postMessage({ source: BRIDGE_SOURCE, type: "config", config, media }, "*");
+    window.postMessage({ source: BRIDGE_SOURCE, type: "config", config }, "*");
   } catch (e) {}
 };
 
-// 页面只需要当前壁纸；不要把 5 张图全量 postMessage 过去
+// 页面只需要当前壁纸；有 mediaKey 时只传 key，页面自己从 IDB 取媒体，
+// 避免每次切换都复制几十 MB 的 data URL。
 const pageView = (cfg: ReturnType<typeof normalizeCustomConfig>) => {
   const active = activeWallpaper(cfg);
+  const view = active
+    ? { ...active, image: active.mediaKey ? "" : active.image }
+    : null;
   return {
     ...cfg,
     materialSeed: active?.seed || cfg.materialSeed,
     background: {
       ...cfg.background,
-      image: active?.image || "",
-      wallpapers: active ? [{ ...active }] : [],
+      image: view?.image || "",
+      wallpapers: view ? [view] : [],
     },
   };
 };
 
-const resolveActive = async (cfg: ReturnType<typeof normalizeCustomConfig>) => {
-  const active = activeWallpaper(cfg);
-  if (active && !active.image && active.mediaKey) {
-    const data = await storageGet(active.mediaKey);
-    active.image = typeof data[active.mediaKey] === "string" ? String(data[active.mediaKey]) : "";
-  }
-  return { cfg: pageView(cfg), media: null as Blob | null };
-};
-
 const push = (): void => {
   try {
-    chrome.storage.local.get(CUSTOM_CONFIG_KEY, async (result) => {
+    chrome.storage.local.get(CUSTOM_CONFIG_KEY, (result) => {
       if (chrome.runtime?.lastError) return;
-      const resolved = await resolveActive(normalizeCustomConfig(result?.[CUSTOM_CONFIG_KEY]));
-      post(resolved.cfg, resolved.media);
+      post(pageView(normalizeCustomConfig(result?.[CUSTOM_CONFIG_KEY])));
     });
   } catch (e) {
     post(pageView(normalizeCustomConfig(null)));
@@ -137,6 +131,29 @@ window.addEventListener("message", (e: MessageEvent): void => {
     return;
   }
 
+  if (data.source === MAIN_SOURCE && data.type === "media-request") {
+    const key = typeof data.key === "string" ? data.key : "";
+    if (!isMediaKey(key)) return;
+    void (async () => {
+      try {
+        const current = await storageGet(CUSTOM_CONFIG_KEY);
+        const cfg = normalizeCustomConfig(current[CUSTOM_CONFIG_KEY]);
+        const active = activeWallpaper(cfg);
+        const raw = await storageGet(key);
+        let media = typeof raw[key] === "string" ? String(raw[key]) : "";
+        // 迁移期兼容：config 里可能还留着 data URL
+        if (!media && active && active.mediaKey === key) media = active.image;
+        window.postMessage(
+          media
+            ? { source: BRIDGE_SOURCE, type: "media", key, data: media }
+            : { source: BRIDGE_SOURCE, type: "media-missing", key },
+          "*",
+        );
+      } catch (e) {}
+    })();
+    return;
+  }
+
   if (data.source === MAIN_SOURCE && data.type === "cycle-wallpaper") {
     void (async () => {
       const current = await storageGet(CUSTOM_CONFIG_KEY);
@@ -156,7 +173,7 @@ window.addEventListener("message", (e: MessageEvent): void => {
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local" || !changes[CUSTOM_CONFIG_KEY]) return;
-    void resolveActive(normalizeCustomConfig(changes[CUSTOM_CONFIG_KEY].newValue)).then((r) => post(r.cfg, r.media));
+    post(pageView(normalizeCustomConfig(changes[CUSTOM_CONFIG_KEY].newValue)));
   });
 } catch (e) {}
 
