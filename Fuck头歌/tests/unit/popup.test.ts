@@ -77,6 +77,25 @@ describe("popup 初始化", () => {
     expect(document.getElementById("msg")!.textContent).toBe("修改即时生效 ✨");
   });
 
+  it("dispose 后迟到的初始化状态不再渲染", async () => {
+    let resolveExec: ((value: unknown) => void) | null = null;
+    const api: PopupChromeApi = {
+      tabs: {
+        query: async () => [{ id: 1, url: "https://www.educoder.net/tasks/a/b/c" }],
+      },
+      scripting: {
+        executeScript: () => new Promise((resolve) => { resolveExec = resolve; }),
+      },
+    };
+    const dispose = initPopup(api);
+    dispose();
+    resolveExec?.([{ result: { theme: true, font: true, themeName: "github", cursor: true } }]);
+    await sleep(5);
+    expect(el("tt").checked).toBe(false);
+    expect(document.getElementById("themeSub")!.textContent).toBe("");
+    expect(document.getElementById("msg")!.textContent).toBe("");
+  });
+
   it("非头歌页面：禁用开关并提示", async () => {
     const { api } = makeApi({ url: "https://example.com/" });
     initPopup(api);

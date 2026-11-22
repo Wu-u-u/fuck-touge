@@ -434,6 +434,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
 
   (async () => {
     const st = await withPage(() => (window.__fuckTougeUI ? window.__fuckTougeUI.get() : null));
+    if (disposed) return;
     if (!st.ok) {
       tt.disabled = tf.disabled = tc.disabled = true;
       setMsg("当前页面不是头歌页面 🤔", true);
@@ -474,7 +475,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
         (n: Partial<PublicSettings>) => window.__fuckTougeUI && window.__fuckTougeUI.set(n),
         [patch],
       );
-      if (my !== seq) return;
+      if (disposed || my !== seq) return;
       if (r.ok && r.value) {
         render(r.value);
         setMsg("修改即时生效 ✨");
