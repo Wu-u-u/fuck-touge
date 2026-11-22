@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import io
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -79,6 +80,18 @@ with tempfile.TemporaryDirectory() as td:
     with patch.dict(os.environ, {"TEST_AI_KEY": "test-secret"}):
         cmd_ai(SimpleNamespace(prompt=["题目"], kind="choice", context="", out=str(out)), cfg)
     check("--out 保存纯文本草稿", out.read_text(encoding="utf-8").strip() == "A,B")
+
+# 无位置参数时从 stdin 读题（帮助文案的契约）
+class _Stdin(io.StringIO):
+    def isatty(self):
+        return False
+
+with patch.dict(os.environ, {"TEST_AI_KEY": "test-secret"}):
+    with patch("sys.stdin", _Stdin("stdin 里的题目")):
+        cmd_ai(SimpleNamespace(prompt=[], kind="choice", context="", out=""), cfg)
+check("AI 无参数时从 stdin 读取",
+      "stdin 里的题目" in seen.get("body", {}).get("messages", [{}, {}])[1].get("content", ""),
+      str(seen.get("body"))[:300])
 
 check("choice 归一化只留字母",
       normalize_answer("答案：A、C。", "choice") == "A,C")
