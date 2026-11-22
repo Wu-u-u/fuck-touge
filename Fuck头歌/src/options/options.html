@@ -62,46 +62,49 @@
 
             <div class="mock" id="bgMock" aria-hidden="true">
               <div class="mock-top">
-                <span class="mock-logo">E</span>
-                <span class="mock-brand">头歌</span>
-                <span class="mock-sub">实践教学平台</span>
-                <span class="mock-tab on">任务</span>
-                <span class="mock-tab">代码</span>
-                <span class="mock-tab">评测</span>
-                <span class="mock-user">吴建祥</span>
+                <span class="mock-avatar">吴</span>
+                <span class="mock-brand">Java入门（第五章）</span>
+                <span class="mock-sub">循环结构基础</span>
+                <span class="mock-user">更多操作</span>
               </div>
               <div class="mock-body">
                 <aside class="mock-task">
-                  <div class="mock-kicker">数据结构与算法 · 实验二</div>
-                  <div class="mock-title">第 3 关：两数之和</div>
-                  <p class="mock-desc">返回和为 target 的两个下标。</p>
+                  <div class="mock-task-head">
+                    <span class="mock-level">第7关：Java循环结构之for循环</span>
+                    <span class="mock-score">100</span>
+                  </div>
+                  <div class="mock-tabs"><span class="on">学习内容</span><span>记录</span></div>
+                  <div class="mock-toc"><b>任务描述</b> · 相关知识 · 编程要求 · 测试说明</div>
+                  <p class="mock-desc">使用 for 循环实现自然数 N 的阶乘。</p>
                   <div class="mock-sample">
                     <span>输入</span>
-                    <code>nums = [2,7,11,15]<br>target = 9</code>
+                    <code>N = 5</code>
                   </div>
                   <div class="mock-sample">
                     <span>输出</span>
-                    <code>[0, 1]</code>
+                    <code>120</code>
                   </div>
                 </aside>
                 <section class="mock-editor">
-                  <div class="mock-file"><span>solution.py</span><span>Python 3</span></div>
+                  <div class="mock-file"><span>代码文件</span><span>HelloWorld.java</span></div>
                   <div class="mock-code">
-                    <div class="mock-line"><i>1</i><code><span class="kw">class</span> <span class="fn">Solution</span>:</code></div>
-                    <div class="mock-line"><i>2</i><code>    <span class="kw">def</span> <span class="fn">twoSum</span>(self, nums, target):</code></div>
-                    <div class="mock-line"><i>3</i><code>        seen = {}</code></div>
-                    <div class="mock-line"><i>4</i><code>        <span class="kw">for</span> i, n <span class="kw">in</span> enumerate(nums):</code></div>
-                    <div class="mock-line"><i>5</i><code>            <span class="kw">if</span> target - n <span class="kw">in</span> seen:</code></div>
-                    <div class="mock-line"><i>6</i><code>                <span class="kw">return</span> [seen[target - n], i]</code></div>
-                    <div class="mock-line"><i>7</i><code>            seen[n] = i</code></div>
+                    <div class="mock-line"><i>1</i><code><span class="kw">package</span> step5;</code></div>
+                    <div class="mock-line"><i>2</i><code><span class="kw">public class</span> <span class="fn">HelloWorld</span> {</code></div>
+                    <div class="mock-line"><i>3</i><code>    <span class="kw">public static void</span> <span class="fn">main</span>(String[] args) {</code></div>
+                    <div class="mock-line"><i>4</i><code>        Scanner sc = <span class="kw">new</span> Scanner(System.in);</code></div>
+                    <div class="mock-line"><i>5</i><code>        <span class="kw">int</span> N = sc.nextInt();</code></div>
+                    <div class="mock-line"><i>6</i><code>        <span class="kw">for</span> (<span class="kw">int</span> i = 1; i &lt;= N; i++) {</code></div>
+                    <div class="mock-line"><i>7</i><code>            sum *= i;</code></div>
+                    <div class="mock-line"><i>8</i><code>        }</code></div>
                   </div>
                 </section>
               </div>
               <div class="mock-status">
                 <span class="mock-ok"></span>
-                <span>测试通过 <b>3/3</b></span>
-                <span class="mock-status-right">0.12s · 模拟预览</span>
+                <span><b>测试结果</b> · <strong>4/4 全部通过</strong></span>
+                <span class="mock-status-right">0.09s · 模拟预览</span>
               </div>
+              <div class="mock-actions"><span>上一关</span><span>下一关</span><span>自测运行</span><span class="primary">评测</span></div>
             </div>
           </div>
 
