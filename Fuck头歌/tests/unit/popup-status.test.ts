@@ -117,6 +117,17 @@ describe("popup 脚本状态", () => {
     expect((document.getElementById("copyLogs") as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("日志的课程/章节变化时更新行 title（签名包含上下文）", async () => {
+    const { api, listeners } = makeApi(status(), [log({ course: "课程一", chapter: "章一" })]);
+    initPopup(api);
+    await sleep(20);
+    expect((document.querySelector(".log-item") as HTMLElement).title).toContain("课程一");
+
+    listeners.forEach((cb) => cb({ [SCRIPT_LOGS_KEY]: { newValue: [log({ course: "课程二", chapter: "章二" })] } }, "local"));
+    await sleep(10);
+    expect((document.querySelector(".log-item") as HTMLElement).title).toContain("课程二");
+  });
+
   it("心跳只改 updatedAt 时不重写状态节点，message 变化才更新", async () => {
     const { api, listeners } = makeApi(status(), [log()]);
     initPopup(api);

@@ -216,7 +216,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     }
 
     // 心跳每秒都会走到这里；可见内容没变时不再写入，避免无谓 DOM 变更
-    const key = [tone, title, slot, meta, message].join("\n");
+    const key = JSON.stringify([tone, title, slot, meta, message]);
     if (key === lastStatusKey) return;
     lastStatusKey = key;
 
@@ -246,7 +246,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     scriptLogs = normalizeScriptLogs(scriptLogs);
     const logs = currentSlotLogs();
     // 心跳每秒刷新 status，但日志没变时不要重建 25 个 DOM 节点
-    const key = logs.map((log) => `${log.at}|${log.level}|${log.slot}|${log.levelName}|${log.text}`).join("\n");
+    const key = JSON.stringify(logs.map((log) => [log.at, log.level, log.slot, log.course, log.chapter, log.levelName, log.text]));
     if (lastLogsKey === key) return;
     lastLogsKey = key;
     const stickToBottom = !logsRendered
