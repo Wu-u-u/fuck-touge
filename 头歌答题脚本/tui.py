@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 import sys
@@ -20,7 +21,8 @@ HERE = Path(__file__).resolve().parent
 ENTRY = HERE / "答题.py"
 
 
-def _run_with_textual() -> None:
+def _build_app():
+    """构建 Textual App 类；只在此函数内导入 Textual。"""
     try:
         from textual import work
         from textual.app import App, ComposeResult
@@ -153,11 +155,36 @@ def _run_with_textual() -> None:
                     self._proc.terminate()
                     self.query_one("#log", RichLog).write("[已发送停止信号]")
 
-    FuckTougeTui().run()
+    return FuckTougeTui
+
+
+def _run_selftest() -> None:
+    try:
+        import textual  # noqa: F401
+    except ImportError as e:
+        print(f"textual unavailable: {e}")
+        raise SystemExit(2)
+
+    async def smoke() -> None:
+        app = _build_app()()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app.query_one("#log") is not None
+            assert app.query_one("#ai_prompt") is not None
+            assert app.query_one("#course") is not None
+        print("tui selftest ok")
+
+    asyncio.run(smoke())
+
+
+def _run_with_textual() -> None:
+    _build_app()().run()
 
 
 if __name__ == "__main__":
-    if "--check" in sys.argv:
+    if "--self-test" in sys.argv:
+        _run_selftest()
+    elif "--check" in sys.argv:
         try:
             import textual  # noqa: F401
         except ImportError as e:
