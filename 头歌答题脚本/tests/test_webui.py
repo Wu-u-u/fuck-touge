@@ -33,6 +33,7 @@ with tempfile.TemporaryDirectory() as td:
     html = urllib.request.urlopen(base + "/", timeout=3).read().decode()
     data = json.loads(urllib.request.urlopen(base + "/status", timeout=3).read())
     check("首页返回 HTML", "Fuck 头歌" in html)
+    check("首页包含状态卡片与日志", "最近日志" in html and "id=\"logs\"" in html)
     check("状态接口返回 JSON", data.get("state") == "running" and data.get("slot") == "1", repr(data))
     try:
         urllib.request.urlopen(base + "/nope", timeout=3)

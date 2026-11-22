@@ -22,20 +22,29 @@ HTML = """<!doctype html>
 <html lang="zh-CN"><meta charset="utf-8">
 <title>Fuck 头歌 · 脚本状态</title>
 <style>
-body{font:14px/1.6 system-ui,sans-serif;background:#17171c;color:#e6e6f0;margin:3rem}
-#card{max-width:760px;padding:1.5rem;border:1px solid #3a3a48;border-radius:16px;background:#202029}
-h1{font-size:1.2rem;margin:0 0 1rem}pre{white-space:pre-wrap;word-break:break-word;color:#c8c8d8}
-.ok{color:#9ee493}.bad{color:#ff9a9a}
+body{font:14px/1.6 system-ui,sans-serif;background:#17171c;color:#e6e6f0;margin:2rem}
+.wrap{max-width:900px;margin:auto}h1{font-size:1.2rem;margin:0 0 1rem}
+.card{padding:1.2rem 1.4rem;border:1px solid #3a3a48;border-radius:16px;background:#202029;margin-bottom:1rem}
+#state{font-size:1.2rem;font-weight:600}.running{color:#9ee493}.waiting,.stopped{color:#f0d98c}.error{color:#ff9a9a}
+#meta,#msg{color:#b8b8c8;margin-top:.4rem}#logs{white-space:pre-wrap;word-break:break-word;color:#c8c8d8;font:12px/1.5 ui-monospace,monospace}
+.log{border-top:1px solid #30303b;padding:.35rem 0}.log:first-child{border-top:0}
 </style>
-<h1>Fuck 头歌 · 脚本状态</h1><div id="card"><pre id="s">加载中…</pre></div>
+<div class="wrap"><h1>Fuck 头歌 · 脚本状态</h1>
+<div class="card"><div id="state">加载中…</div><div id="meta"></div><div id="msg"></div></div>
+<div class="card"><div style="color:#b8b8c8;margin-bottom:.5rem">最近日志</div><div id="logs">暂无</div></div></div>
 <script>
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 async function tick(){
  try{
   const r=await fetch('/status',{cache:'no-store'}); const d=await r.json();
-  const tag=d.state||'unknown';
-  document.getElementById('s').textContent=JSON.stringify(d,null,2);
-  document.getElementById('s').className=(tag==='running')?'ok':(tag==='error'?'bad':'');
- }catch(e){document.getElementById('s').textContent='无法连接脚本状态文件：'+e}
+  const st=d.state||'unknown'; const el=document.getElementById('state');
+  el.textContent={running:'运行中',waiting:'等待中',stopped:'已停止',error:'脚本错误'}[st]||st;
+  el.className=st;
+  document.getElementById('meta').textContent=['槽位 '+(d.slot||'--'),d.course,d.chapter,d.level].filter(Boolean).join(' · ');
+  document.getElementById('msg').textContent=d.message||'';
+  const logs=Array.isArray(d.logs)?d.logs:[];
+  document.getElementById('logs').innerHTML=logs.length?logs.map(x=>'<div class="log">['+esc(x.level||'info')+'] '+esc(x.text||'')+'</div>').join(''):'暂无';
+ }catch(e){document.getElementById('state').textContent='无法读取状态：'+e}
 }
 tick(); setInterval(tick,1000);
 </script></html>"""
