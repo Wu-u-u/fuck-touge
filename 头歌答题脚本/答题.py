@@ -129,6 +129,7 @@ def main() -> None:
     p_ai.add_argument("--kind", choices=["code", "choice"], default="code",
                       help="code=代码草稿，choice=选项字母草稿")
     p_ai.add_argument("--context", default="", help="补充上下文，例如平台题目说明")
+    p_ai.add_argument("--out", default="", help="可选：把草稿保存到文件（不会写档案/提交）")
 
     args = ap.parse_args()
     if hasattr(args, "chapters"):
