@@ -26,7 +26,12 @@ const openDb = (): Promise<IDBDatabase | null> => {
       resolve(null);
     }
   });
-  return dbPromise;
+  const current = dbPromise;
+  // 打开失败时清掉缓存的 rejected/null promise，允许下一次调用重试
+  void current.then((db) => {
+    if (!db && dbPromise === current) dbPromise = null;
+  });
+  return current;
 };
 
 export async function getCachedMedia(key: string): Promise<Blob | null> {

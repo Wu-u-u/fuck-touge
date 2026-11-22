@@ -26,3 +26,48 @@ describe("staleMediaKeys", () => {
     expect(staleMediaKeys([1, null, "a"], ["a"])).toEqual([]);
   });
 });
+
+describe("IndexedDB open retry", () => {
+  it("首次 open 失败后下一次会重试并成功", async () => {
+    const blobs = new Map<string, Blob>([["key", new Blob(["x"])]]);
+    let opens = 0;
+    const fakeDb = {
+      objectStoreNames: { contains: () => true },
+      transaction: () => ({
+        objectStore: () => ({
+          get: (key: string) => {
+            const req: any = {};
+            setTimeout(() => {
+              req.result = blobs.get(key);
+              req.onsuccess?.();
+            }, 0);
+            return req;
+          },
+        }),
+      }),
+    };
+    (globalThis as any).indexedDB = {
+      open: () => {
+        opens++;
+        const req: any = {};
+        setTimeout(() => {
+          if (opens === 1) req.onerror?.();
+          else {
+            req.result = fakeDb;
+            req.onsuccess?.();
+          }
+        }, 0);
+        return req;
+      },
+    };
+    try {
+      expect(await getCachedMedia("key")).toBeNull();
+      expect(opens).toBe(1);
+      const blob = await getCachedMedia("key");
+      expect(opens).toBe(2);
+      expect(blob?.size).toBe(1);
+    } finally {
+      delete (globalThis as any).indexedDB;
+    }
+  });
+});
