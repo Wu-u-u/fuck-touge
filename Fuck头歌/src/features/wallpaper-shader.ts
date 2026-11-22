@@ -552,14 +552,19 @@ const createRenderer = (): ShaderRenderer | null => {
   const canvas = document.createElement("canvas");
   canvas.id = SHADER_CANVAS_ID;
   canvas.setAttribute("aria-hidden", "true");
-  const gl = canvas.getContext("webgl2", {
-    alpha: false,
-    antialias: false,
-    depth: false,
-    stencil: false,
-    powerPreference: "high-performance",
-    preserveDrawingBuffer: false,
-  });
+  let gl: WebGL2RenderingContext | null = null;
+  try {
+    gl = canvas.getContext("webgl2", {
+      alpha: false,
+      antialias: false,
+      depth: false,
+      stencil: false,
+      powerPreference: "high-performance",
+      preserveDrawingBuffer: false,
+    });
+  } catch (e) {
+    return null;
+  }
   if (!gl) return null;
 
   const vertex = compile(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
@@ -638,6 +643,7 @@ export async function startShaderTransition(
   opts: ShaderTransitionOptions,
 ): Promise<ShaderTransitionHandle | null> {
   if (typeof document === "undefined") return null;
+  if (typeof window.WebGL2RenderingContext === "undefined") return null;
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return null;
   if (!isReady(opts.oldMedia)) return null;
   if (!(await waitReady(opts.newMedia, 600))) return null;

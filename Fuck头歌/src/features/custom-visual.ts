@@ -321,7 +321,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       const duration = 1500;
       const easing = "cubic-bezier(.22,1,.36,1)";
       const opacity = String(bg.opacity);
-      const fadesIn = effect === "fade" || effect === "zoom" || effect === "vortex" || effect === "crt";
+      const fadesIn = effect === "fade" || effect === "zoom" || effect === "vortex";
       next.style.opacity = fadesIn ? "0" : opacity;
       let oldKf: Keyframe[];
       let newKf: Keyframe[];
@@ -352,12 +352,6 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
         newKf = [
           { transform: `rotate(${24 * dir}deg) scale(1.28)`, opacity: 0 },
           { transform: "rotate(0deg) scale(1)", opacity },
-        ];
-      } else if (effect === "crt") {
-        oldKf = [{ opacity, filter: "brightness(1)" }, { opacity: 0, filter: "brightness(2)" }];
-        newKf = [
-          { transform: "scaleY(.02)", opacity: 0, filter: "brightness(2.6)" },
-          { transform: "scaleY(1)", opacity, filter: "brightness(1)" },
         ];
       } else if (effect === "wipe") {
         oldKf = oldFade;
@@ -393,6 +387,16 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
           { clipPath: `circle(0% at ${cx}% ${cy}%)` },
           { clipPath: `circle(150% at ${cx}% ${cy}%)` },
         ];
+      } else if (effect === "crt") {
+        // 没有 WebGL2 时的近似：旧图压成横线→亮点，新图在下面先显示
+        next.style.opacity = opacity;
+        oldKf = [
+          { transform: "scale(1, 1)", filter: "brightness(1)", opacity, offset: 0 },
+          { transform: "scale(1, .02)", filter: "brightness(2.4)", opacity, offset: .55 },
+          { transform: "scale(.01, .02)", filter: "brightness(3)", opacity, offset: .85 },
+          { transform: "scale(.01, .01)", filter: "brightness(3)", opacity: 0, offset: 1 },
+        ];
+        newKf = [{ opacity }, { opacity }];
       } else if (effect === "melt") {
         oldKf = oldFade;
         newKf = [

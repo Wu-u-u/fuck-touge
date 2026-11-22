@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { TRANSITION_EFFECTS, coverTransform, effectParams, pickTransitionEffect } from "../../src/features/wallpaper-shader";
+import { TRANSITION_EFFECTS, coverTransform, effectParams, pickTransitionEffect, startShaderTransition } from "../../src/features/wallpaper-shader";
 
 describe("coverTransform", () => {
   it("cover 全图：横向铺满、纵向裁掉上下", () => {
@@ -67,5 +68,26 @@ describe("pickTransitionEffect", () => {
     for (let i = 0; i < 20; i++) {
       expect(TRANSITION_EFFECTS).toContain(pickTransitionEffect("random", ""));
     }
+  });
+});
+
+describe("startShaderTransition fallback", () => {
+  it("没有 WebGL2 时返回 null，调用方走 CSS", async () => {
+    const makeReady = (): HTMLImageElement => {
+      const img = document.createElement("img");
+      Object.defineProperty(img, "complete", { value: true });
+      Object.defineProperty(img, "naturalWidth", { value: 100 });
+      Object.defineProperty(img, "naturalHeight", { value: 100 });
+      return img;
+    };
+    const wp = {
+      id: "w", name: "w", image: "", mediaKey: "", kind: "image" as const,
+      animated: false, seed: "#fff", crop: { x: 0, y: 0, w: 1, h: 1 }, width: 100, height: 100,
+    };
+    const handle = await startShaderTransition({
+      oldMedia: makeReady(), newMedia: makeReady(), oldWallpaper: wp, newWallpaper: wp,
+      effect: "fade", duration: 100,
+    });
+    expect(handle).toBeNull();
   });
 });
