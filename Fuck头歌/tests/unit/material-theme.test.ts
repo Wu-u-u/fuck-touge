@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { Hct, argbFromHex } from "@material/material-color-utilities";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   applyMaterialPalette,
@@ -27,6 +28,16 @@ describe("material theme", () => {
     const c = materialPalette("#e91e63");
     expect(a).toEqual(b);
     expect(c!.accent).not.toBe(a!.accent);
+  });
+
+  it("深色表面有层次，强调色提高一档饱和度", () => {
+    const p = materialPalette("#2536d7")!;
+    const tone = (hex: string) => Hct.fromInt(argbFromHex(hex)).tone;
+    const chroma = (hex: string) => Hct.fromInt(argbFromHex(hex)).chroma;
+    expect(tone(p.panel)).toBeGreaterThan(tone(p.bg) + 2);
+    expect(tone(p.panel2)).toBeGreaterThan(tone(p.panel) + 2);
+    expect(tone(p.border)).toBeGreaterThan(tone(p.panel2));
+    expect(chroma(p.accent)).toBeGreaterThanOrEqual(40);
   });
 
   it("非法种子返回 null", () => {

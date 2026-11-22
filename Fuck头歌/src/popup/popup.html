@@ -15,6 +15,7 @@
     --green: #a6e3a1;
     --yellow: #f9e2af;
     --red: #f38ba8;
+    --gray: #7f849c;
   }
   * { box-sizing: border-box; }
   html { color-scheme: dark; }
@@ -128,6 +129,10 @@
     border-color: color-mix(in srgb, var(--yellow) 38%, transparent);
     background: color-mix(in srgb, var(--yellow) 7%, transparent);
   }
+  .script-card[data-state="gray"] {
+    border-color: color-mix(in srgb, var(--gray) 38%, transparent);
+    background: color-mix(in srgb, var(--gray) 7%, transparent);
+  }
   .script-card[data-state="red"] {
     border-color: color-mix(in srgb, var(--red) 38%, transparent);
     background: color-mix(in srgb, var(--red) 7%, transparent);
@@ -143,6 +148,11 @@
   .script-card[data-state="yellow"] .script-dot {
     background: var(--yellow); box-shadow: 0 0 8px color-mix(in srgb, var(--yellow) 55%, transparent);
   }
+  .script-card[data-state="gray"] .script-dot {
+    background: var(--gray); box-shadow: 0 0 8px color-mix(in srgb, var(--gray) 50%, transparent);
+  }
+  .script-card[data-state="gray"] .script-title,
+  .script-card[data-state="gray"] .script-msg { color: var(--dim); }
   .script-title { min-width: 0; font-size: 13px; font-weight: 650; }
   .script-slot { margin-left: auto; flex: none; color: var(--dim); font-size: 10.5px; }
   .script-meta {

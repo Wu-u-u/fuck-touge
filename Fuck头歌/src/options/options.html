@@ -59,6 +59,50 @@
               <span>还没有背景图</span>
               <small>支持 PNG / JPG / WebP / GIF / MP4 / WebM</small>
             </div>
+
+            <div class="mock" id="bgMock" aria-hidden="true">
+              <div class="mock-top">
+                <span class="mock-logo">E</span>
+                <span class="mock-brand">头歌</span>
+                <span class="mock-sub">实践教学平台</span>
+                <span class="mock-tab on">任务</span>
+                <span class="mock-tab">代码</span>
+                <span class="mock-tab">评测</span>
+                <span class="mock-user">吴建祥</span>
+              </div>
+              <div class="mock-body">
+                <aside class="mock-task">
+                  <div class="mock-kicker">数据结构与算法 · 实验二</div>
+                  <div class="mock-title">第 3 关：两数之和</div>
+                  <p class="mock-desc">返回和为 target 的两个下标。</p>
+                  <div class="mock-sample">
+                    <span>输入</span>
+                    <code>nums = [2,7,11,15]<br>target = 9</code>
+                  </div>
+                  <div class="mock-sample">
+                    <span>输出</span>
+                    <code>[0, 1]</code>
+                  </div>
+                </aside>
+                <section class="mock-editor">
+                  <div class="mock-file"><span>solution.py</span><span>Python 3</span></div>
+                  <div class="mock-code">
+                    <div class="mock-line"><i>1</i><code><span class="kw">class</span> <span class="fn">Solution</span>:</code></div>
+                    <div class="mock-line"><i>2</i><code>    <span class="kw">def</span> <span class="fn">twoSum</span>(self, nums, target):</code></div>
+                    <div class="mock-line"><i>3</i><code>        seen = {}</code></div>
+                    <div class="mock-line"><i>4</i><code>        <span class="kw">for</span> i, n <span class="kw">in</span> enumerate(nums):</code></div>
+                    <div class="mock-line"><i>5</i><code>            <span class="kw">if</span> target - n <span class="kw">in</span> seen:</code></div>
+                    <div class="mock-line"><i>6</i><code>                <span class="kw">return</span> [seen[target - n], i]</code></div>
+                    <div class="mock-line"><i>7</i><code>            seen[n] = i</code></div>
+                  </div>
+                </section>
+              </div>
+              <div class="mock-status">
+                <span class="mock-ok"></span>
+                <span>测试通过 <b>3/3</b></span>
+                <span class="mock-status-right">0.12s · 模拟预览</span>
+              </div>
+            </div>
           </div>
 
           <div class="wallpaper-list" id="wallpaperList"></div>

@@ -238,7 +238,7 @@ describe("popup 脚本状态", () => {
     obs2.disconnect();
   });
 
-  it("waiting / stopped 黄色，10.31s 无心跳红色", async () => {
+  it("waiting 黄色 / stopped 灰色，10.31s 无心跳红色", async () => {
     const { api, listeners } = makeApi(status({ state: "waiting", message: "等待中" }), []);
     initPopup(api);
     await sleep(20);
@@ -247,7 +247,7 @@ describe("popup 脚本状态", () => {
 
     const stopped = status({ state: "stopped", updatedAt: Date.now() - 60_000, message: "正常结束" });
     listeners.forEach((cb) => cb({ [SCRIPT_STATUS_KEY]: { newValue: stopped } }, "local"));
-    expect(document.getElementById("scriptCard")!.dataset.state).toBe("yellow");
+    expect(document.getElementById("scriptCard")!.dataset.state).toBe("gray");
     expect(document.getElementById("scriptTitle")!.textContent).toBe("已停止");
 
     const stale = status({ state: "running", updatedAt: Date.now() - 10_400 });

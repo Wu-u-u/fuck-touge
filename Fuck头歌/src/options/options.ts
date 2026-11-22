@@ -250,8 +250,15 @@ const applyMaterialPreview = (): void => {
   }
 };
 
+const syncMockPreview = (): void => {
+  const bg = config.background;
+  els.bgPreview.style.setProperty("--mock-panel-opacity", String(bg.panelOpacity));
+  els.bgPreview.style.setProperty("--mock-editor-opacity", String(bg.editorOpacity));
+};
+
 const renderBackground = (): void => {
   const bg = config.background;
+  syncMockPreview();
   const mediaKeys = new Set(bg.wallpapers.map((w) => w.mediaKey).filter((k): k is string => !!k));
   mediaRetry.retain(mediaKeys);
   // 外部删除壁纸后，别让 mediaMissing 永久记住旧 key
@@ -318,7 +325,11 @@ const renderBackground = (): void => {
     els.bgMeta.textContent = "未选择壁纸";
   } else if (media) {
     const label = active.kind === "video" ? "视频" : active.kind === "gif" ? "GIF 动图" : "静态图";
-    els.bgMeta.textContent = `${active.name} · ${label} · 约 ${formatBytes(estimateDataUrlBytes(media))}`;
+    // blob: 已缓存，拿不到原始字节数；不要显示误导性的“约 0 B”
+    const size = media.startsWith("blob:")
+      ? "已缓存"
+      : `约 ${formatBytes(estimateDataUrlBytes(media))}`;
+    els.bgMeta.textContent = `${active.name} · ${label} · ${size}`;
   } else {
     els.bgMeta.textContent = `${active.name} · 媒体加载中…`;
   }
@@ -1190,6 +1201,7 @@ els.bgPanelOpacity.addEventListener("input", () => {
   const value = Number(els.bgPanelOpacity.value);
   config.background.panelOpacity = Math.min(1, Math.max(0.5, value / 100));
   els.bgPanelOpacityVal.textContent = `${Math.round(config.background.panelOpacity * 100)}%`;
+  syncMockPreview();
   saveSoon();
 });
 
@@ -1197,6 +1209,7 @@ els.bgEditorOpacity.addEventListener("input", () => {
   const value = Number(els.bgEditorOpacity.value);
   config.background.editorOpacity = Math.min(1, Math.max(0.5, value / 100));
   els.bgEditorOpacityVal.textContent = `${Math.round(config.background.editorOpacity * 100)}%`;
+  syncMockPreview();
   saveSoon();
 });
 

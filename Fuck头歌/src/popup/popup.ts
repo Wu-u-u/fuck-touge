@@ -194,7 +194,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     if (!scriptCard || disposed) return;
     const status = scriptStatus;
     const now = Date.now();
-    let tone: "green" | "yellow" | "red" = "red";
+    let tone: "green" | "yellow" | "gray" | "red" = "red";
     let title = "刷题脚本未执行";
     let slot = "槽位 --";
     let meta = "启动答题脚本后这里会显示状态";
@@ -220,7 +220,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
         meta = context || `最后心跳 ${agoText(status.updatedAt)}`;
         message = status.message;
       } else if (status.state === "stopped") {
-        tone = "yellow";
+        tone = "gray";
         title = "已停止";
         meta = context || `最后更新 ${agoText(status.updatedAt)}`;
         message = status.message;

@@ -1,4 +1,5 @@
 import {
+  Hct,
   argbFromHex,
   hexFromArgb,
   sourceColorFromImage,
@@ -28,20 +29,37 @@ const VAR_MAP: Record<keyof MaterialPalette, string> = {
   accentFg: "--accent-fg",
 };
 
-/** 用 Material 官方算法从种子色生成深色 scheme（HCT/tonal palette） */
+const tonal = (hue: number, chroma: number, tone: number): string =>
+  hexFromArgb(
+    Hct.from(
+      hue,
+      Math.max(0, Math.min(120, chroma)),
+      Math.max(0, Math.min(100, tone)),
+    ).toInt(),
+  );
+
+/**
+ * 用 Material 官方算法从种子色生成深色 scheme。
+ * 官方 dark scheme 的 background 与 surface 同 tone，卡片会糊成一片；
+ * 这里保留色相，只把表面拉开 4~5 tone、强调色提高一档 chroma。
+ */
 export function materialPalette(seed: string): MaterialPalette | null {
   if (!isHexColor(seed)) return null;
   try {
     const theme = themeFromSourceColor(argbFromHex(seed));
     const s = theme.schemes.dark;
+    const primary = Hct.fromInt(s.primary);
+    const surfaceChroma = Math.min(16, Math.max(6, primary.chroma * 0.16));
+    const accentChroma =
+      primary.chroma < 10 ? primary.chroma : Math.max(44, primary.chroma * 1.2);
     return {
-      bg: hexFromArgb(s.background),
-      panel: hexFromArgb(s.surface),
-      panel2: hexFromArgb(s.surfaceVariant),
-      border: hexFromArgb(s.outlineVariant),
+      bg: tonal(primary.hue, surfaceChroma, 7),
+      panel: tonal(primary.hue, surfaceChroma + 1.5, 11),
+      panel2: tonal(primary.hue, surfaceChroma + 3, 16),
+      border: tonal(primary.hue, surfaceChroma + 4, 28),
       text: hexFromArgb(s.onSurface),
       dim: hexFromArgb(s.onSurfaceVariant),
-      accent: hexFromArgb(s.primary),
+      accent: tonal(primary.hue, accentChroma, 74),
       accentFg: hexFromArgb(s.onPrimary),
     };
   } catch (e) {
