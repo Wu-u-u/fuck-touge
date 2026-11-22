@@ -112,7 +112,10 @@ def draft_answer(prompt: str, cfg: dict, *, kind: str = "code",
         raise AIError("AI 返回缺少 choices[0].message.content") from e
     if not str(text or "").strip():
         raise AIError("AI 返回空内容")
-    return normalize_answer(str(text), kind)
+    result = normalize_answer(str(text), kind)
+    if not str(result or "").strip():
+        raise AIError("AI 返回空内容")
+    return result
 
 
 DRAFT_INDEX = Path(__file__).resolve().parent.parent / "ai-drafts" / "index.tsv"
