@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -39,6 +40,7 @@ def _run_with_textual() -> None:
         CSS = """
         Screen { layout: vertical; }
         #top { height: auto; padding: 1 2; }
+        #status { height: 3; padding: 0 2; color: $text-muted; }
         #slot { width: 16; }
         #actions { height: auto; padding: 0 2; }
         #log { height: 1fr; margin: 1 2; border: round $accent; }
@@ -48,6 +50,7 @@ def _run_with_textual() -> None:
         def compose(self) -> ComposeResult:
             yield Header()
             with Vertical(id="top"):
+                yield Static("等待脚本状态…", id="status")
                 yield Static("账号槽位（只使用你在输入框里指定的槽位）", classes="hint")
                 yield Input(value="1", id="slot", placeholder="槽位，例如 1")
                 yield Static("操作", classes="hint")
@@ -63,9 +66,26 @@ def _run_with_textual() -> None:
         def on_mount(self) -> None:
             self._proc: subprocess.Popen[str] | None = None
             self.query_one("#log", RichLog).write("Fuck 头歌 TUI 已启动。")
+            self.set_interval(1, self._refresh_status)
+            self._refresh_status()
             self.query_one("#log", RichLog).write(
                 "先点「列课程」，或直接点「开始刷题」。运行日志会显示在这里。"
             )
+
+        def _refresh_status(self) -> None:
+            path = HERE / "state.status.json"
+            text = "等待脚本状态…"
+            try:
+                d = json.loads(path.read_text(encoding="utf-8"))
+                state = {"running": "运行中", "waiting": "等待中", "stopped": "已停止", "error": "错误"}.get(d.get("state"), d.get("state") or "?")
+                ctx = " · ".join(x for x in (d.get("course"), d.get("chapter"), d.get("level")) if x)
+                text = f"{state}  槽位 {d.get('slot', '--')}" + (f"  {ctx}" if ctx else "")
+            except (OSError, json.JSONDecodeError):
+                pass
+            try:
+                self.query_one("#status", Static).update(text)
+            except Exception:
+                pass
 
         def _slot(self) -> str:
             return (self.query_one("#slot", Input).value or "1").strip()

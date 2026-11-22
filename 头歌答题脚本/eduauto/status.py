@@ -8,8 +8,10 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 import cdp
@@ -17,6 +19,7 @@ import cdp
 SCRIPT_SOURCE = "fuck-touge-script"
 HEARTBEAT_SEC = 2.0
 MAX_LOGS = 25
+STATE_FILE = Path(__file__).resolve().parent.parent / "state.status.json"
 
 
 class StatusPublisher:
@@ -127,6 +130,7 @@ class StatusPublisher:
                 "logs": list(self._logs),
             }
             self._logs.clear()
+        self._write_file(payload)
         if browser is None:
             return
         try:
@@ -143,6 +147,16 @@ class StatusPublisher:
             finally:
                 ws.close()
         except (cdp.CDPError, OSError, AttributeError):
+            pass
+
+    def _write_file(self, payload: dict) -> None:
+        """给 TUI/调试用的本地状态快照；不影响浏览器桥。"""
+        try:
+            tmp = STATE_FILE.with_name(STATE_FILE.name + ".tmp")
+            tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
+                           encoding="utf-8")
+            os.replace(tmp, STATE_FILE)
+        except OSError:
             pass
 
     def _heartbeat(self) -> None:

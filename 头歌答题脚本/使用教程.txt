@@ -191,6 +191,7 @@ scan 不再是独立命令：
     uv run --with textual python tui.py
 
 界面提供：列课程、打开浏览器、开始刷题、采集答案、停止、实时日志。
+顶部状态来自 state.status.json；扩展 popup 的状态日志同时保留。
 TUI 只是现有命令的封装；答题、浏览器和状态上报逻辑不变。
 
 【四、输出术语对照表】
