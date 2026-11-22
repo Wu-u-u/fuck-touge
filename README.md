@@ -64,6 +64,10 @@
 ### 二、自动答题脚本
 
 ```bash
+# 可选 Textual TUI 控制台
+uv run --with textual python 头歌答题脚本/tui.py
+
+# 传统 CLI
 cd 头歌答题脚本
 python3 答题.py browser 1          # 启动/切换到 1 号档案（按自己的槽位改）
 python3 答题.py cd                 # 列出课程和序号

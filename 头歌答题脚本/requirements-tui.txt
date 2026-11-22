@@ -1,0 +1,6 @@
+# 可选：Textual TUI 控制台
+# 推荐直接用 uv，不改系统 Python：
+#   uv run --with textual python tui.py
+# 或：
+#   python3 -m pip install --user -r requirements-tui.txt
+textual>=0.80
