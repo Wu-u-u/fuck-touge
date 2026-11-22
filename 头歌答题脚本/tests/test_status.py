@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from eduauto.status import StatusPublisher  # noqa: E402
+from eduauto.status import STATE_FILE, StatusPublisher  # noqa: E402
 
 passed = failed = 0
 
@@ -71,6 +71,9 @@ check("日志最多保留 25 条", payload and len(payload["logs"]) == 25,
 check("日志带上下文",
       payload and payload["logs"][-1]["course"] == "课程A"
       and payload["logs"][-1]["levelName"] == "第1关", repr(payload["logs"][-1] if payload else None))
+snap = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+check("本地状态快照保留 25 条历史", len(snap.get("logs", [])) == 25,
+      str(len(snap.get("logs", []))))
 
 pub.finish()
 check("正常结束写 stopped",

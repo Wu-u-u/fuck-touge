@@ -34,6 +34,7 @@ class StatusPublisher:
         self._level = ""
         self._message = ""
         self._logs: list[dict[str, Any]] = []
+        self._history: list[dict[str, Any]] = []
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._rust: subprocess.Popen[str] | None = None
@@ -98,6 +99,8 @@ class StatusPublisher:
                 "text": text[:300],
             })
             self._logs = self._logs[-MAX_LOGS:]
+            self._history.append(self._logs[-1])
+            self._history = self._history[-MAX_LOGS:]
 
     def error(self, msg: str) -> None:
         self.log(f"✗ {msg}")
