@@ -49,7 +49,7 @@ def _build_app():
         #recent { height: auto; padding: 0 2; color: $text-muted; }
         #slot { width: 16; }
         #course { width: 1fr; }
-        #ai_prompt { width: 1fr; }
+        #ai_prompt { width: 1fr; height: 5; }
         #preview { height: 8; margin: 0 2; border: round $accent; }
         #actions { height: auto; padding: 0 2; }
         #log { height: 1fr; margin: 1 2; border: round $accent; }
@@ -66,7 +66,7 @@ def _build_app():
                 yield Static("课程名或序号（可选；先「列课程」查看）", classes="hint")
                 yield Input(id="course", placeholder="例如 4 / Java程序设计-2026秋")
                 yield Static("AI 草稿（需要 OPENAI_API_KEY；只生成，不提交）", classes="hint")
-                yield Input(id="ai_prompt", placeholder="粘贴题目描述/选项...")
+                yield TextArea("", id="ai_prompt")
                 yield Static("AI 草稿预览（只读；确认不会自动提交）", classes="hint")
                 yield TextArea("", id="preview", read_only=True)
                 yield Static("操作", classes="hint")
@@ -265,7 +265,7 @@ def _build_app():
             elif bid == "harvest":
                 self._start(["harvest"])
             elif bid in ("ai_code", "ai_choice"):
-                prompt = (self.query_one("#ai_prompt", Input).value or "").strip()
+                prompt = (self.query_one("#ai_prompt", TextArea).text or "").strip()
                 if not prompt:
                     self.query_one("#log", RichLog).write("请先填写 AI 题目。")
                     return
