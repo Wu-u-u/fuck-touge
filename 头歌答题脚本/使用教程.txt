@@ -191,14 +191,19 @@ scan 不再是独立命令：
 
 只看 state.status.json；不启动/停止脚本、不接触头歌页面，无第三方依赖。
 
-【AI 答案草稿（可选）】
+【AI 自动补答案（DeepSeek）】
 
     # 本机私有 key：~/.config/educoder-auto/ai.toml（0600），或环境变量
+    python3 答题.py run -y --ai
+
+`run --ai` 遇到空答案会读取当前题面，调用 DeepSeek，直接写入答案档案并继续评测；单文件代码/选择题支持，多文件暂不自动处理。失败自动重试一次。
+
+也可以只生成草稿：
     python3 答题.py ai --kind code "题目描述..."
     python3 答题.py ai --kind choice "题目和选项..."
     python3 答题.py ai --kind code "题目" --out ai-drafts/draft.txt
 
-只输出/保存草稿，不自动写档案、不自动提交；选择题会归一化为选项字母，代码题会去掉 Markdown 围栏。TUI 也提供预览、确认、保存草稿、最近草稿列表和载入最近草稿（ai-drafts/index.tsv）。接口地址/模型可在 config.toml 的 [ai] 里改。
+选择题会归一化为选项字母，代码题会去掉 Markdown 围栏。TUI 也有预览、确认、保存/载入草稿和最近 AI 操作日志（ai-logs/operations.tsv）。
 
 【Textual TUI（实验）】
 
