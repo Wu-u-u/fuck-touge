@@ -24,6 +24,7 @@ import { runOnPageHide } from "../shared/page-lifecycle";
 import { releaseObjectUrls } from "../shared/object-url";
 import { resetVideoElement } from "../shared/media-preview";
 import { commitLoadedMedia } from "../shared/media-loader";
+import { MediaRetryQueue } from "../shared/media-retry";
 import { dataUrlToBlob } from "../features/media-cache";
 import type { BackgroundFit, BackgroundTransition, CustomColorKey, CustomConfig, Wallpaper, WallpaperCrop, WallpaperKind } from "../shared/types";
 
@@ -121,6 +122,7 @@ const formatBytes = (bytes: number): string => {
 const mediaCache = new Map<string, string>();
 const mediaLoading = new Map<string, Promise<string>>();
 const mediaMissing = new Set<string>();
+const mediaRetry = new MediaRetryQueue(1, 3000);
 
 const mediaFor = (wp: { image: string; mediaKey?: string }): string =>
   (wp.mediaKey ? mediaCache.get(wp.mediaKey) : "") || wp.image || "";
@@ -133,12 +135,34 @@ const loadMediaFor = async (wp: { image: string; mediaKey?: string }): Promise<s
   const loading = mediaLoading.get(key);
   if (loading) return loading;
   const task = (async () => {
-    const r = await new Promise<Record<string, unknown>>((resolve) => {
-      try { chrome.storage.local.get(key, (x) => resolve(x || {})); }
-      catch (e) { resolve({}); }
+    const result = await new Promise<{ data: string; error: boolean }>((resolve) => {
+      try {
+        chrome.storage.local.get(key, (x) => {
+          if (chrome.runtime?.lastError) {
+            resolve({ data: "", error: true });
+            return;
+          }
+          resolve({ data: typeof x?.[key] === "string" ? String(x[key]) : "", error: false });
+        });
+      } catch (e) {
+        resolve({ data: "", error: true });
+      }
     });
-    const data = typeof r[key] === "string" ? String(r[key]) : "";
-    if (!data) return "";
+    if (result.error) {
+      // 暂时读失败不要永久标记 missing：3 秒后再 render 一次（每 key 仅一次）
+      mediaRetry.schedule(key, () => {
+        mediaMissing.delete(key);
+        render();
+      });
+      return "";
+    }
+    const data = result.data;
+    if (!data) {
+      mediaRetry.clear(key);
+      return "";
+    }
+    mediaRetry.clear(key);
+    mediaMissing.delete(key);
     // 设置页也把 data URL 换成 object URL，避免把 63MB base64 字符串一直放内存里
     const blob = await dataUrlToBlob(data);
     const media = blob ? URL.createObjectURL(blob) : data;
@@ -1103,6 +1127,7 @@ try {
     } catch (e) {}
   });
   runOnPageHide(() => {
+    mediaRetry.clearAll();
     releaseObjectUrls(mediaCache.values());
     mediaCache.clear();
   });
