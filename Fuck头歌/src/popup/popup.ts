@@ -228,6 +228,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   };
 
   let logsRendered = false;
+  let lastLogsKey: string | null = null;
   // 契约：只显示当前状态对应槽位的日志；旧格式没有 slot 的条目保留
   const currentSlotLogs = (): ScriptLogEntry[] => {
     const slot = scriptStatus?.slot || "";
@@ -236,11 +237,15 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   };
   const renderScriptLogs = (): void => {
     if (!logList) return;
+    scriptLogs = normalizeScriptLogs(scriptLogs);
+    const logs = currentSlotLogs();
+    // 心跳每秒刷新 status，但日志没变时不要重建 25 个 DOM 节点
+    const key = logs.map((log) => `${log.at}|${log.level}|${log.slot}|${log.levelName}|${log.text}`).join("\n");
+    if (lastLogsKey === key) return;
+    lastLogsKey = key;
     const stickToBottom = !logsRendered
       || logList.scrollHeight - logList.scrollTop - logList.clientHeight < 24;
     logsRendered = true;
-    scriptLogs = normalizeScriptLogs(scriptLogs);
-    const logs = currentSlotLogs();
     logList.textContent = "";
     if (logCount) {
       logCount.textContent = String(logs.length);

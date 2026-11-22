@@ -136,6 +136,29 @@ describe("popup 脚本状态", () => {
     expect(document.getElementById("logList")!.textContent).not.toContain("槽位一日志");
   });
 
+  it("心跳只改状态时不重建日志 DOM；槽位变化才重建", async () => {
+    const { api, listeners } = makeApi(status(), [log()]);
+    initPopup(api);
+    await sleep(20);
+    const list = document.getElementById("logList")!;
+    let mutations = 0;
+    const obs = new MutationObserver((records) => { mutations += records.length; });
+    obs.observe(list, { childList: true, subtree: true, characterData: true });
+
+    listeners.forEach((cb) => cb({ [SCRIPT_STATUS_KEY]: { newValue: status({ message: "新消息" }) } }, "local"));
+    await sleep(10);
+    expect(mutations).toBe(0);
+    obs.disconnect();
+
+    let changed = 0;
+    const obs2 = new MutationObserver((records) => { changed += records.length; });
+    obs2.observe(list, { childList: true, subtree: true });
+    listeners.forEach((cb) => cb({ [SCRIPT_STATUS_KEY]: { newValue: status({ slot: "2" }) } }, "local"));
+    await sleep(10);
+    expect(changed).toBeGreaterThan(0);
+    obs2.disconnect();
+  });
+
   it("waiting / stopped 黄色，10.31s 无心跳红色", async () => {
     const { api, listeners } = makeApi(status({ state: "waiting", message: "等待中" }), []);
     initPopup(api);
