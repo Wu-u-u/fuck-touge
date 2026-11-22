@@ -29,15 +29,75 @@ ENTRY = HERE / "答题.py"
 def _build_app():
     """构建 Textual App 类；只在此函数内导入 Textual。"""
     try:
-        from textual import work
+        from textual import on, work
         from textual.app import App, ComposeResult
         from textual.containers import Horizontal, Vertical
+        from textual.screen import ModalScreen
         from textual.widgets import Button, Footer, Header, Input, RichLog, Static, TextArea
     except ImportError:
         print("缺少 Textual。推荐运行：")
         print("  uv run --with textual python tui.py")
         print("或：python3 -m pip install --user -r requirements-tui.txt")
         raise SystemExit(2)
+
+    class RetryScreen(ModalScreen[bool]):
+        def __init__(self, message: str) -> None:
+            super().__init__()
+            self.message = message
+
+        CSS = """
+        RetryScreen { align: center middle; }
+        #retry_dialog { width: 72; height: auto; padding: 1 2; border: round #b45353; background: #141b26; }
+        #retry_buttons { height: auto; align-horizontal: right; }
+        #retry_buttons Button { width: auto; margin-left: 1; }
+        """
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id="retry_dialog"):
+                yield Static("AI 任务失败", classes="section")
+                yield Static(self.message, id="retry_message")
+                with Horizontal(id="retry_buttons"):
+                    yield Button("停止", id="cancel")
+                    yield Button("再试一次", id="ok", variant="error")
+
+        @on(Button.Pressed, "#ok")
+        def retry(self) -> None:
+            self.dismiss(True)
+
+        @on(Button.Pressed, "#cancel")
+        def stop(self) -> None:
+            self.dismiss(False)
+
+    class AIApprovalScreen(ModalScreen[bool]):
+        """限定范围 AI 的一次性计划审批。"""
+
+        CSS = """
+        AIApprovalScreen { align: center middle; }
+        #dialog { width: 72; height: auto; padding: 1 2; border: round #3d6fa8; background: #141b26; }
+        #dialog_buttons { height: auto; align-horizontal: right; }
+        #dialog_buttons Button { width: auto; margin-left: 1; }
+        """
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id="dialog"):
+                yield Static("AI 限定范围：计划审批", classes="section")
+                yield Static(
+                    "将扫描当前课程未完成关卡，调用 DeepSeek 生成答案，"
+                    "直接写入答案档案并自动评测。\n"
+                    "多文件关卡、主观题会跳过；运行前请确认槽位和课程。",
+                    id="dialog_text",
+                )
+                with Horizontal(id="dialog_buttons"):
+                    yield Button("取消", id="cancel")
+                    yield Button("批准执行", id="ok", variant="success")
+
+        @on(Button.Pressed, "#ok")
+        def approve(self) -> None:
+            self.dismiss(True)
+
+        @on(Button.Pressed, "#cancel")
+        def cancel(self) -> None:
+            self.dismiss(False)
 
     class FuckTougeTui(App):
         TITLE = "Fuck 头歌 · 控制台"
@@ -182,6 +242,15 @@ def _build_app():
             record_draft(path)
             self.query_one("#log", RichLog).write(f"[草稿已保存：{path}；未写入档案、未提交]")
 
+        def _run_scoped_ai(self, approved: bool | None) -> None:
+            if not approved:
+                self.query_one("#log", RichLog).write("[AI 限定范围：已取消]")
+                return
+            self.query_one("#log", RichLog).write(
+                "[AI 限定范围：已批准；开始补齐当前课程空答案并评测]"
+            )
+            self._start(["run", "-y", "--ai"])
+
         def _recent_ai_ops(self) -> None:
             path = HERE / "ai-logs" / "operations.tsv"
             try:
@@ -251,6 +320,21 @@ def _build_app():
                 text = f"AI 草稿启动失败：{e}"
             self.call_from_thread(self._show_preview, text)
 
+        def _ask_retry(self) -> None:
+            if not getattr(self, "_last_args", None):
+                return
+            self.push_screen(
+                RetryScreen("AI 自动任务返回非 0。可以再执行一次；再次失败后不再自动重试。"),
+                self._after_retry,
+            )
+
+        def _after_retry(self, approved: bool | None) -> None:
+            if approved and not getattr(self, "_ai_retry_used", False):
+                self._ai_retry_used = True
+                self._start(list(self._last_args), retry=True)
+            elif not approved:
+                self.query_one("#log", RichLog).write("[AI 任务已停止]")
+
         def _stop_webui(self) -> None:
             if self._webui is not None and self._webui.poll() is None:
                 self._webui.terminate()
@@ -277,10 +361,14 @@ def _build_app():
                 f"[网页状态：http://127.0.0.1:{port} （只读）]"
             )
 
-        def _start(self, args: list[str]) -> None:
+        def _start(self, args: list[str], *, retry: bool = False) -> None:
             if self._proc is not None and self._proc.poll() is None:
                 self.query_one("#log", RichLog).write("已有任务在运行，先点「停止」或等结束。")
                 return
+            self._last_args = list(args)
+            self._ai_run = "--ai" in args
+            if not retry:
+                self._ai_retry_used = False
             log = self.query_one("#log", RichLog)
             log.write(f"$ python3 答题.py {' '.join(args)}")
             self._proc = subprocess.Popen(
@@ -302,6 +390,8 @@ def _build_app():
             rc = proc.wait()
             self.call_from_thread(log.write, f"[进程结束，退出码 {rc}]")
             self._proc = None
+            if rc != 0 and getattr(self, "_ai_run", False) and not getattr(self, "_ai_retry_used", False):
+                self.call_from_thread(self._ask_retry)
 
         def on_button_pressed(self, event: Button.Pressed) -> None:
             bid = event.button.id
@@ -318,10 +408,7 @@ def _build_app():
             elif bid == "run":
                 self._start(["run", "-y"])
             elif bid == "ai_scoped":
-                self.query_one("#log", RichLog).write(
-                    "[AI 自动：将直接补齐当前课程空答案并自动评测；按钮即视为批准]"
-                )
-                self._start(["run", "-y", "--ai"])
+                self.push_screen(AIApprovalScreen(), self._run_scoped_ai)
             elif bid == "ai_autonomous":
                 task = (self.query_one("#ai_prompt", TextArea).text or "").strip()
                 self.query_one("#log", RichLog).write(
