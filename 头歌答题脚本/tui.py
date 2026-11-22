@@ -77,6 +77,7 @@ def _build_app():
                 yield Button("AI 代码", id="ai_code")
                 yield Button("AI 选项", id="ai_choice")
                 yield Button("确认草稿", id="confirm")
+                yield Button("复制草稿", id="copy_draft")
                 yield Button("保存草稿", id="save_draft")
                 yield Button("最近草稿", id="recent_drafts")
                 yield Button("载入最近草稿", id="load_recent")
@@ -111,6 +112,17 @@ def _build_app():
 
         def _slot(self) -> str:
             return (self.query_one("#slot", Input).value or "1").strip()
+
+        def _copy_draft(self) -> None:
+            text = str(getattr(self, "_last_ai", "") or "").strip()
+            if not text:
+                self.query_one("#log", RichLog).write("没有可复制的 AI 草稿。")
+                return
+            try:
+                self.copy_to_clipboard(text)
+                self.query_one("#log", RichLog).write("[草稿已复制到剪贴板]")
+            except Exception as e:
+                self.query_one("#log", RichLog).write(f"[复制失败：{e}]")
 
         def _save_draft(self) -> None:
             text = str(getattr(self, "_last_ai", "") or "").strip()
@@ -226,6 +238,8 @@ def _build_app():
                 self.query_one("#log", RichLog).write(
                     "[草稿已确认，但不会自动写入档案或提交]" if text else "[预览为空]"
                 )
+            elif bid == "copy_draft":
+                self._copy_draft()
             elif bid == "save_draft":
                 self._save_draft()
             elif bid == "recent_drafts":
@@ -256,6 +270,7 @@ def _run_selftest() -> None:
             assert app.query_one("#preview") is not None
             assert app.query_one("#confirm") is not None
             assert app.query_one("#save_draft") is not None
+            assert app.query_one("#copy_draft") is not None
             assert app.query_one("#recent_drafts") is not None
             assert app.query_one("#load_recent") is not None
             assert app.query_one("#course") is not None
