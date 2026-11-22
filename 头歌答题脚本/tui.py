@@ -31,7 +31,7 @@ def _build_app():
     try:
         from textual import on, work
         from textual.app import App, ComposeResult
-        from textual.containers import Horizontal, Vertical
+        from textual.containers import Horizontal, Vertical, VerticalScroll
         from textual.screen import ModalScreen
         from textual.widgets import Button, Footer, Header, Input, RichLog, Static, TextArea
     except ImportError:
@@ -101,7 +101,7 @@ def _build_app():
 
     class FuckTougeTui(App):
         TITLE = "Fuck 头歌 · 控制台"
-        SUB_TITLE = "答题脚本 v0.9.76"
+        SUB_TITLE = "答题脚本 v0.9.77"
         BINDINGS = [("q", "quit", "退出")]
 
         CSS = """
@@ -110,12 +110,13 @@ def _build_app():
         Footer { background: #182231; color: #9fb0c7; }
         #body { height: 1fr; }
         #sidebar {
-            width: 42; min-width: 34; padding: 1;
+            width: 34; min-width: 28; padding: 1;
             background: #141b26; border-right: solid #2b3b52;
+            overflow-y: auto;
         }
-        #main { width: 1fr; padding: 1 2; }
+        #main { width: 1fr; min-width: 28; padding: 1 2; overflow-y: auto; }
         #status {
-            height: 4; padding: 1; border: round #3d6fa8;
+            height: auto; min-height: 4; padding: 1; border: round #3d6fa8;
             background: #172233; color: #d9e8ff;
         }
         #recent { height: 5; color: #8fa4bf; }
@@ -136,7 +137,7 @@ def _build_app():
         def compose(self) -> ComposeResult:
             yield Header()
             with Horizontal(id="body"):
-                with Vertical(id="sidebar"):
+                with VerticalScroll(id="sidebar"):
                     yield Static("等待脚本状态…", id="status")
                     yield Static("", id="recent")
                     yield Static("槽位", classes="hint")
@@ -156,7 +157,7 @@ def _build_app():
                         yield Button("采集答案", id="harvest")
                         yield Button("网页状态", id="webui")
                         yield Button("停止", id="stop", variant="error")
-                with Vertical(id="main"):
+                with VerticalScroll(id="main"):
                     yield Static("AI 预览 / 当前题面", classes="section")
                     yield TextArea("", id="preview", read_only=True)
                     with Horizontal(id="draft_actions"):
@@ -194,7 +195,7 @@ def _build_app():
                 msg = str(d.get("message") or "").strip()
                 text = f"{state}  槽位 {d.get('slot', '--')}" + (f"  {ctx}" if ctx else "")
                 if msg:
-                    text += "  " + msg[:100]
+                    text += "  " + msg[:52]
                 logs = d.get("logs") if isinstance(d.get("logs"), list) else []
                 recent = "\n".join(f"[{x.get('level', 'info')}] {x.get('text', '')[:120]}"
                                     for x in logs[-3:] if isinstance(x, dict))
