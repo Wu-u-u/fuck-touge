@@ -50,11 +50,27 @@ export function createChoiceWatcher(deps: ChoiceWatcherDeps = {}): ChoiceWatcher
     notified: boolean;
   } | null = null;
 
+  let watchTimer = 0;
+  const clearWatch = (): void => {
+    if (watchTimer) {
+      clearTimeout(watchTimer);
+      watchTimer = 0;
+    }
+  };
+  const scheduleWatch = (): void => {
+    clearWatch();
+    watchTimer = window.setTimeout(() => {
+      watchTimer = 0;
+      watch();
+    }, POLL_MS);
+  };
+
   const resultBox = () =>
     $$(".evaluate-result-container, [class*=\"evaluate-result\"]").find(visible) || null;
 
   const stop = (): void => {
     choiceEval = null;
+    clearWatch();
   };
 
   const fail = (): void => {
@@ -102,7 +118,7 @@ export function createChoiceWatcher(deps: ChoiceWatcherDeps = {}): ChoiceWatcher
           || next.getAttribute("aria-disabled") === "true") {
         // 刚评测结束时按钮可能短暂禁用，下一轮再试。
         if (now() - run.at > TIMEOUT_MS) fail();
-        else setTimeout(watch, POLL_MS);
+        else scheduleWatch();
         return;
       }
       if (!claimJump(run.key)) {
@@ -119,7 +135,7 @@ export function createChoiceWatcher(deps: ChoiceWatcherDeps = {}): ChoiceWatcher
       fail();
       return;
     }
-    setTimeout(watch, POLL_MS);
+    scheduleWatch();
   };
 
   const onClick = (e: Event): void => {
@@ -131,12 +147,15 @@ export function createChoiceWatcher(deps: ChoiceWatcherDeps = {}): ChoiceWatcher
       baseline: new Set(testResults()),
       notified: false,
     };
-    setTimeout(watch, POLL_MS);
+    scheduleWatch();
   };
 
   const install = (): (() => void) => {
     document.addEventListener("click", onClick, true);
-    return () => document.removeEventListener("click", onClick, true);
+    return () => {
+      document.removeEventListener("click", onClick, true);
+      stop();
+    };
   };
 
   return { install, isWatching: () => !!choiceEval };

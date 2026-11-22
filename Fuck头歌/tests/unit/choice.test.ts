@@ -80,6 +80,38 @@ afterEach(() => {
 });
 
 describe("choice watcher", () => {
+  it("连续点两次评测只保留一条观察定时器，结果只跳一次", () => {
+    const jumpNotice = vi.fn();
+    const w = createChoiceWatcher({ toast: () => {}, jumpNotice });
+    const dispose = w.install();
+    const btn = makeEvalBtn();
+    const next = makeToolbarNext();
+    let clicked = 0;
+    next.addEventListener("click", () => clicked++);
+
+    btn.click();
+    expect(vi.getTimerCount()).toBe(1);
+    btn.click();
+    expect(vi.getTimerCount()).toBe(1);
+
+    makeTestResult("success");
+    vi.advanceTimersByTime(150);
+    expect(clicked).toBe(1);
+    expect(jumpNotice).toHaveBeenCalledTimes(1);
+    expect(w.isWatching()).toBe(false);
+    dispose();
+  });
+
+  it("dispose 后清掉未触发的观察定时器", () => {
+    const w = createChoiceWatcher({ toast: () => {} });
+    const dispose = w.install();
+    makeEvalBtn().click();
+    expect(vi.getTimerCount()).toBe(1);
+    dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(w.isWatching()).toBe(false);
+  });
+
   it("新 success 面板 → 点一次工具栏下一关并提示", () => {
     const jumpNotice = vi.fn();
     const w = createChoiceWatcher({ toast: () => {}, jumpNotice });
