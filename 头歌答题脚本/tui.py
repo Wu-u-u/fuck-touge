@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import json
 import subprocess
 import sys
@@ -92,6 +93,7 @@ def _build_app():
         def on_mount(self) -> None:
             self._proc: subprocess.Popen[str] | None = None
             self._webui: subprocess.Popen[str] | None = None
+            atexit.register(self._stop_webui)
             self.query_one("#preview", TextArea).load_text("AI 草稿会显示在这里")
             self.query_one("#log", RichLog).write("Fuck 头歌 TUI 已启动。")
             self.set_interval(1, self._refresh_status)
