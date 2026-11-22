@@ -75,6 +75,19 @@ snap = json.loads(STATE_FILE.read_text(encoding="utf-8"))
 check("本地状态快照保留 25 条历史", len(snap.get("logs", [])) == 25,
       str(len(snap.get("logs", []))))
 
+pub.attach(browser, "2")
+pub.flush()
+exprs2 = browser.ws.exprs
+payload2 = None
+for expr in reversed(exprs2):
+    if "fuck-touge-script" not in expr:
+        continue
+    body = expr[len("window.postMessage("):].rsplit(", '*')", 1)[0]
+    payload2 = json.loads(body)["payload"]
+    break
+check("切换槽位清空旧日志", payload2 and payload2["slot"] == "2"
+      and payload2["logs"] == [], repr(payload2))
+
 pub.finish()
 check("正常结束写 stopped",
       any('"state": "stopped"' in e or '"state":"stopped"' in e for e in browser.ws.exprs),

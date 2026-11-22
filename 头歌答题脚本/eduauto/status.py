@@ -53,6 +53,8 @@ class StatusPublisher:
                 self._slot = str(slot)
             self._state = "waiting"
             self._message = "等待命令"
+            self._logs.clear()
+            self._history.clear()
             self._stop.set()
             old = self._thread
         if old and old.is_alive() and old is not threading.current_thread():
