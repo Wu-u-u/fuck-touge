@@ -79,6 +79,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   const clearLogsBtn = doc.getElementById("clearLogs") as HTMLButtonElement | null;
   if (copyLogsBtn) copyLogsBtn.title = "复制当前槽位日志";
   if (clearLogsBtn) clearLogsBtn.title = "清空当前槽位日志";
+  let disposed = false;
   const cleanups: Array<() => void> = [];
 
   const setMsg = (text: string, warn = false): void => {
@@ -119,6 +120,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     if (!customStorage) return;
     try {
       customStorage.get(CUSTOM_CONFIG_KEY, (items) => {
+        if (disposed) return;
         customCfg = normalizeCustomConfig(items?.[CUSTOM_CONFIG_KEY]);
         renderCustom();
         applyMaterial();
@@ -345,6 +347,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     }
     try {
       scriptStorage.get([SCRIPT_STATUS_KEY, SCRIPT_LOGS_KEY], (items) => {
+        if (disposed) return;
         scriptStatus = normalizeScriptStatus(items?.[SCRIPT_STATUS_KEY]);
         scriptLogs = normalizeScriptLogs(items?.[SCRIPT_LOGS_KEY]);
         renderScriptStatus();
@@ -489,7 +492,6 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     );
   })();
 
-  let disposed = false;
   const dispose = (): void => {
     if (disposed) return;
     disposed = true;

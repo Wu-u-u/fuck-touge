@@ -56,13 +56,14 @@ const log = (patch: Partial<ScriptLogEntry> = {}): ScriptLogEntry => ({
   ...patch,
 });
 
-function makeApi(initialStatus: ScriptStatus | null, initialLogs: ScriptLogEntry[]) {
+function makeApi(initialStatus: ScriptStatus | null, initialLogs: ScriptLogEntry[], deferGet = false) {
   const items: Record<string, unknown> = {
     [SCRIPT_STATUS_KEY]: initialStatus,
     [SCRIPT_LOGS_KEY]: initialLogs,
   };
   const listeners: Array<(changes: Record<string, { newValue?: unknown }>, area: string) => void> = [];
   const removed: string[] = [];
+  const pendingGets: Array<() => void> = [];
   const api: PopupChromeApi = {
     tabs: {
       query: async () => [{ id: 1, url: "https://www.educoder.net/tasks/a/b/c" }],
@@ -76,7 +77,11 @@ function makeApi(initialStatus: ScriptStatus | null, initialLogs: ScriptLogEntry
     },
     storage: {
       local: {
-        get: (_keys, callback) => callback({ ...items }),
+        get: (_keys, callback) => {
+          const run = () => callback({ ...items });
+          if (deferGet) pendingGets.push(run);
+          else run();
+        },
         set: (patch) => Object.assign(items, patch),
         remove: (keys, callback) => {
           for (const key of Array.isArray(keys) ? keys : [keys]) {
@@ -95,7 +100,7 @@ function makeApi(initialStatus: ScriptStatus | null, initialLogs: ScriptLogEntry
       },
     },
   };
-  return { api, items, listeners, removed };
+  return { api, items, listeners, removed, pendingGets };
 }
 
 beforeEach(buildDom);
@@ -114,6 +119,16 @@ describe("popup 脚本状态", () => {
     expect(listeners.length).toBe(0);
     dispose();
     expect(listeners.length).toBe(0);
+  });
+
+  it("dispose 后到达的 storage 回调不再渲染", () => {
+    const { api, pendingGets } = makeApi(status({ message: "迟到的状态" }), [], true);
+    const dispose = initPopup(api);
+    expect(pendingGets.length).toBeGreaterThan(0);
+    dispose();
+    pendingGets.forEach((fn) => fn());
+    expect(document.getElementById("scriptTitle")!.textContent).toBe("");
+    expect(document.getElementById("scriptMeta")!.textContent).toBe("");
   });
 
   it("running 绿色，显示当前槽位/课程，并渲染日志", async () => {
