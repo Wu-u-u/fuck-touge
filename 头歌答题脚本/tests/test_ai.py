@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from eduauto.ai import AIError, draft_answer  # noqa: E402
+from eduauto.ai import AIError, cmd_ai, draft_answer  # noqa: E402
 
 passed = failed = 0
 
@@ -69,6 +69,15 @@ with patch.dict(os.environ, {}, clear=True):
         check("无密钥失败", False)
     except AIError as e:
         check("无密钥失败", "TEST_AI_KEY" in str(e))
+
+# --out 只保存草稿，不写档案、不提交
+from types import SimpleNamespace
+import tempfile
+with tempfile.TemporaryDirectory() as td:
+    out = Path(td) / "draft.txt"
+    with patch.dict(os.environ, {"TEST_AI_KEY": "test-secret"}):
+        cmd_ai(SimpleNamespace(prompt=["题目"], kind="choice", context="", out=str(out)), cfg)
+    check("--out 保存纯文本草稿", out.read_text(encoding="utf-8").strip() == "A,B")
 srv.shutdown()
 
 print(f"\n{passed} passed, {failed} failed")

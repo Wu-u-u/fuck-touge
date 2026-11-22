@@ -15,6 +15,7 @@ import asyncio
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -36,7 +37,7 @@ def _build_app():
 
     class FuckTougeTui(App):
         TITLE = "Fuck 头歌 · 控制台"
-        SUB_TITLE = "答题脚本 v0.9.46"
+        SUB_TITLE = "答题脚本 v0.9.48"
         BINDINGS = [("q", "quit", "退出")]
 
         CSS = """
@@ -74,6 +75,7 @@ def _build_app():
                 yield Button("AI 代码", id="ai_code")
                 yield Button("AI 选项", id="ai_choice")
                 yield Button("确认草稿", id="confirm")
+                yield Button("保存草稿", id="save_draft")
                 yield Button("停止", id="stop", variant="error")
             yield RichLog(id="log", markup=False, wrap=True)
             yield Footer()
@@ -106,7 +108,19 @@ def _build_app():
         def _slot(self) -> str:
             return (self.query_one("#slot", Input).value or "1").strip()
 
+        def _save_draft(self) -> None:
+            text = str(getattr(self, "_last_ai", "") or "").strip()
+            if not text:
+                self.query_one("#log", RichLog).write("没有可保存的 AI 草稿。")
+                return
+            folder = HERE / "ai-drafts"
+            folder.mkdir(exist_ok=True)
+            path = folder / f"ai-{time.strftime('%Y%m%d-%H%M%S')}.txt"
+            path.write_text(text + "\n", encoding="utf-8")
+            self.query_one("#log", RichLog).write(f"[草稿已保存：{path}；未写入档案、未提交]")
+
         def _show_preview(self, text: str) -> None:
+            self._last_ai = text
             area = self.query_one("#preview", TextArea)
             try:
                 area.load_text(text)
@@ -179,6 +193,8 @@ def _build_app():
                 self.query_one("#log", RichLog).write(
                     "[草稿已确认，但不会自动写入档案或提交]" if text else "[预览为空]"
                 )
+            elif bid == "save_draft":
+                self._save_draft()
             elif bid == "stop":
                 if self._proc is not None and self._proc.poll() is None:
                     self._proc.terminate()
@@ -202,6 +218,7 @@ def _run_selftest() -> None:
             assert app.query_one("#ai_prompt") is not None
             assert app.query_one("#preview") is not None
             assert app.query_one("#confirm") is not None
+            assert app.query_one("#save_draft") is not None
             assert app.query_one("#course") is not None
         print("tui selftest ok")
 

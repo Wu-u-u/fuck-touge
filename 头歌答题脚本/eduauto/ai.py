@@ -9,6 +9,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+from pathlib import Path
 from dataclasses import dataclass
 
 from eduauto.util import die, log
@@ -97,4 +98,10 @@ def cmd_ai(args, cfg: dict) -> None:
         text = draft_answer(prompt, cfg, kind=args.kind, context=args.context)
     except AIError as e:
         die(str(e))
+    out = str(getattr(args, "out", "") or "").strip()
+    if out:
+        path = Path(out).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text + "\n", encoding="utf-8")
+        log(f"  ✓ 草稿已保存：{path}（未写入档案、未提交）")
     print(text)
