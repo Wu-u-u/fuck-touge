@@ -37,7 +37,7 @@ def _build_app():
 
     class FuckTougeTui(App):
         TITLE = "Fuck 头歌 · 控制台"
-        SUB_TITLE = "答题脚本 v0.9.50"
+        SUB_TITLE = "答题脚本 v0.9.51"
         BINDINGS = [("q", "quit", "退出")]
 
         CSS = """
@@ -76,6 +76,7 @@ def _build_app():
                 yield Button("AI 选项", id="ai_choice")
                 yield Button("确认草稿", id="confirm")
                 yield Button("保存草稿", id="save_draft")
+                yield Button("最近草稿", id="recent_drafts")
                 yield Button("停止", id="stop", variant="error")
             yield RichLog(id="log", markup=False, wrap=True)
             yield Footer()
@@ -117,7 +118,24 @@ def _build_app():
             folder.mkdir(exist_ok=True)
             path = folder / f"ai-{time.strftime('%Y%m%d-%H%M%S')}.txt"
             path.write_text(text + "\n", encoding="utf-8")
+            index = folder / "index.tsv"
+            with index.open("a", encoding="utf-8") as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\t{path}\n")
             self.query_one("#log", RichLog).write(f"[草稿已保存：{path}；未写入档案、未提交]")
+
+        def _recent_drafts(self) -> None:
+            index = HERE / "ai-drafts" / "index.tsv"
+            try:
+                lines = index.read_text(encoding="utf-8").splitlines()[-5:]
+            except OSError:
+                lines = []
+            log = self.query_one("#log", RichLog)
+            if not lines:
+                log.write("还没有保存过 AI 草稿。")
+                return
+            log.write("最近草稿：")
+            for line in reversed(lines):
+                log.write("  " + line.replace("\t", "  "))
 
         def _show_preview(self, text: str) -> None:
             self._last_ai = text
@@ -195,6 +213,8 @@ def _build_app():
                 )
             elif bid == "save_draft":
                 self._save_draft()
+            elif bid == "recent_drafts":
+                self._recent_drafts()
             elif bid == "stop":
                 if self._proc is not None and self._proc.poll() is None:
                     self._proc.terminate()
@@ -219,6 +239,7 @@ def _run_selftest() -> None:
             assert app.query_one("#preview") is not None
             assert app.query_one("#confirm") is not None
             assert app.query_one("#save_draft") is not None
+            assert app.query_one("#recent_drafts") is not None
             assert app.query_one("#course") is not None
         print("tui selftest ok")
 
