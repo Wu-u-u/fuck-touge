@@ -1,5 +1,6 @@
 import { CUSTOM_CONFIG_KEY, activeWallpaper, isMediaKey, normalizeCustomConfig, pageViewConfig } from "../shared/custom";
 import { dataUrlToBlob } from "../features/media-cache";
+import type { CustomConfig } from "../shared/types";
 import {
   MAX_SCRIPT_LOGS,
   SCRIPT_LOGS_KEY,
@@ -22,14 +23,29 @@ const post = (config: unknown): void => {
   } catch (e) {}
 };
 
+
+/** 通知页面清理已删除壁纸的 IDB/object URL；只传 key 列表 */
+const postCleanup = (cfg: CustomConfig): void => {
+  try {
+    const keys = cfg.background.wallpapers
+      .map((w) => w.mediaKey || "")
+      .filter((k) => isMediaKey(k));
+    window.postMessage({ source: BRIDGE_SOURCE, type: "media-cleanup", keys }, "*");
+  } catch (e) {}
+};
+
 const push = (): void => {
   try {
     chrome.storage.local.get(CUSTOM_CONFIG_KEY, (result) => {
       if (chrome.runtime?.lastError) return;
-      post(pageViewConfig(normalizeCustomConfig(result?.[CUSTOM_CONFIG_KEY])));
+      const cfg = normalizeCustomConfig(result?.[CUSTOM_CONFIG_KEY]);
+      post(pageViewConfig(cfg));
+      postCleanup(cfg);
     });
   } catch (e) {
-    post(pageViewConfig(normalizeCustomConfig(null)));
+    const cfg = normalizeCustomConfig(null);
+    post(pageViewConfig(cfg));
+    postCleanup(cfg);
   }
 };
 
@@ -171,7 +187,9 @@ window.addEventListener("message", (e: MessageEvent): void => {
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local" || !changes[CUSTOM_CONFIG_KEY]) return;
-    post(pageViewConfig(normalizeCustomConfig(changes[CUSTOM_CONFIG_KEY].newValue)));
+    const cfg = normalizeCustomConfig(changes[CUSTOM_CONFIG_KEY].newValue);
+    post(pageViewConfig(cfg));
+    postCleanup(cfg);
   });
 } catch (e) {}
 

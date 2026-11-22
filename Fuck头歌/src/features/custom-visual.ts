@@ -1,5 +1,5 @@
 import { COLOR_DEFS, activeWallpaper, contrastText, normalizeCustomConfig } from "../shared/custom";
-import { dataUrlToBlob, getCachedMedia, putCachedMedia } from "./media-cache";
+import { dataUrlToBlob, getCachedMedia, putCachedMedia, pruneCachedMedia } from "./media-cache";
 import { toast } from "../ui/toast";
 import type { CustomConfig, Wallpaper } from "../shared/types";
 import { isAnswerPage } from "./theme/skin";
@@ -41,6 +41,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   const onTopFrame = deps.isTopFrame || defaultTopFrame;
   let config: CustomConfig = normalizeCustomConfig(null);
   let retryTimer = 0;
+  let cleanupTimer = 0;
   let currentId = "";
   let currentLayer: HTMLDivElement | null = null;
   let mediaUrl = "";
@@ -583,8 +584,30 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
 
   const onMessage = (e: MessageEvent): void => {
     if (e.source !== window) return;
-    const data = e.data as { source?: string; type?: string; config?: unknown; key?: string; data?: string; url?: string } | null;
+    const data = e.data as { source?: string; type?: string; config?: unknown; key?: string; data?: string; url?: string; keys?: unknown } | null;
     if (!data || data.source !== BRIDGE_SOURCE) return;
+
+    if (data.type === "media-cleanup" && Array.isArray(data.keys)) {
+      const valid = new Set(data.keys.filter((k): k is string => typeof k === "string"));
+      if (cleanupTimer) clearTimeout(cleanupTimer);
+      // 延迟到过渡结束再删，避免旧图层还在用 blob URL
+      cleanupTimer = window.setTimeout(() => {
+        cleanupTimer = 0;
+        for (const [key, pending] of mediaPending) {
+          if (valid.has(key)) continue;
+          clearTimeout(pending.timer);
+          pending.resolve(null);
+          mediaPending.delete(key);
+        }
+        for (const [key, url] of mediaUrls) {
+          if (valid.has(key)) continue;
+          try { URL.revokeObjectURL(url); } catch (e) {}
+          mediaUrls.delete(key);
+        }
+        void pruneCachedMedia(valid);
+      }, 5000);
+      return;
+    }
 
     if ((data.type === "media" || data.type === "media-missing" || data.type === "media-url") && typeof data.key === "string") {
       const key = data.key;
@@ -669,6 +692,12 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("keydown", onKeyDown, true);
       clearRetry();
+      if (cleanupTimer) clearTimeout(cleanupTimer);
+      cleanupTimer = 0;
+      for (const url of mediaUrls.values()) {
+        try { URL.revokeObjectURL(url); } catch (e) {}
+      }
+      mediaUrls.clear();
       removeStyle();
       removeBg();
     },
