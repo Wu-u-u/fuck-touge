@@ -326,6 +326,10 @@ describe("popup 脚本状态", () => {
     expect(marker["1"]).toBeTruthy();
     expect(marker[""]).toBeTruthy();
 
+    // 心跳只改 status 也不能把清空前日志带回显示
+    listeners.forEach((cb) => cb({ [SCRIPT_STATUS_KEY]: { newValue: status({ slot: "1", message: "心跳" }) } }, "local"));
+    expect(document.getElementById("logList")!.textContent).toContain("暂无日志");
+
     // 模拟 bridge 在清空后写回清空前的旧日志（含无 slot）
     listeners.forEach((cb) => cb({ [SCRIPT_LOGS_KEY]: { newValue: [oldLog, legacy] } }, "local"));
     expect(document.getElementById("logList")!.textContent).toContain("暂无日志");

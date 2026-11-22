@@ -191,7 +191,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   };
 
   const renderScriptStatus = (): void => {
-    if (!scriptCard) return;
+    if (!scriptCard || disposed) return;
     const status = scriptStatus;
     const now = Date.now();
     let tone: "green" | "yellow" | "red" = "red";
@@ -259,7 +259,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     return scriptLogs.filter((log) => !log.slot || log.slot === slot);
   };
   const renderScriptLogs = (): void => {
-    if (!logList) return;
+    if (!logList || disposed) return;
     scriptLogs = normalizeScriptLogs(scriptLogs);
     const logs = currentSlotLogs();
     // 心跳每秒刷新 status，但日志没变时不要重建 25 个 DOM 节点
