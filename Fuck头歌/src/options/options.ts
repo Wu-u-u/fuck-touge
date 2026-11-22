@@ -18,7 +18,8 @@ import {
   type EditorOptionField,
 } from "../shared/editor-options";
 import { applyMaterialPalette, clearMaterialPalette, seedFromImage } from "../shared/material-theme";
-import type { BackgroundFit, CustomColorKey, CustomConfig, WallpaperCrop, WallpaperKind } from "../shared/types";
+import { dataUrlToBlob } from "../features/media-cache";
+import type { BackgroundFit, CustomColorKey, CustomConfig, Wallpaper, WallpaperCrop, WallpaperKind } from "../shared/types";
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector(sel) as T;
 
@@ -110,6 +111,7 @@ const formatBytes = (bytes: number): string => {
 };
 
 const mediaCache = new Map<string, string>();
+const mediaLoading = new Map<string, Promise<string>>();
 const mediaMissing = new Set<string>();
 
 const mediaFor = (wp: { image: string; mediaKey?: string }): string =>
@@ -119,13 +121,28 @@ const loadMediaFor = async (wp: { image: string; mediaKey?: string }): Promise<s
   const cached = mediaFor(wp);
   if (cached) return cached;
   if (!wp.mediaKey) return "";
-  const r = await new Promise<Record<string, unknown>>((resolve) => {
-    try { chrome.storage.local.get(wp.mediaKey!, (x) => resolve(x || {})); }
-    catch (e) { resolve({}); }
-  });
-  const data = typeof r[wp.mediaKey] === "string" ? String(r[wp.mediaKey]) : "";
-  if (data) mediaCache.set(wp.mediaKey, data);
-  return data;
+  const key = wp.mediaKey;
+  const loading = mediaLoading.get(key);
+  if (loading) return loading;
+  const task = (async () => {
+    const r = await new Promise<Record<string, unknown>>((resolve) => {
+      try { chrome.storage.local.get(key, (x) => resolve(x || {})); }
+      catch (e) { resolve({}); }
+    });
+    const data = typeof r[key] === "string" ? String(r[key]) : "";
+    if (!data) return "";
+    // 设置页也把 data URL 换成 object URL，避免把 63MB base64 字符串一直放内存里
+    const blob = await dataUrlToBlob(data);
+    const media = blob ? URL.createObjectURL(blob) : data;
+    mediaCache.set(key, media);
+    return media;
+  })();
+  mediaLoading.set(key, task);
+  try {
+    return await task;
+  } finally {
+    mediaLoading.delete(key);
+  }
 };
 
 const hydrateMedia = async (): Promise<void> => {
@@ -141,9 +158,6 @@ const hydrateMedia = async (): Promise<void> => {
       wp.mediaKey = key;
       wp.image = "";
       changed = true;
-    } else if (wp.mediaKey && !mediaCache.has(wp.mediaKey)) {
-      const data = await loadMediaFor(wp);
-      if (data) changed = true;
     }
   }
   if (changed) {
@@ -271,6 +285,32 @@ const renderBackground = (): void => {
   renderWallpapers();
 };
 
+const addWallpaperButtons = (item: HTMLElement, wp: Wallpaper): void => {
+  const recrop = document.createElement("button");
+  recrop.type = "button";
+  recrop.className = "recrop";
+  recrop.textContent = "裁";
+  recrop.title = "重新裁剪";
+  recrop.addEventListener("click", (e) => {
+    e.stopPropagation();
+    void loadMediaFor(wp).then((media) => {
+      if (media) void openCrop(media, wp.name, wp.kind, wp.width, wp.height, wp.id);
+    });
+  });
+  item.appendChild(recrop);
+
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "del";
+  del.textContent = "×";
+  del.title = "删除这张壁纸";
+  del.addEventListener("click", (e) => {
+    e.stopPropagation();
+    removeWallpaper(wp.id);
+  });
+  item.appendChild(del);
+};
+
 const renderWallpapers = (): void => {
   const bg = config.background;
   els.wallpaperList.innerHTML = "";
@@ -282,15 +322,26 @@ const renderWallpapers = (): void => {
     item.addEventListener("click", () => selectWallpaper(wp.id));
 
     const media = mediaFor(wp);
-    if (!media && wp.mediaKey && !mediaMissing.has(wp.mediaKey)) {
+    // 非当前视频不预加载完整媒体；用占位符，选中/裁剪时再加载
+    const deferVideo = wp.kind === "video" && !media && wp.id !== bg.activeId;
+    if (!media && wp.mediaKey && !mediaMissing.has(wp.mediaKey) && !deferVideo) {
       void loadMediaFor(wp).then((loaded) => {
         if (!loaded) mediaMissing.add(wp.mediaKey);
         renderWallpapers();
       });
     }
     if (wp.kind === "video") {
+      if (!media) {
+        const ph = document.createElement("div");
+        ph.className = "video-placeholder";
+        ph.textContent = "▶";
+        item.appendChild(ph);
+        addWallpaperButtons(item, wp);
+        els.wallpaperList.appendChild(item);
+        continue;
+      }
       const video = document.createElement("video");
-      if (media) video.src = media;
+      video.src = media;
       video.muted = true;
       video.loop = true;
       video.playsInline = true;
@@ -305,29 +356,7 @@ const renderWallpapers = (): void => {
       item.appendChild(img);
     }
 
-    const recrop = document.createElement("button");
-    recrop.type = "button";
-    recrop.className = "recrop";
-    recrop.textContent = "裁";
-    recrop.title = "重新裁剪";
-    recrop.addEventListener("click", (e) => {
-      e.stopPropagation();
-      void loadMediaFor(wp).then((media) => {
-        if (media) void openCrop(media, wp.name, wp.kind, wp.width, wp.height, wp.id);
-      });
-    });
-    item.appendChild(recrop);
-
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "del";
-    del.textContent = "×";
-    del.title = "删除这张壁纸";
-    del.addEventListener("click", (e) => {
-      e.stopPropagation();
-      removeWallpaper(wp.id);
-    });
-    item.appendChild(del);
+    addWallpaperButtons(item, wp);
     els.wallpaperList.appendChild(item);
   }
 
@@ -810,6 +839,10 @@ const removeWallpaper = (id: string): void => {
   list.splice(idx, 1);
   if (removed.mediaKey) {
     try { chrome.storage.local.remove(removed.mediaKey); } catch (e) {}
+    const cached = mediaCache.get(removed.mediaKey);
+    if (cached?.startsWith("blob:")) {
+      try { URL.revokeObjectURL(cached); } catch (e) {}
+    }
     mediaCache.delete(removed.mediaKey);
   }
   if (!list.length) {

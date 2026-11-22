@@ -909,6 +909,18 @@ input[type="color"]:focus-visible { outline: 2px solid var(--accent); outline-of
   object-fit: cover;
 }
 
+.video-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--dim);
+  font-size: 26px;
+  background:
+    radial-gradient(120px 80px at 50% 40%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
+    var(--panel2);
+}
+
 .wallpaper-item.active {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
