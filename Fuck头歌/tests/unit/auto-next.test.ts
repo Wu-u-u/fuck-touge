@@ -203,6 +203,17 @@ describe("autoNext", () => {
     expect(toast).toHaveBeenCalledWith("已经是最后一关了 😋");
   });
 
+  it("落地补提示：15s 内标记只提示一次并清除", () => {
+    vi.setSystemTime(new Date(2_000_000));
+    sessionStorage.setItem(JUMP_KEY, `${Date.now()}|last`);
+    const toast = vi.fn();
+    createAutoNext({ toast });
+    vi.advanceTimersByTime(150);
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledWith("已经是最后一关了 😋");
+    expect(sessionStorage.getItem(JUMP_KEY)).toBeNull();
+  });
+
   it("install 后 1s interval 也会触发检查", () => {
     const ctl = createAutoNext({ toast: () => {} });
     const { btn } = makeModal();
