@@ -1,4 +1,4 @@
-import { CUSTOM_CONFIG_KEY, activeWallpaper, isMediaKey, normalizeCustomConfig, pageViewConfig } from "../shared/custom";
+import { CUSTOM_CONFIG_KEY, activeWallpaper, configHasMediaKey, isMediaKey, normalizeCustomConfig, pageViewConfig } from "../shared/custom";
 import { dataUrlToBlob } from "../features/media-cache";
 import { DelayedRevoker } from "../shared/delayed-revoke";
 import type { CustomConfig } from "../shared/types";
@@ -168,18 +168,22 @@ window.addEventListener("message", (e: MessageEvent): void => {
   if (data.source === MAIN_SOURCE && data.type === "media-request") {
     const key = typeof data.key === "string" ? data.key : "";
     if (!isMediaKey(key)) return;
-    // 页面正在请求这个 key：它当前有效，取消可能已排队的 revoke
-    validMediaKeys.add(key);
-    blobRevoker.cancel(key);
     void (async () => {
       try {
+        const current = await storageGet(CUSTOM_CONFIG_KEY);
+        const cfg = normalizeCustomConfig(current[CUSTOM_CONFIG_KEY]);
+        // 已删除的 mediaKey 不能被一次 stale 请求重新标成有效/取消 revoke
+        if (!configHasMediaKey(cfg, key)) {
+          window.postMessage({ source: BRIDGE_SOURCE, type: "media-missing", key }, "*");
+          return;
+        }
         const cachedUrl = mediaBlobUrls.get(key);
         if (cachedUrl) {
+          validMediaKeys.add(key);
+          blobRevoker.cancel(key);
           window.postMessage({ source: BRIDGE_SOURCE, type: "media-url", key, url: cachedUrl }, "*");
           return;
         }
-        const current = await storageGet(CUSTOM_CONFIG_KEY);
-        const cfg = normalizeCustomConfig(current[CUSTOM_CONFIG_KEY]);
         const active = activeWallpaper(cfg);
         const raw = await storageGet(key);
         let media = typeof raw[key] === "string" ? String(raw[key]) : "";
@@ -189,6 +193,15 @@ window.addEventListener("message", (e: MessageEvent): void => {
           window.postMessage({ source: BRIDGE_SOURCE, type: "media-missing", key }, "*");
           return;
         }
+        // 读 media 期间配置可能又删掉了该壁纸；再确认一次再创建/复用 URL
+        const latest = await storageGet(CUSTOM_CONFIG_KEY);
+        const cfg2 = normalizeCustomConfig(latest[CUSTOM_CONFIG_KEY]);
+        if (!configHasMediaKey(cfg2, key)) {
+          window.postMessage({ source: BRIDGE_SOURCE, type: "media-missing", key }, "*");
+          return;
+        }
+        validMediaKeys.add(key);
+        blobRevoker.cancel(key);
         // blob URL 同源可被 MAIN world fetch/使用；只传短 URL，不再复制 63MB 字符串
         const blob = await dataUrlToBlob(media);
         if (blob) {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_WALLPAPERS, activeWallpaper, contrastText, isHexColor, isImageSource, normalizeCustomConfig, pageViewConfig } from "../../src/shared/custom";
+import { MAX_WALLPAPERS, activeWallpaper, configHasMediaKey, contrastText, isHexColor, isImageSource, normalizeCustomConfig, pageViewConfig } from "../../src/shared/custom";
 import { createCustomVisual } from "../../src/features/custom-visual";
 import type { CustomConfig } from "../../src/shared/types";
 
@@ -50,6 +50,16 @@ describe("custom config", () => {
     const cfg = normalizeCustomConfig(null);
     expect(cfg.background).toEqual({ enabled: false, image: "", wallpapers: [], activeId: "", opacity: 0.4, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", transition: "random", transitionDuration: 1500, fixed: true });
     expect(cfg.colors).toEqual({});
+  });
+
+  it("configHasMediaKey 只认当前壁纸列表", () => {
+    const wp = {
+      id: "w", name: "w", image: "", mediaKey: "fuckTougeMedia:w", kind: "image" as const,
+      animated: false, seed: "#fff", crop: { x: 0, y: 0, w: 1, h: 1 }, width: 1, height: 1,
+    };
+    const cfg = makeConfig({ background: { enabled: true, image: "", wallpapers: [wp], activeId: wp.id, opacity: .4, fit: "cover" } });
+    expect(configHasMediaKey(cfg, wp.mediaKey)).toBe(true);
+    expect(configHasMediaKey(cfg, "fuckTougeMedia:gone")).toBe(false);
   });
 
   it("Material You 需要合法种子色", () => {

@@ -211,6 +211,10 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
   };
 }
 
+/** 配置里是否仍有这个 mediaKey 的壁纸（bridge 校验 media-request 用） */
+export const configHasMediaKey = (cfg: CustomConfig, key: string): boolean =>
+  cfg.background.wallpapers.some((w) => w.mediaKey === key);
+
 /** MAIN world 只需要当前壁纸；有 mediaKey 时只传 key，媒体走页面 IDB */
 export function pageViewConfig(cfg: CustomConfig): CustomConfig {
   const active = activeWallpaper(cfg);
