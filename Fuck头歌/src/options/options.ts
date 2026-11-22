@@ -21,6 +21,7 @@ import { applyMaterialPalette, clearMaterialPalette, seedFromImage } from "../sh
 import { createSaveQueue, flushOnPageHide } from "../shared/save-queue";
 import { createEchoGuard } from "../shared/echo-guard";
 import { runOnPageHide } from "../shared/page-lifecycle";
+import { releaseObjectUrls } from "../shared/object-url";
 import { dataUrlToBlob } from "../features/media-cache";
 import type { BackgroundFit, BackgroundTransition, CustomColorKey, CustomConfig, Wallpaper, WallpaperCrop, WallpaperKind } from "../shared/types";
 
@@ -1085,6 +1086,10 @@ try {
     try {
       chrome.storage.onChanged.removeListener(onCustomStorage);
     } catch (e) {}
+  });
+  runOnPageHide(() => {
+    releaseObjectUrls(mediaCache.values());
+    mediaCache.clear();
   });
 } catch (e) {}
 
