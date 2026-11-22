@@ -81,6 +81,11 @@ with tempfile.TemporaryDirectory() as td:
 
 check("choice 归一化只留字母",
       normalize_answer("答案：A、C。", "choice") == "A,C")
+try:
+    normalize_answer("答案是 Java 风格", "choice")
+    check("choice 不把 Java 当选项", False, "没有抛错")
+except AIError:
+    check("choice 不把 Java 当选项", True)
 check("code 去掉 Markdown 围栏",
       normalize_answer("```java\nclass A {}\n```", "code") == "class A {}")
 srv.shutdown()

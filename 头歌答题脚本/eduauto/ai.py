@@ -54,9 +54,16 @@ def normalize_answer(text: str, kind: str) -> str:
     """把模型输出收敛成可粘贴格式：choice 只留字母，code 去围栏。"""
     text = str(text or "").strip()
     if kind == "choice":
-        letters = sorted(set(re.findall(r"[A-Za-z]", text)))
+        compact = text.strip()
+        if re.fullmatch(r"[A-Za-z]{1,8}", compact):
+            letters = [c.upper() for c in compact]
+        else:
+            # 只认独立的 A/B/C 字母，避免把 Java、JSON 里的字母当选项
+            letters = [c.upper() for c in re.findall(
+                r"(?<![A-Za-z])([A-Za-z])(?![A-Za-z])", text)]
+        letters = sorted(set(letters))
         if not letters:
-            raise AIError("AI 没有返回选项字母")
+            raise AIError("AI 没有返回独立选项字母")
         return ",".join(letters)
     match = re.match(r"^```[^\n]*\n(.*?)\n```\s*$", text, re.S)
     if match:
