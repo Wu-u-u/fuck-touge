@@ -1,4 +1,4 @@
-import { CUSTOM_CONFIG_KEY, activeWallpaper, isMediaKey, normalizeCustomConfig } from "../shared/custom";
+import { CUSTOM_CONFIG_KEY, activeWallpaper, isMediaKey, normalizeCustomConfig, pageViewConfig } from "../shared/custom";
 import {
   MAX_SCRIPT_LOGS,
   SCRIPT_LOGS_KEY,
@@ -18,32 +18,14 @@ const post = (config: unknown): void => {
   } catch (e) {}
 };
 
-// 页面只需要当前壁纸；有 mediaKey 时只传 key，页面自己从 IDB 取媒体，
-// 避免每次切换都复制几十 MB 的 data URL。
-const pageView = (cfg: ReturnType<typeof normalizeCustomConfig>) => {
-  const active = activeWallpaper(cfg);
-  const view = active
-    ? { ...active, image: active.mediaKey ? "" : active.image }
-    : null;
-  return {
-    ...cfg,
-    materialSeed: active?.seed || cfg.materialSeed,
-    background: {
-      ...cfg.background,
-      image: view?.image || "",
-      wallpapers: view ? [view] : [],
-    },
-  };
-};
-
 const push = (): void => {
   try {
     chrome.storage.local.get(CUSTOM_CONFIG_KEY, (result) => {
       if (chrome.runtime?.lastError) return;
-      post(pageView(normalizeCustomConfig(result?.[CUSTOM_CONFIG_KEY])));
+      post(pageViewConfig(normalizeCustomConfig(result?.[CUSTOM_CONFIG_KEY])));
     });
   } catch (e) {
-    post(pageView(normalizeCustomConfig(null)));
+    post(pageViewConfig(normalizeCustomConfig(null)));
   }
 };
 
@@ -173,7 +155,7 @@ window.addEventListener("message", (e: MessageEvent): void => {
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local" || !changes[CUSTOM_CONFIG_KEY]) return;
-    post(pageView(normalizeCustomConfig(changes[CUSTOM_CONFIG_KEY].newValue)));
+    post(pageViewConfig(normalizeCustomConfig(changes[CUSTOM_CONFIG_KEY].newValue)));
   });
 } catch (e) {}
 

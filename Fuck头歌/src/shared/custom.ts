@@ -203,6 +203,23 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
   };
 }
 
+/** MAIN world 只需要当前壁纸；有 mediaKey 时只传 key，媒体走页面 IDB */
+export function pageViewConfig(cfg: CustomConfig): CustomConfig {
+  const active = activeWallpaper(cfg);
+  const view = active
+    ? { ...active, image: active.mediaKey ? "" : active.image }
+    : null;
+  return {
+    ...cfg,
+    materialSeed: active?.seed || cfg.materialSeed,
+    background: {
+      ...cfg.background,
+      image: view?.image || "",
+      wallpapers: view ? [view] : [],
+    },
+  };
+}
+
 /** 根据强调色亮度挑一个可读的前景色（按钮文字） */
 export function contrastText(hex: string): string {
   if (!isHexColor(hex)) return "#1e1e2e";

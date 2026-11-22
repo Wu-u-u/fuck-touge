@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MAX_WALLPAPERS, activeWallpaper, contrastText, isHexColor, isImageSource, normalizeCustomConfig } from "../../src/shared/custom";
+import { MAX_WALLPAPERS, activeWallpaper, contrastText, isHexColor, isImageSource, normalizeCustomConfig, pageViewConfig } from "../../src/shared/custom";
 import { createCustomVisual } from "../../src/features/custom-visual";
 import type { CustomConfig } from "../../src/shared/types";
 
@@ -159,6 +159,46 @@ describe("custom config", () => {
     expect(isImageSource("javascript:alert(1)")).toBe(false);
     expect(contrastText("#ffffff")).toBe("#11111b");
     expect(contrastText("#000000")).toBe("#ffffff");
+  });
+});
+
+describe("page view", () => {
+  it("mediaKey 壁纸只传 key，不带 data URL", () => {
+    const cfg = normalizeCustomConfig({
+      materialSeed: "#123456",
+      background: {
+        enabled: true,
+        activeId: "a",
+        wallpapers: [
+          { id: "a", name: "A", mediaKey: "fuckTougeMedia:a", kind: "video", seed: "#654321", width: 1920, height: 1080 },
+          { id: "b", name: "B", mediaKey: "fuckTougeMedia:b", kind: "image" },
+        ],
+      },
+    });
+    const view = pageViewConfig(cfg);
+    expect(view.background.wallpapers).toHaveLength(1);
+    expect(view.background.wallpapers[0].mediaKey).toBe("fuckTougeMedia:a");
+    expect(view.background.image).toBe("");
+    expect(view.materialSeed).toBe("#654321");
+  });
+
+  it("无 mediaKey 的旧壁纸仍带 image", () => {
+    const cfg = normalizeCustomConfig({
+      background: {
+        enabled: true,
+        activeId: "legacy",
+        wallpapers: [{ id: "legacy", name: "旧图", image: "data:image/png;base64,AA", kind: "image" }],
+      },
+    });
+    const view = pageViewConfig(cfg);
+    expect(view.background.wallpapers[0].image).toContain("data:image/png");
+    expect(view.background.image).toContain("data:image/png");
+  });
+
+  it("没有壁纸时返回空列表", () => {
+    const view = pageViewConfig(normalizeCustomConfig({ background: { enabled: true } }));
+    expect(view.background.wallpapers).toEqual([]);
+    expect(view.background.image).toBe("");
   });
 });
 
