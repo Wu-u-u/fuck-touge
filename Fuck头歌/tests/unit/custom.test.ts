@@ -391,6 +391,54 @@ describe("custom visual", () => {
     expect(document.getElementById("ft-bg")).toBeTruthy();
   });
 
+  it("SPA 离开 /tasks 再返回：media-release 后自动恢复 mediaKey 图层", async () => {
+    const wp = {
+      id: "wp-spa", name: "SPA", image: "", mediaKey: "fuckTougeMedia:wp-spa",
+      kind: "image" as const, animated: false, seed: "#ffffff",
+      crop: { x: 0, y: 0, w: 1, h: 1 }, width: 10, height: 10,
+    };
+    controller = createCustomVisual({
+      isThemeOn: () => true,
+      isAnswerPage: () => /^\/tasks\//.test(location.pathname),
+      isTopFrame: () => true,
+    });
+    controller.install();
+    const post = vi.spyOn(window, "postMessage");
+    window.dispatchEvent(new MessageEvent("message", {
+      data: {
+        source: "fuck-touge-bridge",
+        type: "config",
+        config: makeConfig({ background: { enabled: true, image: "", wallpapers: [wp], activeId: wp.id, opacity: .4, fit: "cover" } }),
+      },
+      source: window,
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+    window.dispatchEvent(new MessageEvent("message", {
+      data: { source: "fuck-touge-bridge", type: "media-url", key: wp.mediaKey, url: "blob:spa-1" },
+      source: window,
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.getElementById("ft-bg")).toBeTruthy();
+    post.mockClear();
+
+    history.pushState({}, "", "/");
+    controller.apply();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: "media-release" }), "*");
+    expect(document.getElementById("ft-bg")).toBeNull();
+
+    history.pushState({}, "", "/tasks/a/b/c");
+    controller.apply();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: "media-request", key: wp.mediaKey }), "*");
+    window.dispatchEvent(new MessageEvent("message", {
+      data: { source: "fuck-touge-bridge", type: "media-url", key: wp.mediaKey, url: "blob:spa-2" },
+      source: window,
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.getElementById("ft-bg")).toBeTruthy();
+  });
+
   it("空图片不启用背景", () => {
     mount(makeConfig({ background: { enabled: true, image: "", opacity: .4, fit: "cover", fixed: true } }));
     expect(document.getElementById("ft-bg")).toBeNull();
