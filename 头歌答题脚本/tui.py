@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import json
+import socket
 import subprocess
 import sys
 import time
@@ -227,12 +228,18 @@ def _build_app():
             if self._webui is not None and self._webui.poll() is None:
                 self.query_one("#log", RichLog).write("网页状态面板已在运行。")
                 return
+            sock = socket.socket()
+            try:
+                sock.bind(("127.0.0.1", 0))
+                port = sock.getsockname()[1]
+            finally:
+                sock.close()
             self._webui = subprocess.Popen(
-                [sys.executable, str(HERE / "webui.py"), "--port", "8765"],
+                [sys.executable, str(HERE / "webui.py"), "--port", str(port)],
                 cwd=str(HERE), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
             self.query_one("#log", RichLog).write(
-                "[网页状态：http://127.0.0.1:8765 （只读）]"
+                f"[网页状态：http://127.0.0.1:{port} （只读）]"
             )
 
         def _start(self, args: list[str]) -> None:
