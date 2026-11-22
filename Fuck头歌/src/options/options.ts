@@ -252,7 +252,12 @@ const applyMaterialPreview = (): void => {
 
 const renderBackground = (): void => {
   const bg = config.background;
-  mediaRetry.retain(new Set(bg.wallpapers.map((w) => w.mediaKey).filter((k): k is string => !!k)));
+  const mediaKeys = new Set(bg.wallpapers.map((w) => w.mediaKey).filter((k): k is string => !!k));
+  mediaRetry.retain(mediaKeys);
+  // 外部删除壁纸后，别让 mediaMissing 永久记住旧 key
+  for (const key of [...mediaMissing]) {
+    if (!mediaKeys.has(key)) mediaMissing.delete(key);
+  }
   const active = activeWallpaper(config);
   const media = active ? mediaFor(active) : "";
   const isVideo = active?.kind === "video";
