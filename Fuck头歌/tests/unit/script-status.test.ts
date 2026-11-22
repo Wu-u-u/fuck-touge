@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_SCRIPT_LOGS,
+  filterClearedScriptLogs,
+  markScriptLogsCleared,
   mergeScriptLogs,
   normalizeScriptLog,
   normalizeScriptLogs,
@@ -68,6 +70,14 @@ describe("script status normalization", () => {
     const merged = mergeScriptLogs(many, [log(20_001, "a"), log(20_002, "b"), log(20_003, "c")]);
     expect(merged).toHaveLength(MAX_SCRIPT_LOGS);
     expect(merged[merged.length - 1].text).toBe("c");
+  });
+
+  it("清空标记按槽位过滤 <= clearedAt 的旧日志", () => {
+    const log = (at: number, slot: string, text: string) => normalizeScriptLog({ at, slot, level: "info", text })!;
+    const logs = [log(1000, "1", "old1"), log(2000, "1", "new1"), log(1500, "2", "other2")];
+    const map = markScriptLogsCleared({}, "1", 1500);
+    expect(filterClearedScriptLogs(logs, map).map((x) => x.text)).toEqual(["new1", "other2"]);
+    expect(map["1"]).toBe(1500);
   });
 
   it("10.31s 心跳阈值：stopped 永不过期", () => {

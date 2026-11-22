@@ -3,9 +3,11 @@ import { dataUrlToBlob } from "../features/media-cache";
 import type { CustomConfig } from "../shared/types";
 import {
   MAX_SCRIPT_LOGS,
+  SCRIPT_LOGS_CLEARED_KEY,
   SCRIPT_LOGS_KEY,
   SCRIPT_SOURCE,
   SCRIPT_STATUS_KEY,
+  filterClearedScriptLogs,
   mergeScriptLogs,
   normalizeScriptLog,
   normalizeScriptLogs,
@@ -91,9 +93,13 @@ const enqueueScript = (fn: () => Promise<void>): void => {
 
 const appendLogs = async (raws: unknown[]): Promise<void> => {
   if (!raws.length) return;
-  const current = await storageGet(SCRIPT_LOGS_KEY);
-  const existing = normalizeScriptLogs(current[SCRIPT_LOGS_KEY]);
-  const incoming = raws.map((raw) => normalizeScriptLog(raw)).filter((log): log is NonNullable<typeof log> => !!log);
+  const current = await storageGet([SCRIPT_LOGS_KEY, SCRIPT_LOGS_CLEARED_KEY]);
+  const cleared = current[SCRIPT_LOGS_CLEARED_KEY];
+  const existing = filterClearedScriptLogs(normalizeScriptLogs(current[SCRIPT_LOGS_KEY]), cleared);
+  const incoming = filterClearedScriptLogs(
+    raws.map((raw) => normalizeScriptLog(raw)).filter((log): log is NonNullable<typeof log> => !!log),
+    cleared,
+  );
   const logs = mergeScriptLogs(existing, incoming);
   await storageSet({ [SCRIPT_LOGS_KEY]: logs.slice(-MAX_SCRIPT_LOGS) });
 };

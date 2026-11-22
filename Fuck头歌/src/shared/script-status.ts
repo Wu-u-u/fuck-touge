@@ -2,6 +2,7 @@
 
 export const SCRIPT_STATUS_KEY = "fuckTougeScriptStatus";
 export const SCRIPT_LOGS_KEY = "fuckTougeScriptLogs";
+export const SCRIPT_LOGS_CLEARED_KEY = "fuckTougeScriptLogsClearedAt";
 export const SCRIPT_SOURCE = "fuck-touge-script";
 export const SCRIPT_STALE_MS = 10_310;
 export const MAX_SCRIPT_LOGS = 25;
@@ -109,6 +110,32 @@ export function mergeScriptLogs(
   return merged.slice(-max);
 }
 
-/** 非 stopped 的状态超过 10.31s 没心跳 → 视为脚本没在跑 */
+export type ScriptLogClearMap = Record<string, number>;
+
+/** 每个槽位最后一次“清空日志”的时间戳；用于过滤并发写回的旧日志。 */
+export function normalizeScriptLogClearMap(raw: unknown): ScriptLogClearMap {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: ScriptLogClearMap = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      out[key.slice(0, 16)] = value;
+    }
+  }
+  return out;
+}
+
+export function markScriptLogsCleared(raw: unknown, slot: string, at = Date.now()): ScriptLogClearMap {
+  const map = normalizeScriptLogClearMap(raw);
+  map[slot || ""] = at;
+  return map;
+}
+
+export function filterClearedScriptLogs(logs: ScriptLogEntry[], rawMap: unknown): ScriptLogEntry[] {
+  const map = normalizeScriptLogClearMap(rawMap);
+  if (!Object.keys(map).length) return logs;
+  return logs.filter((log) => log.at > (map[log.slot || ""] || 0));
+}
+
+/** 非 stopped 的状态超过 10.31s 没心跳 → 视为脚本没在跑 *//** 非 stopped 的状态超过 10.31s 没心跳 → 视为脚本没在跑 */
 export const scriptStatusIsStale = (status: ScriptStatus, now = Date.now()): boolean =>
   status.state !== "stopped" && now - status.updatedAt > SCRIPT_STALE_MS;

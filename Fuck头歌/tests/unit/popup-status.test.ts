@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initPopup, type PopupChromeApi } from "../../src/popup/popup";
 import {
+  SCRIPT_LOGS_CLEARED_KEY,
   SCRIPT_LOGS_KEY,
   SCRIPT_STATUS_KEY,
   type ScriptLogEntry,
@@ -297,6 +298,20 @@ describe("popup 脚本状态", () => {
     listeners.forEach((cb) => cb({ [SCRIPT_STATUS_KEY]: { newValue: status({ slot: "2" }) } }, "local"));
     expect(document.getElementById("logList")!.textContent).toContain("槽位二日志");
     expect((document.getElementById("copyLogs") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("清空后 bridge 并发写回旧日志会被 marker 过滤", async () => {
+    const oldLog = log({ slot: "1", text: "旧日志", at: Date.now() - 1000 });
+    const { api, listeners, items } = makeApi(status({ slot: "1" }), [oldLog]);
+    initPopup(api);
+    await sleep(20);
+    (document.getElementById("clearLogs") as HTMLButtonElement).click();
+    await sleep(5);
+    expect(items[SCRIPT_LOGS_CLEARED_KEY]).toBeTruthy();
+
+    // 模拟 bridge 在清空后写回清空前的旧日志
+    listeners.forEach((cb) => cb({ [SCRIPT_LOGS_KEY]: { newValue: [oldLog] } }, "local"));
+    expect(document.getElementById("logList")!.textContent).toContain("暂无日志");
   });
 
   it("当前槽位无日志时复制/清空禁用（其他槽位有日志）", async () => {

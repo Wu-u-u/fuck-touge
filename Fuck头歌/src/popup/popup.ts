@@ -3,8 +3,11 @@ import { deleteEditorPath, setEditorPath } from "../shared/editor-options";
 import { applyMaterialPalette, clearMaterialPalette } from "../shared/material-theme";
 import {
   MAX_SCRIPT_LOGS,
+  SCRIPT_LOGS_CLEARED_KEY,
   SCRIPT_LOGS_KEY,
   SCRIPT_STATUS_KEY,
+  filterClearedScriptLogs,
+  markScriptLogsCleared,
   normalizeScriptLogs,
   normalizeScriptStatus,
   scriptStatusIsStale,
@@ -163,6 +166,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   const scriptStorage = chromeApi.storage?.local;
   let scriptStatus: ScriptStatus | null = null;
   let scriptLogs: ScriptLogEntry[] = [];
+  let scriptCleared: unknown = {};
   let lastStatusKey: string | null = null;
   let statusTimer = 0;
 
@@ -347,10 +351,11 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
       return;
     }
     try {
-      scriptStorage.get([SCRIPT_STATUS_KEY, SCRIPT_LOGS_KEY], (items) => {
+      scriptStorage.get([SCRIPT_STATUS_KEY, SCRIPT_LOGS_KEY, SCRIPT_LOGS_CLEARED_KEY], (items) => {
         if (disposed) return;
         scriptStatus = normalizeScriptStatus(items?.[SCRIPT_STATUS_KEY]);
-        scriptLogs = normalizeScriptLogs(items?.[SCRIPT_LOGS_KEY]);
+        scriptCleared = items?.[SCRIPT_LOGS_CLEARED_KEY] || {};
+        scriptLogs = filterClearedScriptLogs(normalizeScriptLogs(items?.[SCRIPT_LOGS_KEY]), scriptCleared);
         renderScriptStatus();
         renderScriptLogs();
       });
@@ -383,8 +388,11 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     scriptLogs = slot
       ? scriptLogs.filter((log) => !!log.slot && log.slot !== slot)
       : [];
+    // 记录清空时间；bridge 并发写回 <= 该时间的旧日志会被过滤，避免“清空后旧日志复活”
+    scriptCleared = markScriptLogsCleared(scriptCleared, slot, Date.now());
     renderScriptLogs();
     try {
+      scriptStorage?.set({ [SCRIPT_LOGS_CLEARED_KEY]: scriptCleared });
       if (scriptLogs.length) scriptStorage?.set({ [SCRIPT_LOGS_KEY]: scriptLogs });
       else scriptStorage?.remove(SCRIPT_LOGS_KEY);
     } catch (e) {}
@@ -400,8 +408,16 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
           renderScriptStatus();
           renderScriptLogs();
         }
+        if (changes[SCRIPT_LOGS_CLEARED_KEY]) {
+          scriptCleared = changes[SCRIPT_LOGS_CLEARED_KEY].newValue || {};
+          scriptLogs = filterClearedScriptLogs(scriptLogs, scriptCleared);
+          renderScriptLogs();
+        }
         if (changes[SCRIPT_LOGS_KEY]) {
-          scriptLogs = normalizeScriptLogs(changes[SCRIPT_LOGS_KEY].newValue);
+          scriptLogs = filterClearedScriptLogs(
+            normalizeScriptLogs(changes[SCRIPT_LOGS_KEY].newValue),
+            scriptCleared,
+          );
           renderScriptLogs();
         }
       };
