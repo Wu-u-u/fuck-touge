@@ -306,11 +306,17 @@ def select_course(browser, page: Page, name: str) -> tuple[dict, Course]:
 
 
 def current_course(browser, cfg: dict) -> Course | None:
-    """按浏览器当前页面识别课程（不写 state 记忆）。"""
+    """按浏览器当前页面识别课程（不写 state 记忆）。
+
+    优先选已经有答案档案的课程页，避免残留的陌生课程页（例如
+    /classrooms/124478/...）把真正在用的课程挤掉；没有已知档案时
+    再退回最新课程页，让用户可以 cd 新建档案。
+    """
     try:
         targets = list(browser.pages())   # /json 顺序：新开的课程页在前
     except cdp.CDPError:
         return None
+    fallback = None
     for t in targets:
         url = t.get("url") or ""
         if "educoder.net" not in url:
@@ -324,5 +330,8 @@ def current_course(browser, cfg: dict) -> Course | None:
         saved_name = course_name_from_answers(course.answers, course.code)
         if saved_name:
             course.name = saved_name
-        return course
-    return None
+        if course.answers is not None:
+            return course
+        if fallback is None:
+            fallback = course
+    return fallback

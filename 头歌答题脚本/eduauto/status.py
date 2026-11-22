@@ -78,7 +78,7 @@ class StatusPublisher:
         if not text:
             return
         level = "error" if text.startswith("✗") or "错误" in text else (
-            "warn" if text.startswith("!") or "失败" in text else "info")
+            "warn" if text.startswith(("!", "！")) or "失败" in text else "info")
         with self._lock:
             self._message = text[:200]
             self._logs.append({

@@ -98,5 +98,15 @@ with __import__("tempfile").TemporaryDirectory() as td:
     check("当前课程取最新课程页", cc and cc.code == "ABC" and cc.answers == arch)
     check("当前课程名优先取档案 header", cc and cc.name == "Java程序设计-2026秋", repr(cc))
 
+    # 残留的陌生课程页排在前面时，优先已有答案档案的课程
+    b2 = SimpleNamespace(pages=lambda: [
+        {"id": "3", "url": "https://www.educoder.net/classrooms/124478/shixun_homework",
+         "title": "残留课程"},
+        {"id": "4", "url": "https://www.educoder.net/classrooms/ABC/shixun_homework",
+         "title": "Java"},
+    ])
+    cc2 = current_course(b2, cfg3)
+    check("当前课程优先已有答案档案", cc2 and cc2.code == "ABC", repr(cc2))
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
