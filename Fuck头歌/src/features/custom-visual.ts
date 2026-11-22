@@ -3,6 +3,7 @@ import { dataUrlToBlob, getCachedMedia, putCachedMedia, pruneCachedMedia } from 
 import { toast } from "../ui/toast";
 import type { CustomConfig, Wallpaper } from "../shared/types";
 import { isAnswerPage } from "./theme/skin";
+import { shouldPersistFetchedMedia } from "../shared/media-loader";
 import { pickTransitionEffect, releaseShaderRenderer, startShaderTransition, type ShaderTransitionHandle, type TransitionEffect } from "./wallpaper-shader";
 
 const STYLE_ID = "ft-custom-visual";
@@ -744,7 +745,10 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
         pending.resolve(data.url);
         void fetch(data.url)
           .then((r) => r.blob())
-          .then((blob) => putCachedMedia(key, blob))
+          .then((blob) => {
+            if (!shouldPersistFetchedMedia(key, mediaUrls)) return;
+            return putCachedMedia(key, blob);
+          })
           .catch(() => {});
         return;
       }

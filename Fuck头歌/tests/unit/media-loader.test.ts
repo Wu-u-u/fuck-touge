@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { commitLoadedMedia } from "../../src/shared/media-loader";
+import { commitLoadedMedia, shouldPersistFetchedMedia } from "../../src/shared/media-loader";
 
 const original = URL.revokeObjectURL;
 
@@ -33,5 +33,14 @@ describe("commitLoadedMedia", () => {
     const cache = new Map<string, string>();
     expect(commitLoadedMedia("k", "data:image/png;base64,x", false, cache)).toBe("");
     expect(revoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("shouldPersistFetchedMedia", () => {
+  it("key 仍在页面 URL map 中才落缓存", () => {
+    const urls = new Map([["k", "blob:x"]]);
+    expect(shouldPersistFetchedMedia("k", urls)).toBe(true);
+    urls.delete("k");
+    expect(shouldPersistFetchedMedia("k", urls)).toBe(false);
   });
 });

@@ -20,3 +20,8 @@ export function commitLoadedMedia(
   cache.set(key, media);
   return media;
 }
+
+/** 异步 fetch 完成时 key 仍被页面引用才落 IDB；cleanup 已删掉的 key 不再回填。 */
+export function shouldPersistFetchedMedia(key: string, activeUrls: Map<string, string>): boolean {
+  return activeUrls.has(key);
+}
