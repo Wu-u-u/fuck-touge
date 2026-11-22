@@ -44,6 +44,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   let currentLayer: HTMLDivElement | null = null;
   let mediaUrl = "";
   let switchTimer = 0;
+  let lastEffect = "";
   const layerWp = new Map<HTMLDivElement, Wallpaper>();
 
   const clearRetry = (): void => {
@@ -236,7 +237,11 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       "fade", "wipe", "disc", "stripes", "zoom", "honeycomb",
       "vortex", "pixel", "diamond", "golden", "melt", "crt",
     ] as const;
-    const effect = effects[Math.floor(Math.random() * effects.length)];
+    let effect = effects[Math.floor(Math.random() * effects.length)];
+    if (effect === lastEffect) {
+      effect = effects[(effects.indexOf(effect) + 1) % effects.length];
+    }
+    lastEffect = effect;
     if (!old.animate || prefersReducedMotion()) {
       const el = createLayer(BG_ID);
       styleLayer(el, bg, wp, mediaUrl || wp.image);
@@ -356,6 +361,11 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       } else {
         oldKf = oldFade;
         newKf = [{ opacity }, { opacity }];
+      }
+
+      // clip-path / mask 的边缘天然是硬的；给需要软边的效果加一点 blur，接近 shader 的 smoothstep
+      if (["wipe", "disc", "diamond", "golden", "stripes", "pixel", "honeycomb"].includes(effect)) {
+        newKf = newKf.map((kf, i) => ({ ...kf, filter: i === 0 ? "blur(1.6px)" : "blur(0px)" }));
       }
 
       const oldAnim = old.animate(oldKf, { duration, easing, fill: "both" });
@@ -484,6 +494,15 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     }
   }
 
+  const onVisibility = (): void => {
+    document.querySelectorAll<HTMLVideoElement>("#ft-bg video, #ft-bg-next video").forEach((v) => {
+      try {
+        if (document.hidden) v.pause();
+        else v.play?.().catch(() => {});
+      } catch (e) {}
+    });
+  };
+
   const onMessage = (e: MessageEvent): void => {
     if (e.source !== window) return;
     const data = e.data as { source?: string; type?: string; config?: unknown } | null;
@@ -514,6 +533,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   return {
     install: (): void => {
       window.addEventListener("message", onMessage);
+      document.addEventListener("visibilitychange", onVisibility);
       window.addEventListener("resize", () => {
         for (const [el, wp] of layerWp) {
           if (el.isConnected) layoutLayer(el, wp, config.background);
@@ -532,6 +552,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     getConfig: () => config,
     dispose: (): void => {
       window.removeEventListener("message", onMessage);
+      document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("keydown", onKeyDown, true);
       clearRetry();
       removeStyle();
