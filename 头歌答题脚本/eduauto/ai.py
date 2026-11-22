@@ -130,6 +130,13 @@ def record_draft(path: Path, index: Path | None = None) -> None:
 def cmd_ai(args, cfg: dict) -> None:
     prompt = " ".join(getattr(args, "prompt", []) or []).strip()
     if not prompt:
+        try:
+            import sys
+            if not sys.stdin.isatty():
+                prompt = sys.stdin.read().strip()
+        except OSError:
+            prompt = ""
+    if not prompt:
         die("用法：python3 答题.py ai \"题目...\" ｜ 或从 stdin 输入")
     log(f"  AI 模型：{from_config(cfg).model}（仅生成草稿，不会自动提交）")
     try:

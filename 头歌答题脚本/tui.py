@@ -179,9 +179,11 @@ def _build_app():
         @work(thread=True, exclusive=True)
         def _ai_draft(self, kind: str, prompt: str) -> None:
             try:
+                # 题目走 stdin，避免长题目/以 - 开头的题目被 argparse 当成参数。
                 proc = subprocess.run(
-                    [sys.executable, str(ENTRY), "ai", "--kind", kind, prompt],
+                    [sys.executable, str(ENTRY), "ai", "--kind", kind],
                     cwd=str(HERE), capture_output=True, text=True, timeout=120,
+                    input=prompt,
                 )
                 text = (proc.stdout or "").strip()
                 if proc.returncode != 0:
