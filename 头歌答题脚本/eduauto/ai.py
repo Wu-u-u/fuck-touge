@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -111,6 +112,20 @@ def draft_answer(prompt: str, cfg: dict, *, kind: str = "code",
     return normalize_answer(str(text), kind)
 
 
+DRAFT_INDEX = Path(__file__).resolve().parent.parent / "ai-drafts" / "index.tsv"
+
+
+def record_draft(path: Path, index: Path | None = None) -> None:
+    """把 CLI/TUI 保存的草稿登记到最近草稿索引；只写本地索引。"""
+    target = index or DRAFT_INDEX
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\t{path}\n")
+    except OSError:
+        pass
+
+
 def cmd_ai(args, cfg: dict) -> None:
     prompt = " ".join(getattr(args, "prompt", []) or []).strip()
     if not prompt:
@@ -125,5 +140,6 @@ def cmd_ai(args, cfg: dict) -> None:
         path = Path(out).expanduser()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text + "\n", encoding="utf-8")
-        log(f"  ✓ 草稿已保存：{path}（未写入档案、未提交）")
+        record_draft(path)
+        log(f"  ✓ 草稿已保存：{path}（已登记最近草稿；未写入档案、未提交）")
     print(text)

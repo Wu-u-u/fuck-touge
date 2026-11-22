@@ -18,6 +18,8 @@ import sys
 import time
 from pathlib import Path
 
+from eduauto.ai import record_draft
+
 HERE = Path(__file__).resolve().parent
 ENTRY = HERE / "答题.py"
 
@@ -37,7 +39,7 @@ def _build_app():
 
     class FuckTougeTui(App):
         TITLE = "Fuck 头歌 · 控制台"
-        SUB_TITLE = "答题脚本 v0.9.55"
+        SUB_TITLE = "答题脚本 v0.9.56"
         BINDINGS = [("q", "quit", "退出")]
 
         CSS = """
@@ -119,9 +121,7 @@ def _build_app():
             folder.mkdir(exist_ok=True)
             path = folder / f"ai-{time.strftime('%Y%m%d-%H%M%S')}.txt"
             path.write_text(text + "\n", encoding="utf-8")
-            index = folder / "index.tsv"
-            with index.open("a", encoding="utf-8") as f:
-                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\t{path}\n")
+            record_draft(path)
             self.query_one("#log", RichLog).write(f"[草稿已保存：{path}；未写入档案、未提交]")
 
         def _recent_drafts(self) -> None:
