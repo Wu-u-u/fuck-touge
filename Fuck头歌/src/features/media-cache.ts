@@ -61,6 +61,12 @@ export async function putCachedMedia(key: string, blob: Blob): Promise<boolean> 
 }
 
 
+/** 返回不在有效列表里的页面缓存 key（纯函数，便于回归测试）。 */
+export const staleMediaKeys = (keys: readonly unknown[], validKeys: Iterable<string>): string[] => {
+  const keep = new Set(validKeys);
+  return keys.filter((key): key is string => typeof key === "string" && !keep.has(key));
+};
+
 /** 删除不在有效壁纸列表中的页面缓存；只动页面 IDB，不碰 chrome.storage */
 export async function pruneCachedMedia(validKeys: Iterable<string>): Promise<void> {
   const db = await openDb();
@@ -72,9 +78,7 @@ export async function pruneCachedMedia(validKeys: Iterable<string>): Promise<voi
       const store = tx.objectStore(STORE);
       const req = store.getAllKeys();
       req.onsuccess = () => {
-        for (const key of req.result) {
-          if (typeof key === "string" && !keep.has(key)) store.delete(key);
-        }
+        for (const key of staleMediaKeys(req.result, keep)) store.delete(key);
       };
       tx.oncomplete = () => resolve();
       tx.onerror = () => resolve();
