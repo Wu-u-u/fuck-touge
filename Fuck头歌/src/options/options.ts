@@ -19,6 +19,7 @@ import {
 } from "../shared/editor-options";
 import { applyMaterialPalette, clearMaterialPalette, seedFromImage } from "../shared/material-theme";
 import { createSaveQueue, flushOnPageHide } from "../shared/save-queue";
+import { createEchoGuard } from "../shared/echo-guard";
 import { dataUrlToBlob } from "../features/media-cache";
 import type { BackgroundFit, BackgroundTransition, CustomColorKey, CustomConfig, Wallpaper, WallpaperCrop, WallpaperKind } from "../shared/types";
 
@@ -72,6 +73,7 @@ const els = {
 
 let config: CustomConfig = normalizeCustomConfig(null);
 let saveSeq = 0;
+const echoGuard = createEchoGuard();
 let lastSaved = "";
 let colorRows = new Map<CustomColorKey, {
   row: HTMLDivElement;
@@ -181,7 +183,9 @@ const estimateDataUrlBytes = (dataUrl: string): number => {
 const save = (): void => {
   const seq = ++saveSeq;
   const snapshot = normalizeCustomConfig(config);
-  lastSaved = JSON.stringify(snapshot);
+  const json = JSON.stringify(snapshot);
+  lastSaved = json;
+  echoGuard.mark(json);
   try {
     chrome.storage.local.set({ [CUSTOM_CONFIG_KEY]: snapshot }, () => {
       if (seq !== saveSeq) return;
@@ -1065,6 +1069,8 @@ try {
     if (area !== "local" || !changes[CUSTOM_CONFIG_KEY]) return;
     const next = normalizeCustomConfig(changes[CUSTOM_CONFIG_KEY].newValue);
     const json = JSON.stringify(next);
+    // 自己的写入回显（可能晚于下一次 save）不要重置正在编辑的控件
+    if (echoGuard.isEcho(json)) return;
     if (json === lastSaved) return;
     lastSaved = json;
     config = next;
