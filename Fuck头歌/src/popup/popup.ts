@@ -388,8 +388,11 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
     scriptLogs = slot
       ? scriptLogs.filter((log) => !!log.slot && log.slot !== slot)
       : [];
-    // 记录清空时间；bridge 并发写回 <= 该时间的旧日志会被过滤，避免“清空后旧日志复活”
-    scriptCleared = markScriptLogsCleared(scriptCleared, slot, Date.now());
+    // 记录清空时间；bridge 并发写回 <= 该时间的旧日志会被过滤，避免“清空后旧日志复活”。
+    // 旧格式无 slot 的日志会在每个槽位都显示，清空时同时标记 ""，否则它们仍会被 bridge 写回。
+    const at = Date.now();
+    scriptCleared = markScriptLogsCleared(scriptCleared, slot, at);
+    scriptCleared = markScriptLogsCleared(scriptCleared, "", at);
     renderScriptLogs();
     try {
       scriptStorage?.set({ [SCRIPT_LOGS_CLEARED_KEY]: scriptCleared });

@@ -313,17 +313,21 @@ describe("popup 脚本状态", () => {
     expect(document.getElementById("logCount")!.textContent).toBe("1");
   });
 
-  it("清空后 bridge 并发写回旧日志会被 marker 过滤", async () => {
-    const oldLog = log({ slot: "1", text: "旧日志", at: Date.now() - 1000 });
-    const { api, listeners, items } = makeApi(status({ slot: "1" }), [oldLog]);
+  it("清空后 bridge 并发写回旧日志会被 marker 过滤（含无 slot 旧格式）", async () => {
+    const now = Date.now();
+    const oldLog = log({ slot: "1", text: "旧日志", at: now - 1000 });
+    const legacy = log({ slot: "", text: "旧格式", at: now - 800 });
+    const { api, listeners, items } = makeApi(status({ slot: "1" }), [oldLog, legacy]);
     initPopup(api);
     await sleep(20);
     (document.getElementById("clearLogs") as HTMLButtonElement).click();
     await sleep(5);
-    expect(items[SCRIPT_LOGS_CLEARED_KEY]).toBeTruthy();
+    const marker = items[SCRIPT_LOGS_CLEARED_KEY] as Record<string, number>;
+    expect(marker["1"]).toBeTruthy();
+    expect(marker[""]).toBeTruthy();
 
-    // 模拟 bridge 在清空后写回清空前的旧日志
-    listeners.forEach((cb) => cb({ [SCRIPT_LOGS_KEY]: { newValue: [oldLog] } }, "local"));
+    // 模拟 bridge 在清空后写回清空前的旧日志（含无 slot）
+    listeners.forEach((cb) => cb({ [SCRIPT_LOGS_KEY]: { newValue: [oldLog, legacy] } }, "local"));
     expect(document.getElementById("logList")!.textContent).toContain("暂无日志");
   });
 
