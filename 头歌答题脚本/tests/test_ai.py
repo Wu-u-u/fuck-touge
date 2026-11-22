@@ -102,6 +102,8 @@ except AIError:
     check("choice 不把 Java 当选项", True)
 check("code 去掉 Markdown 围栏",
       normalize_answer("```java\nclass A {}\n```", "code") == "class A {}")
+check("空代码围栏去后为空",
+      normalize_answer("```\n\n```", "code") == "")
 
 with tempfile.TemporaryDirectory() as td:
     idx = Path(td) / "index.tsv"
