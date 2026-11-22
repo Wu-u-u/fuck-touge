@@ -879,6 +879,7 @@ const removeWallpaper = (id: string): void => {
       try { URL.revokeObjectURL(cached); } catch (e) {}
     }
     mediaCache.delete(removed.mediaKey);
+    mediaRetry.clear(removed.mediaKey);
   }
   if (!list.length) {
     config.background.activeId = "";
