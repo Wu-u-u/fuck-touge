@@ -7,7 +7,7 @@ import subprocess
 import time
 
 import cdp
-from eduauto import backend
+from eduauto import backend, status
 from eduauto.backend import BrowserLike, PageSessionLike
 from eduauto.page import Page
 from eduauto.util import die, log
@@ -216,6 +216,7 @@ def _ensure_browser_playwright(cfg: dict) -> BrowserLike:
         update_state(running=cur, running_profile=cur_profile)
 
     close_blank_tabs(browser)
+    status.attach(browser, cur)
     ensure_window_size(browser)
     try:
         ext = browser.ensure_extension(cfg["edge"]["extension"])
@@ -268,6 +269,7 @@ def ensure_browser(cfg: dict) -> BrowserLike:
                  running_profile=os.path.expanduser(str(cfg["edge"]["profile"])))
     browser = connect_browser(port)
     close_blank_tabs(browser)
+    status.attach(browser, cur)
     ensure_window_size(browser)
     try:
         ext = browser.ensure_extension(cfg["edge"]["extension"])

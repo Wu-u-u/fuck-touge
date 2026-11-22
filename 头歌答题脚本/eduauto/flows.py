@@ -10,6 +10,7 @@ import threading
 import time
 
 import cdp
+from eduauto import status as script_status
 from eduauto.page import Page
 from eduauto.archive import (Chapter, find_level, load_answers, sync_chapter_name,
                              write_back_answers, write_scan_skeleton)
@@ -292,6 +293,8 @@ def cmd_harvest(args, cfg: dict) -> None:
         todo = resolve_chapter_args(chapters, args.chapter, strict=False)
     classroom = classroom_page(browser, cfg, url=course.classroom)
     ensure_login(browser, classroom.ws)
+    script_status.set_state("running", "扫描/采集")
+    script_status.set_context(course=course.name, chapter="", level="")
 
     if args.chapter:
         targets = [{"name": ch.name, "ch": ch, "card": None} for ch in (todo or [])]
@@ -603,6 +606,7 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
     """
     if stats is None:
         stats = {"done": 0, "skipped": 0, "failed": 0}
+    script_status.set_context(chapter=ch.name, level="")
     if preopened is None:
         try:
             target, ws = enter_chapter(browser, classroom, ch.name, on_fail="raise")
@@ -648,6 +652,7 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
             idx, lname = st.get("index"), st.get("name")
             if not idx:
                 die(f"章节「{ch.name}」页面状态读取失败。")
+            script_status.set_context(level=f"第{idx}关 {lname}")
             lv = find_level(ch, idx, lname)
             row = row_at(status, idx, lname)
             row_status = (row or {}).get("status", "")
@@ -859,6 +864,7 @@ def cmd_cd(args, cfg: dict) -> None:
         courses = saved_order
     name = choose_course(courses, args.target)
     target, course = select_course(browser, page, name)
+    script_status.set_context(course=course.name, chapter="", level="")
     ensure_answers_file(cfg, course)
     # 保留课程卡片自然打开的页面；不要强制导航到 shixun_homework，
     # 否则容易被平台卡成骨架 loading。run/harvest 会按需另开实训页。
@@ -874,6 +880,9 @@ def cmd_subjective(args, cfg: dict) -> None:
     course = current_course(browser, cfg)
     if course is None:
         die("没有当前课程：先 python3 答题.py cd -ls，再 python3 答题.py cd 序号/课程名")
+    script_status.set_context(course=course.name)
+    if args.subj_action in ("harvest", "run"):
+        script_status.set_state("running", "主观题作业")
     if args.subj_action == "ls":
         path = sidecar_path(course)
         entries = load_subjective(path)
@@ -905,6 +914,8 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
 
     classroom = classroom_page(browser, cfg, url=course.classroom)
     ensure_login(browser, classroom.ws)
+    script_status.set_state("running", "准备运行")
+    script_status.set_context(course=course.name, chapter="", level="")
 
     if not args.chapter:
         cards = (list_classroom_cards(classroom, all_pages=True)

@@ -3,13 +3,32 @@
 import re
 import sys
 
+_LOG_HOOK = None
+
+
+def set_log_hook(fn) -> None:
+    """安装日志旁路（状态上报用）；None 表示卸载。"""
+    global _LOG_HOOK
+    _LOG_HOOK = fn
+
 
 def log(msg: str) -> None:
     print(msg, flush=True)
+    hook = _LOG_HOOK
+    if hook is not None:
+        try:
+            hook(str(msg))
+        except Exception:
+            pass
 
 
 def die(msg: str, code: int = 2) -> None:
     log(f"\n✗ {msg}")
+    try:
+        from eduauto import status
+        status.error(str(msg))
+    except Exception:
+        pass
     sys.exit(code)
 
 

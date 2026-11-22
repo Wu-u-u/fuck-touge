@@ -26,8 +26,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import argparse
+import atexit
 import sys
 
+from eduauto import status
 from eduauto.util import die, log
 from eduauto.browser import (
     classroom_page, connect_configured, ensure_browser,
@@ -81,6 +83,7 @@ def cmd_browser_list(cfg: dict) -> None:
 
 
 def main() -> None:
+    atexit.register(status.finish)
     ap = argparse.ArgumentParser(
         description="头歌自动答题脚本（半自动）",
         epilog="示例：python3 答题.py run -y 五 七 ｜ run -y -b 1 2 3 ｜ harvest 五 -f ｜ harvest（扫描并采集全部）",
