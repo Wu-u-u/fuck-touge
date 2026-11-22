@@ -53,6 +53,18 @@ describe("MediaRetryQueue", () => {
     expect(q.schedule("k", task)).toBe(true);
   });
 
+  it("retain 清掉已不存在的 key", () => {
+    const task = vi.fn();
+    const q = new MediaRetryQueue(1, 3000);
+    q.schedule("keep", task);
+    q.schedule("gone", task);
+    q.retain(new Set(["keep"]));
+    expect(q.pending("keep")).toBe(true);
+    expect(q.pending("gone")).toBe(false);
+    vi.advanceTimersByTime(3000);
+    expect(task).toHaveBeenCalledTimes(1);
+  });
+
   it("clearAll 清掉所有 key", () => {
     const task = vi.fn();
     const q = new MediaRetryQueue(1, 3000);

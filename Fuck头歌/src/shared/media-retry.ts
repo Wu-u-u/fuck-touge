@@ -36,6 +36,16 @@ export class MediaRetryQueue {
     this.attempts.clear();
   }
 
+  /** 只保留仍存在的 mediaKey；用于配置从其他上下文变化后的清理。 */
+  retain(validKeys: ReadonlySet<string>): void {
+    for (const key of [...this.timers.keys()]) {
+      if (!validKeys.has(key)) this.clear(key);
+    }
+    for (const key of [...this.attempts.keys()]) {
+      if (!validKeys.has(key)) this.attempts.delete(key);
+    }
+  }
+
   pending(key: string): boolean {
     return this.timers.has(key);
   }

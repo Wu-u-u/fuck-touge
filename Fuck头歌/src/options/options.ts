@@ -252,6 +252,7 @@ const applyMaterialPreview = (): void => {
 
 const renderBackground = (): void => {
   const bg = config.background;
+  mediaRetry.retain(new Set(bg.wallpapers.map((w) => w.mediaKey).filter((k): k is string => !!k)));
   const active = activeWallpaper(config);
   const media = active ? mediaFor(active) : "";
   const isVideo = active?.kind === "video";
