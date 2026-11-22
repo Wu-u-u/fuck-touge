@@ -228,18 +228,25 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   };
 
   let logsRendered = false;
+  // 契约：只显示当前状态对应槽位的日志；旧格式没有 slot 的条目保留
+  const currentSlotLogs = (): ScriptLogEntry[] => {
+    const slot = scriptStatus?.slot || "";
+    if (!slot) return scriptLogs;
+    return scriptLogs.filter((log) => !log.slot || log.slot === slot);
+  };
   const renderScriptLogs = (): void => {
     if (!logList) return;
     const stickToBottom = !logsRendered
       || logList.scrollHeight - logList.scrollTop - logList.clientHeight < 24;
     logsRendered = true;
     scriptLogs = normalizeScriptLogs(scriptLogs);
+    const logs = currentSlotLogs();
     logList.textContent = "";
     if (logCount) {
-      logCount.textContent = String(scriptLogs.length);
-      logCount.title = `最多保留 ${MAX_SCRIPT_LOGS} 条`;
+      logCount.textContent = String(logs.length);
+      logCount.title = `最多保留 ${MAX_SCRIPT_LOGS} 条（当前槽位）`;
     }
-    const empty = !scriptLogs.length;
+    const empty = !logs.length;
     if (copyLogsBtn) copyLogsBtn.disabled = empty;
     if (clearLogsBtn) clearLogsBtn.disabled = empty;
 
@@ -251,7 +258,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
       return;
     }
 
-    for (const log of scriptLogs) {
+    for (const log of logs) {
       const row = doc.createElement("div");
       row.className = "log-item";
       row.title = [log.course, log.chapter, log.levelName].filter(Boolean).join(" · ");
@@ -276,7 +283,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   };
 
   const copyLogText = (): string =>
-    scriptLogs
+    currentSlotLogs()
       .map((log) => {
         const ctx = [log.course, log.chapter, log.levelName].filter(Boolean).join(" / ");
         return `[${fullTimeText(log.at)}] [${log.level}] [槽${log.slot || "--"}]${ctx ? ` ${ctx}` : ""} ${log.text}`;
@@ -328,7 +335,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   };
 
   copyLogsBtn?.addEventListener("click", () => {
-    if (!scriptLogs.length) return;
+    if (!currentSlotLogs().length) return;
     const text = copyLogText();
     try {
       if (navigator.clipboard?.writeText) {
@@ -360,6 +367,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
         if (changes[SCRIPT_STATUS_KEY]) {
           scriptStatus = normalizeScriptStatus(changes[SCRIPT_STATUS_KEY].newValue);
           renderScriptStatus();
+          renderScriptLogs();
         }
         if (changes[SCRIPT_LOGS_KEY]) {
           scriptLogs = normalizeScriptLogs(changes[SCRIPT_LOGS_KEY].newValue);

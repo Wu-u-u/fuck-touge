@@ -117,6 +117,25 @@ describe("popup 脚本状态", () => {
     expect((document.getElementById("copyLogs") as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("多槽位：只显示当前状态槽位日志（旧格式无 slot 保留）", async () => {
+    const { api, listeners } = makeApi(status({ slot: "1" }), [
+      log({ slot: "1", text: "槽位一日志" }),
+      log({ slot: "2", text: "槽位二日志" }),
+      log({ slot: "", text: "旧格式日志" }),
+    ]);
+    initPopup(api);
+    await sleep(20);
+    expect(document.getElementById("logCount")!.textContent).toBe("2");
+    expect(document.getElementById("logList")!.textContent).toContain("槽位一日志");
+    expect(document.getElementById("logList")!.textContent).toContain("旧格式日志");
+    expect(document.getElementById("logList")!.textContent).not.toContain("槽位二日志");
+
+    listeners.forEach((cb) => cb({ [SCRIPT_STATUS_KEY]: { newValue: status({ slot: "2" }) } }, "local"));
+    expect(document.getElementById("logCount")!.textContent).toBe("2");
+    expect(document.getElementById("logList")!.textContent).toContain("槽位二日志");
+    expect(document.getElementById("logList")!.textContent).not.toContain("槽位一日志");
+  });
+
   it("waiting / stopped 黄色，10.31s 无心跳红色", async () => {
     const { api, listeners } = makeApi(status({ state: "waiting", message: "等待中" }), []);
     initPopup(api);
