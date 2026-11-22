@@ -42,6 +42,7 @@ def _run_with_textual() -> None:
         #top { height: auto; padding: 1 2; }
         #status { height: 3; padding: 0 2; color: $text-muted; }
         #slot { width: 16; }
+        #ai_prompt { width: 1fr; }
         #actions { height: auto; padding: 0 2; }
         #log { height: 1fr; margin: 1 2; border: round $accent; }
         .hint { color: $text-muted; }
@@ -53,12 +54,16 @@ def _run_with_textual() -> None:
                 yield Static("等待脚本状态…", id="status")
                 yield Static("账号槽位（只使用你在输入框里指定的槽位）", classes="hint")
                 yield Input(value="1", id="slot", placeholder="槽位，例如 1")
+                yield Static("AI 草稿（需要 OPENAI_API_KEY；只生成，不提交）", classes="hint")
+                yield Input(id="ai_prompt", placeholder="粘贴题目描述/选项...")
                 yield Static("操作", classes="hint")
             with Horizontal(id="actions"):
                 yield Button("列课程", id="cd")
                 yield Button("打开浏览器", id="browser")
                 yield Button("开始刷题", id="run", variant="success")
                 yield Button("采集答案", id="harvest")
+                yield Button("AI 代码", id="ai_code")
+                yield Button("AI 选项", id="ai_choice")
                 yield Button("停止", id="stop", variant="error")
             yield RichLog(id="log", markup=False, wrap=True)
             yield Footer()
@@ -126,6 +131,13 @@ def _run_with_textual() -> None:
                 self._start(["run", "-y"])
             elif bid == "harvest":
                 self._start(["harvest"])
+            elif bid in ("ai_code", "ai_choice"):
+                prompt = (self.query_one("#ai_prompt", Input).value or "").strip()
+                if not prompt:
+                    self.query_one("#log", RichLog).write("请先填写 AI 题目。")
+                    return
+                kind = "code" if bid == "ai_code" else "choice"
+                self._start(["ai", "--kind", kind, prompt])
             elif bid == "stop":
                 if self._proc is not None and self._proc.poll() is None:
                     self._proc.terminate()
