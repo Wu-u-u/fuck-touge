@@ -16,6 +16,7 @@ const MAIN_SOURCE = "fuck-touge-main";
 
 /** bridge 生命周期内复用 blob URL；页面 reload 后由页面 IDB 接管 */
 const mediaBlobUrls = new Map<string, string>();
+const validMediaKeys = new Set<string>();
 
 const post = (config: unknown): void => {
   try {
@@ -31,11 +32,18 @@ const postCleanup = (cfg: CustomConfig): void => {
       .map((w) => w.mediaKey || "")
       .filter((k) => isMediaKey(k));
     const valid = new Set(keys);
-    // bridge 自己的 blob URL 也会持有 Blob；删除壁纸后必须 revoke
+    validMediaKeys.clear();
+    keys.forEach((k) => validMediaKeys.add(k));
+    // bridge 自己的 blob URL 也会持有 Blob；延迟 revoke，避免页面过渡中的旧图层被打断
     for (const [key, url] of mediaBlobUrls) {
       if (valid.has(key)) continue;
-      try { URL.revokeObjectURL(url); } catch (e) {}
-      mediaBlobUrls.delete(key);
+      setTimeout(() => {
+        if (validMediaKeys.has(key)) return;
+        const current = mediaBlobUrls.get(key);
+        if (!current) return;
+        try { URL.revokeObjectURL(current); } catch (e) {}
+        mediaBlobUrls.delete(key);
+      }, 5000);
     }
     window.postMessage({ source: BRIDGE_SOURCE, type: "media-cleanup", keys }, "*");
   } catch (e) {}
