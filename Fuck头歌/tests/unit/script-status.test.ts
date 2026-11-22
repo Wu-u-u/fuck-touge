@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_SCRIPT_LOGS,
   filterClearedScriptLogs,
+  normalizeScriptLogClearMap,
   markScriptLogsCleared,
   mergeScriptLogs,
   normalizeScriptLog,
@@ -73,11 +74,26 @@ describe("script status normalization", () => {
   });
 
   it("清空标记按槽位过滤 <= clearedAt 的旧日志", () => {
+    const base = Date.now();
     const log = (at: number, slot: string, text: string) => normalizeScriptLog({ at, slot, level: "info", text })!;
-    const logs = [log(1000, "1", "old1"), log(2000, "1", "new1"), log(1500, "2", "other2")];
-    const map = markScriptLogsCleared({}, "1", 1500);
+    const logs = [log(base - 3000, "1", "old1"), log(base - 500, "1", "new1"), log(base - 2000, "2", "other2")];
+    const map = markScriptLogsCleared({}, "1", base - 1000);
     expect(filterClearedScriptLogs(logs, map).map((x) => x.text)).toEqual(["new1", "other2"]);
-    expect(map["1"]).toBe(1500);
+    expect(map["1"]).toBe(base - 1000);
+  });
+
+  it("清空 marker 30 天过期、最多保留 64 个槽位", () => {
+    const now = 100 * 24 * 3600 * 1000;
+    const day = 24 * 3600 * 1000;
+    const map = normalizeScriptLogClearMap({ old: now - 31 * day, fresh: now - day }, now);
+    expect(map).toEqual({ fresh: now - day });
+
+    const many: Record<string, number> = {};
+    for (let i = 0; i < 70; i++) many[`slot-${i}`] = now - i;
+    const capped = normalizeScriptLogClearMap(many, now);
+    expect(Object.keys(capped)).toHaveLength(64);
+    expect(capped["slot-0"]).toBe(now);
+    expect(capped["slot-69"]).toBeUndefined();
   });
 
   it("10.31s 心跳阈值：stopped 永不过期", () => {

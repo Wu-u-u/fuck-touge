@@ -112,16 +112,23 @@ export function mergeScriptLogs(
 
 export type ScriptLogClearMap = Record<string, number>;
 
-/** 每个槽位最后一次“清空日志”的时间戳；用于过滤并发写回的旧日志。 */
-export function normalizeScriptLogClearMap(raw: unknown): ScriptLogClearMap {
+const CLEAR_MARKER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_CLEAR_MARKERS = 64;
+
+/**
+ * 每个槽位最后一次“清空日志”的时间戳；用于过滤并发写回的旧日志。
+ * 30 天后自动过期（最多保留 64 个槽位），避免 marker 无限增长。
+ */
+export function normalizeScriptLogClearMap(raw: unknown, now = Date.now()): ScriptLogClearMap {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  const out: ScriptLogClearMap = {};
+  const valid: Array<[string, number]> = [];
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-      out[key.slice(0, 16)] = value;
-    }
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) continue;
+    if (now - value > CLEAR_MARKER_TTL_MS) continue;
+    valid.push([key.slice(0, 16), value]);
   }
-  return out;
+  valid.sort((a, b) => b[1] - a[1]);
+  return Object.fromEntries(valid.slice(0, MAX_CLEAR_MARKERS));
 }
 
 export function markScriptLogsCleared(raw: unknown, slot: string, at = Date.now()): ScriptLogClearMap {
