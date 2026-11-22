@@ -44,6 +44,12 @@ DEFAULT_CONFIG = {
         "eval_timeout": 180,      # 单次评测最长等待（秒）
         "level_timeout": 60,      # 页面加载/跳转最长等待（秒）
     },
+    "ai": {
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini",
+        "api_key_env": "OPENAI_API_KEY",
+        "timeout": 60,
+    },
 }
 
 

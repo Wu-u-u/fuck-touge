@@ -30,6 +30,7 @@ import atexit
 import sys
 
 from eduauto import status
+from eduauto.ai import cmd_ai
 from eduauto.util import die, log
 from eduauto.browser import (
     classroom_page, connect_configured, ensure_browser,
@@ -123,6 +124,11 @@ def main() -> None:
     p_subj.add_argument("subj_action", choices=["harvest", "run", "ls"],
                         help="harvest=扫描题目；run=提交答案；ls=查看主观题档案")
     p_subj.add_argument("names", nargs="*", help="只处理指定主观题（名称片段）")
+    p_ai = sub.add_parser("ai", help="生成 AI 答案草稿（不自动提交）")
+    p_ai.add_argument("prompt", nargs="*", help="题目文本；省略则从 stdin 读取")
+    p_ai.add_argument("--kind", choices=["code", "choice"], default="code",
+                      help="code=代码草稿，choice=选项字母草稿")
+    p_ai.add_argument("--context", default="", help="补充上下文，例如平台题目说明")
 
     args = ap.parse_args()
     if hasattr(args, "chapters"):
@@ -164,6 +170,10 @@ def main() -> None:
         cmd_run(args, cfg)
     elif args.cmd == "subjective":
         cmd_subjective(args, cfg)
+    elif args.cmd == "ai":
+        if not args.prompt:
+            args.prompt = [sys.stdin.read()]
+        cmd_ai(args, cfg)
 
 
 if __name__ == "__main__":

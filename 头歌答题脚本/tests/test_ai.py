@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""AI 草稿接口单测：本地假 OpenAI-compatible HTTP，不访问外网。"""
+import json
+import os
+import sys
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from eduauto.ai import AIError, draft_answer  # noqa: E402
+
+passed = failed = 0
+
+
+def check(name, cond, detail=""):
+    global passed, failed
+    if cond:
+        passed += 1
+        print(f"✓ {name}")
+    else:
+        failed += 1
+        print(f"✗ {name} {detail}")
+
+
+seen = {}
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", "0"))
+        seen["path"] = self.path
+        seen["auth"] = self.headers.get("Authorization")
+        seen["body"] = json.loads(self.rfile.read(n).decode("utf-8"))
+        payload = {"choices": [{"message": {"content": "A,B"}}]}
+        data = json.dumps(payload).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args):
+        pass
+
+
+srv = HTTPServer(("127.0.0.1", 0), Handler)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+base = f"http://127.0.0.1:{srv.server_port}/v1"
+cfg = {"ai": {"base_url": base, "model": "fake-model",
+              "api_key_env": "TEST_AI_KEY", "timeout": 5}}
+
+with patch.dict(os.environ, {"TEST_AI_KEY": "test-secret"}):
+    out = draft_answer("第一题选什么？", cfg, kind="choice", context="多选")
+check("AI 返回纯文本草稿", out == "A,B", repr(out))
+check("请求路径正确", seen.get("path") == "/v1/chat/completions", str(seen.get("path")))
+check("模型与 system prompt 正确",
+      seen.get("body", {}).get("model") == "fake-model"
+      and seen.get("body", {}).get("messages", [{}])[0].get("role") == "system",
+      str(seen.get("body"))[:300])
+check("Authorization 来自环境变量", seen.get("auth") == "Bearer test-secret")
+check("上下文进入 user message",
+      "多选" in seen.get("body", {}).get("messages", [{}, {}])[1].get("content", ""))
+
+with patch.dict(os.environ, {}, clear=True):
+    try:
+        draft_answer("x", cfg)
+        check("无密钥失败", False)
+    except AIError as e:
+        check("无密钥失败", "TEST_AI_KEY" in str(e))
+srv.shutdown()
+
+print(f"\n{passed} passed, {failed} failed")
+sys.exit(1 if failed else 0)

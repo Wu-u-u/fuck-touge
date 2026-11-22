@@ -30,3 +30,10 @@ eval_timeout = 180
 
 # 关卡加载/跳转最长等待（秒）
 level_timeout = 60
+
+[ai]
+# 可选：AI 草稿接口（OpenAI-compatible）；密钥只从环境变量读取，不写这里
+base_url = "https://api.openai.com/v1"
+model = "gpt-4o-mini"
+api_key_env = "OPENAI_API_KEY"
+timeout = 60
