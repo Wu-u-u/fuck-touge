@@ -18,6 +18,7 @@ import {
   type EditorOptionField,
 } from "../shared/editor-options";
 import { applyMaterialPalette, clearMaterialPalette, seedFromImage } from "../shared/material-theme";
+import { createSaveQueue, flushOnPageHide } from "../shared/save-queue";
 import { dataUrlToBlob } from "../features/media-cache";
 import type { BackgroundFit, BackgroundTransition, CustomColorKey, CustomConfig, Wallpaper, WallpaperCrop, WallpaperKind } from "../shared/types";
 
@@ -70,7 +71,6 @@ const els = {
 };
 
 let config: CustomConfig = normalizeCustomConfig(null);
-let saveTimer = 0;
 let saveSeq = 0;
 let lastSaved = "";
 let colorRows = new Map<CustomColorKey, {
@@ -197,20 +197,15 @@ const save = (): void => {
   }
 };
 
+const saveQueue = createSaveQueue(save, 260);
+
 const saveSoon = (): void => {
   setStatus("保存中…");
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(() => {
-    saveTimer = 0;
-    save();
-  }, 260);
+  saveQueue.schedule();
 };
 
 const saveNow = (): void => {
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    saveTimer = 0;
-  }
+  saveQueue.cancel();
   save();
 };
 
@@ -1241,13 +1236,11 @@ if (navSections.length) {
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden && saveTimer) saveNow();
+  if (document.hidden) saveQueue.flush();
 });
 
 // 关闭设置页时把尚未落盘的 260ms debounce 立即写完，避免快速关页丢设置
-window.addEventListener("pagehide", () => {
-  if (saveTimer) saveNow();
-});
+flushOnPageHide(saveQueue);
 
 buildColorRows();
 buildEditorDirect();

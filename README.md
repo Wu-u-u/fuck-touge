@@ -54,12 +54,12 @@
 ### 一、浏览器扩展（Fuck头歌）
 
 1. 构建（需要 Node.js ≥ 20）：`cd Fuck头歌 && npm ci && npm run build`，产物在 `Fuck头歌/dist/`；
-   也可以直接下载 **Releases** 里的 `FuckTouge-v2.7.0-rc.33.zip`（已构建好，解压即用）。
+   也可以直接下载 **Releases** 里的 `FuckTouge-v2.7.0-rc.34.zip`（已构建好，解压即用）。
 2. Edge → 扩展 → 管理扩展 → 打开「开发人员选项」→「加载解压缩的扩展」→ 选择 `Fuck头歌/dist` 文件夹
    （用 zip 的话，选择解压后的 `Fuck头歌` 文件夹）；
 3. 打开头歌页面刷新即生效。
 
-> 2.7.0-rc.33 是测试版：多壁纸、可视化裁剪、Ctrl+Alt+W 切换、GIF/视频背景、Noctalia 12 种 WebGL2 过渡（可固定效果）、Material You、popup 状态/日志；稳定版仍是 2.6.1。
+> 2.7.0-rc.34 是测试版：多壁纸、可视化裁剪、Ctrl+Alt+W 切换、GIF/视频背景、Noctalia 12 种 WebGL2 过渡（可固定效果）、Material You、popup 状态/日志；稳定版仍是 2.6.1。
 
 功能：解除粘贴/复制限制、拦截头歌往剪贴板写空格、答对自动点「下一关/最后一关/完成」、Catppuccin / GitHub 高对比主题、Maple Mono 字体、光标动画、页面皮肤（选择题等无编辑器页面也保持深色）、多壁纸与 GPU 过渡、Material You 动态配色、popup 脚本状态/日志。
 
