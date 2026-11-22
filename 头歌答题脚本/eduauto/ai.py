@@ -109,6 +109,8 @@ def draft_answer(prompt: str, cfg: dict, *, kind: str = "code",
         text = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as e:
         raise AIError("AI 返回缺少 choices[0].message.content") from e
+    if not str(text or "").strip():
+        raise AIError("AI 返回空内容")
     return normalize_answer(str(text), kind)
 
 
