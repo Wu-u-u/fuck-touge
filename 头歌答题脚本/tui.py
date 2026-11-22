@@ -39,7 +39,7 @@ def _build_app():
 
     class FuckTougeTui(App):
         TITLE = "Fuck 头歌 · 控制台"
-        SUB_TITLE = "答题脚本 v0.9.56"
+        SUB_TITLE = "答题脚本 v0.9.57"
         BINDINGS = [("q", "quit", "退出")]
 
         CSS = """
@@ -143,6 +143,8 @@ def _build_app():
             try:
                 line = index.read_text(encoding="utf-8").splitlines()[-1]
                 path = Path(line.split("\t", 1)[1])
+                if not path.is_absolute():
+                    path = HERE / path
                 text = path.read_text(encoding="utf-8")
             except (OSError, IndexError):
                 self.query_one("#log", RichLog).write("没有可载入的 AI 草稿。")

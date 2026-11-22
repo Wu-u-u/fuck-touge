@@ -120,8 +120,9 @@ def record_draft(path: Path, index: Path | None = None) -> None:
     target = index or DRAFT_INDEX
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
+        absolute = Path(path).expanduser().resolve()
         with target.open("a", encoding="utf-8") as f:
-            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\t{path}\n")
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\t{absolute}\n")
     except OSError:
         pass
 
