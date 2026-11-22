@@ -27,7 +27,7 @@ def _build_app():
         from textual import work
         from textual.app import App, ComposeResult
         from textual.containers import Horizontal, Vertical
-        from textual.widgets import Button, Footer, Header, Input, RichLog, Static
+        from textual.widgets import Button, Footer, Header, Input, RichLog, Static, TextArea
     except ImportError:
         print("缺少 Textual。推荐运行：")
         print("  uv run --with textual python tui.py")
@@ -36,7 +36,7 @@ def _build_app():
 
     class FuckTougeTui(App):
         TITLE = "Fuck 头歌 · 控制台"
-        SUB_TITLE = "答题脚本 v0.9.43"
+        SUB_TITLE = "答题脚本 v0.9.46"
         BINDINGS = [("q", "quit", "退出")]
 
         CSS = """
@@ -46,6 +46,7 @@ def _build_app():
         #slot { width: 16; }
         #course { width: 1fr; }
         #ai_prompt { width: 1fr; }
+        #preview { height: 8; margin: 0 2; border: round $accent; }
         #actions { height: auto; padding: 0 2; }
         #log { height: 1fr; margin: 1 2; border: round $accent; }
         .hint { color: $text-muted; }
@@ -61,6 +62,8 @@ def _build_app():
                 yield Input(id="course", placeholder="例如 4 / Java程序设计-2026秋")
                 yield Static("AI 草稿（需要 OPENAI_API_KEY；只生成，不提交）", classes="hint")
                 yield Input(id="ai_prompt", placeholder="粘贴题目描述/选项...")
+                yield Static("AI 草稿预览（只读；确认不会自动提交）", classes="hint")
+                yield TextArea("", id="preview", read_only=True)
                 yield Static("操作", classes="hint")
             with Horizontal(id="actions"):
                 yield Button("列课程", id="cd")
@@ -70,12 +73,14 @@ def _build_app():
                 yield Button("采集答案", id="harvest")
                 yield Button("AI 代码", id="ai_code")
                 yield Button("AI 选项", id="ai_choice")
+                yield Button("确认草稿", id="confirm")
                 yield Button("停止", id="stop", variant="error")
             yield RichLog(id="log", markup=False, wrap=True)
             yield Footer()
 
         def on_mount(self) -> None:
             self._proc: subprocess.Popen[str] | None = None
+            self.query_one("#preview", TextArea).load_text("AI 草稿会显示在这里")
             self.query_one("#log", RichLog).write("Fuck 头歌 TUI 已启动。")
             self.set_interval(1, self._refresh_status)
             self._refresh_status()
@@ -100,6 +105,25 @@ def _build_app():
 
         def _slot(self) -> str:
             return (self.query_one("#slot", Input).value or "1").strip()
+
+        def _show_preview(self, text: str) -> None:
+            area = self.query_one("#preview", TextArea)
+            try:
+                area.load_text(text)
+            except AttributeError:
+                area.text = text
+            self.query_one("#log", RichLog).write("[AI 草稿已放入预览，不会自动提交]")
+
+        @work(thread=True, exclusive=True)
+        def _ai_draft(self, kind: str, prompt: str) -> None:
+            proc = subprocess.run(
+                [sys.executable, str(ENTRY), "ai", "--kind", kind, prompt],
+                cwd=str(HERE), capture_output=True, text=True,
+            )
+            text = (proc.stdout or "").strip()
+            if proc.returncode != 0:
+                text = (text + "\n" + (proc.stderr or "")).strip() or "AI 草稿生成失败"
+            self.call_from_thread(self._show_preview, text)
 
         def _start(self, args: list[str]) -> None:
             if self._proc is not None and self._proc.poll() is None:
@@ -149,7 +173,12 @@ def _build_app():
                     self.query_one("#log", RichLog).write("请先填写 AI 题目。")
                     return
                 kind = "code" if bid == "ai_code" else "choice"
-                self._start(["ai", "--kind", kind, prompt])
+                self._ai_draft(kind, prompt)
+            elif bid == "confirm":
+                text = str(self.query_one("#preview", TextArea).text or "").strip()
+                self.query_one("#log", RichLog).write(
+                    "[草稿已确认，但不会自动写入档案或提交]" if text else "[预览为空]"
+                )
             elif bid == "stop":
                 if self._proc is not None and self._proc.poll() is None:
                     self._proc.terminate()
@@ -171,6 +200,8 @@ def _run_selftest() -> None:
             await pilot.pause()
             assert app.query_one("#log") is not None
             assert app.query_one("#ai_prompt") is not None
+            assert app.query_one("#preview") is not None
+            assert app.query_one("#confirm") is not None
             assert app.query_one("#course") is not None
         print("tui selftest ok")
 
