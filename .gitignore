@@ -20,3 +20,4 @@ install-zen-edge.sh
 # 常见杂物
 .DS_Store
 Thumbs.db
+rust/**/target/

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -35,6 +36,7 @@ class StatusPublisher:
         self._logs: list[dict[str, Any]] = []
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._rust: subprocess.Popen[str] | None = None
 
     def attach(self, browser, slot: str | None = None) -> None:
         """绑定浏览器并启动心跳；重复调用会切换槽位并重启线程。"""
@@ -43,6 +45,7 @@ class StatusPublisher:
             set_log_hook(self.log)
         except Exception:
             pass
+        self._stop_rust()
         with self._lock:
             self._browser = browser
             if slot:
@@ -58,6 +61,7 @@ class StatusPublisher:
             t = threading.Thread(target=self._heartbeat, name="ft-status", daemon=True)
             self._thread = t
         t.start()
+        self._start_rust()
         self.flush()
 
     def set_state(self, state: str, message: str = "") -> None:
@@ -109,6 +113,7 @@ class StatusPublisher:
         self.flush()
         with self._lock:
             self._stop.set()
+        self._stop_rust()
         try:
             from eduauto.util import set_log_hook
             set_log_hook(None)
@@ -149,8 +154,45 @@ class StatusPublisher:
         except (cdp.CDPError, OSError, AttributeError):
             pass
 
+    def _start_rust(self) -> None:
+        """可选的局部 Rust 试点：ftstatus 原子写状态快照；失败自动回退 Python。"""
+        if os.environ.get("EDUAUTO_RUST_STATUS") != "1":
+            return
+        path = Path(__file__).resolve().parent.parent.parent / "rust/ftstatus/target/release/ftstatus"
+        if not path.is_file():
+            return
+        try:
+            self._rust = subprocess.Popen(
+                [str(path), str(STATE_FILE)],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                bufsize=1,
+            )
+        except OSError:
+            self._rust = None
+
+    def _stop_rust(self) -> None:
+        if self._rust is None:
+            return
+        try:
+            self._rust.stdin.close()
+            self._rust.wait(timeout=1)
+        except (OSError, subprocess.TimeoutExpired):
+            self._rust.kill()
+        self._rust = None
+
     def _write_file(self, payload: dict) -> None:
         """给 TUI/调试用的本地状态快照；不影响浏览器桥。"""
+        rust = self._rust
+        if rust is not None and rust.poll() is None:
+            try:
+                rust.stdin.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                rust.stdin.flush()
+                return
+            except (OSError, ValueError):
+                self._rust = None
         try:
             tmp = STATE_FILE.with_name(STATE_FILE.name + ".tmp")
             tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
