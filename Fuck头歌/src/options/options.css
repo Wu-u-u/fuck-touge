@@ -274,9 +274,10 @@ h2 {
   background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
-.mat-copy { display: flex; flex-direction: column; gap: 2px; }
+.mat-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
 .mat-title { font-size: 13px; font-weight: 600; }
 .mat-sub { color: var(--dim); font-size: 11px; }
+.mat-reseed { flex: none; padding: 4px 8px; font-size: 10.5px; white-space: nowrap; }
 
 .bg-grid {
   display: grid;

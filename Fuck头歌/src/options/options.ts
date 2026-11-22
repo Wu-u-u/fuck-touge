@@ -62,6 +62,7 @@ const els = {
   cropSave: $<HTMLButtonElement>("#cropSave"),
   materialYou: $<HTMLInputElement>("#materialYou"),
   materialYouHint: $<HTMLDivElement>("#materialYouHint"),
+  materialReseed: $<HTMLButtonElement>("#materialReseed"),
   colors: $<HTMLDivElement>("#colors"),
   resetColors: $<HTMLButtonElement>("#resetColors"),
   editorCount: $<HTMLSpanElement>("#editorCount"),
@@ -105,6 +106,7 @@ interface CropState {
 }
 let cropState: CropState | null = null;
 let cropSaving = false;
+let reseeding = false;
 let cropTargetId = "";
 let cropDrag: { sx: number; sy: number; x: number; y: number } | null = null;
 
@@ -315,6 +317,7 @@ const renderBackground = (): void => {
   if (!els.bgTransitionDuration.value) els.bgTransitionDuration.value = "1500";
   els.removeBg.disabled = !active;
   els.pickImage.disabled = bg.wallpapers.length >= MAX_WALLPAPERS;
+  els.materialReseed.disabled = reseeding || !bg.wallpapers.length;
 
   const canMaterial = !!active?.seed;
   els.materialYou.disabled = !canMaterial;
@@ -1186,6 +1189,45 @@ els.bgFile.addEventListener("change", async () => {
 els.removeBg.addEventListener("click", () => {
   const active = activeWallpaper(config);
   if (active) removeWallpaper(active.id);
+});
+
+const reseedAll = async (): Promise<void> => {
+  if (reseeding) return;
+  const list = config.background.wallpapers;
+  if (!list.length) {
+    setStatus("先添加壁纸再取色", "err");
+    return;
+  }
+  reseeding = true;
+  els.materialReseed.disabled = true;
+  try {
+    let changed = 0;
+    for (let i = 0; i < list.length; i++) {
+      const wp = list[i];
+      setStatus(`重新取色中… ${i + 1}/${list.length}`);
+      const media = await loadMediaFor(wp);
+      if (!media) continue;
+      const seed = wp.kind === "video" ? await seedFromVideo(media) : await seedFromImage(media);
+      if (seed && seed !== wp.seed) {
+        wp.seed = seed;
+        changed++;
+      }
+    }
+    config.materialSeed = activeWallpaper(config)?.seed || "";
+    saveNow();
+    render();
+    applyMaterialPreview();
+    setStatus(changed ? `已重新取色 ${changed} 张` : "取色没有变化", changed ? "ok" : "idle");
+  } catch (e) {
+    setStatus("重新取色失败，保持原配色", "err");
+  } finally {
+    reseeding = false;
+    els.materialReseed.disabled = !config.background.wallpapers.length;
+  }
+};
+
+els.materialReseed.addEventListener("click", () => {
+  void reseedAll();
 });
 
 els.materialYou.addEventListener("change", () => {

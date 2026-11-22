@@ -5,6 +5,7 @@ import {
   applyMaterialPalette,
   clearMaterialPalette,
   materialPalette,
+  seedFromPixels,
 } from "../../src/shared/material-theme";
 
 const HEX = /^#[0-9a-f]{6}$/;
@@ -28,6 +29,40 @@ describe("material theme", () => {
     const c = materialPalette("#e91e63");
     expect(a).toEqual(b);
     expect(c!.accent).not.toBe(a!.accent);
+  });
+
+  it("取色按覆盖率投票，不让小面积高饱和色主导", () => {
+    const pixels: number[] = [];
+    const add = (r: number, g: number, b: number, n: number) => {
+      for (let i = 0; i < n; i++) pixels.push(r, g, b, 255);
+    };
+    add(128, 128, 128, 750);
+    add(30, 80, 200, 200); // 20% 蓝灰
+    add(240, 20, 20, 50); // 5% 很艳的红
+    const seed = seedFromPixels(new Uint8ClampedArray(pixels))!;
+    const h = Hct.fromInt(argbFromHex(seed));
+    expect(h.hue).toBeGreaterThan(200);
+    expect(h.hue).toBeLessThan(310);
+  });
+
+  it("大面积红色仍然取到红色，图片之间不串色", () => {
+    const make = (base: [number, number, number], accent: [number, number, number]) => {
+      const px: number[] = [];
+      for (let i = 0; i < 800; i++) px.push(...base, 255);
+      for (let i = 0; i < 200; i++) px.push(...accent, 255);
+      return seedFromPixels(new Uint8ClampedArray(px))!;
+    };
+    const red = make([20, 20, 20], [240, 20, 20]);
+    const blue = make([20, 20, 20], [30, 80, 200]);
+    const redHue = Hct.fromInt(argbFromHex(red)).hue;
+    const blueHue = Hct.fromInt(argbFromHex(blue)).hue;
+    expect(redHue < 30 || redHue > 330).toBe(true);
+    expect(blueHue > 200 && blueHue < 310).toBe(true);
+    expect(red).not.toBe(blue);
+  });
+
+  it("空像素返回 null", () => {
+    expect(seedFromPixels(new Uint8ClampedArray())).toBeNull();
   });
 
   it("深色表面有层次，强调色提高一档饱和度", () => {
