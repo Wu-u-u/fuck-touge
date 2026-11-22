@@ -22,6 +22,7 @@ import { createSaveQueue, flushOnPageHide } from "../shared/save-queue";
 import { createEchoGuard } from "../shared/echo-guard";
 import { runOnPageHide } from "../shared/page-lifecycle";
 import { releaseObjectUrls } from "../shared/object-url";
+import { resetVideoElement } from "../shared/media-preview";
 import { dataUrlToBlob } from "../features/media-cache";
 import type { BackgroundFit, BackgroundTransition, CustomColorKey, CustomConfig, Wallpaper, WallpaperCrop, WallpaperKind } from "../shared/types";
 
@@ -240,15 +241,18 @@ const renderBackground = (): void => {
   els.bgEmpty.hidden = !!media;
   if (media) {
     if (isVideo) {
-      els.bgThumbVideo.src = media;
+      if (els.bgThumbVideo.getAttribute("src") !== media) els.bgThumbVideo.src = media;
       els.bgThumbVideo.play?.().catch(() => {});
+      els.bgThumb.removeAttribute("src");
     } else {
       els.bgThumb.src = media;
+      // 从视频切到图片时停止隐藏的 video 解码，并释放它的 src
+      resetVideoElement(els.bgThumbVideo);
     }
     els.bgPreview.classList.add("has-image");
   } else {
     els.bgThumb.removeAttribute("src");
-    els.bgThumbVideo.removeAttribute("src");
+    resetVideoElement(els.bgThumbVideo);
     els.bgPreview.classList.remove("has-image");
   }
 
