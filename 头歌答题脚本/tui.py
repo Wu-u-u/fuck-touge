@@ -80,6 +80,7 @@ def _build_app():
                 yield Button("AI 选项", id="ai_choice")
                 yield Button("确认草稿", id="confirm")
                 yield Button("复制草稿", id="copy_draft")
+                yield Button("网页状态", id="webui")
                 yield Button("保存草稿", id="save_draft")
                 yield Button("最近草稿", id="recent_drafts")
                 yield Button("载入最近草稿", id="load_recent")
@@ -89,6 +90,7 @@ def _build_app():
 
         def on_mount(self) -> None:
             self._proc: subprocess.Popen[str] | None = None
+            self._webui: subprocess.Popen[str] | None = None
             self.query_one("#preview", TextArea).load_text("AI 草稿会显示在这里")
             self.query_one("#log", RichLog).write("Fuck 头歌 TUI 已启动。")
             self.set_interval(1, self._refresh_status)
@@ -200,6 +202,26 @@ def _build_app():
                 text = f"AI 草稿启动失败：{e}"
             self.call_from_thread(self._show_preview, text)
 
+        def _stop_webui(self) -> None:
+            if self._webui is not None and self._webui.poll() is None:
+                self._webui.terminate()
+
+        def action_quit(self) -> None:
+            self._stop_webui()
+            self.exit()
+
+        def _start_webui(self) -> None:
+            if self._webui is not None and self._webui.poll() is None:
+                self.query_one("#log", RichLog).write("网页状态面板已在运行。")
+                return
+            self._webui = subprocess.Popen(
+                [sys.executable, str(HERE / "webui.py"), "--port", "8765"],
+                cwd=str(HERE), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            self.query_one("#log", RichLog).write(
+                "[网页状态：http://127.0.0.1:8765 （只读）]"
+            )
+
         def _start(self, args: list[str]) -> None:
             if self._proc is not None and self._proc.poll() is None:
                 self.query_one("#log", RichLog).write("已有任务在运行，先点「停止」或等结束。")
@@ -256,6 +278,8 @@ def _build_app():
                 )
             elif bid == "copy_draft":
                 self._copy_draft()
+            elif bid == "webui":
+                self._start_webui()
             elif bid == "save_draft":
                 self._save_draft()
             elif bid == "recent_drafts":
@@ -266,6 +290,9 @@ def _build_app():
                 if self._proc is not None and self._proc.poll() is None:
                     self._proc.terminate()
                     self.query_one("#log", RichLog).write("[已发送停止信号]")
+                if self._webui is not None and self._webui.poll() is None:
+                    self._webui.terminate()
+                    self.query_one("#log", RichLog).write("[网页状态已停止]")
 
     return FuckTougeTui
 
@@ -287,6 +314,7 @@ def _run_selftest() -> None:
             assert app.query_one("#confirm") is not None
             assert app.query_one("#save_draft") is not None
             assert app.query_one("#copy_draft") is not None
+            assert app.query_one("#webui") is not None
             assert app.query_one("#recent_drafts") is not None
             assert app.query_one("#load_recent") is not None
             assert app.query_one("#course") is not None
