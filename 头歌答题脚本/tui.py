@@ -42,6 +42,7 @@ def _run_with_textual() -> None:
         #top { height: auto; padding: 1 2; }
         #status { height: 3; padding: 0 2; color: $text-muted; }
         #slot { width: 16; }
+        #course { width: 1fr; }
         #ai_prompt { width: 1fr; }
         #actions { height: auto; padding: 0 2; }
         #log { height: 1fr; margin: 1 2; border: round $accent; }
@@ -54,11 +55,14 @@ def _run_with_textual() -> None:
                 yield Static("等待脚本状态…", id="status")
                 yield Static("账号槽位（只使用你在输入框里指定的槽位）", classes="hint")
                 yield Input(value="1", id="slot", placeholder="槽位，例如 1")
+                yield Static("课程名或序号（可选；先「列课程」查看）", classes="hint")
+                yield Input(id="course", placeholder="例如 4 / Java程序设计-2026秋")
                 yield Static("AI 草稿（需要 OPENAI_API_KEY；只生成，不提交）", classes="hint")
                 yield Input(id="ai_prompt", placeholder="粘贴题目描述/选项...")
                 yield Static("操作", classes="hint")
             with Horizontal(id="actions"):
                 yield Button("列课程", id="cd")
+                yield Button("进入课程", id="cd_target")
                 yield Button("打开浏览器", id="browser")
                 yield Button("开始刷题", id="run", variant="success")
                 yield Button("采集答案", id="harvest")
@@ -125,6 +129,12 @@ def _run_with_textual() -> None:
             bid = event.button.id
             if bid == "cd":
                 self._start(["cd"])
+            elif bid == "cd_target":
+                target = (self.query_one("#course", Input).value or "").strip()
+                if not target:
+                    self.query_one("#log", RichLog).write("请先填写课程名或序号。")
+                    return
+                self._start(["cd", target])
             elif bid == "browser":
                 self._start(["browser", self._slot()])
             elif bid == "run":
