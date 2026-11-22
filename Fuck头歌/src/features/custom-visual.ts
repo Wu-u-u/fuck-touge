@@ -232,7 +232,10 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     const old = currentLayer;
     const oldId = currentId;
     currentId = wp.id;
-    const effects = ["slide", "fade", "zoom", "spring"] as const;
+    const effects = [
+      "fade", "wipe", "disc", "stripes", "zoom", "honeycomb",
+      "vortex", "pixel", "diamond", "golden", "melt", "crt",
+    ] as const;
     const effect = effects[Math.floor(Math.random() * effects.length)];
     if (!old.animate || prefersReducedMotion()) {
       const el = createLayer(BG_ID);
@@ -251,42 +254,110 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     currentLayer = next;
 
     try {
-      const duration = effect === "spring" ? 480 : 420;
-      const easing = effect === "spring" ? "cubic-bezier(.18,1.35,.4,1)" : "cubic-bezier(.22,1,.36,1)";
+      const duration = 1200;
+      const easing = "cubic-bezier(.22,1,.36,1)";
+      const opacity = String(bg.opacity);
+      const fadesIn = effect === "fade" || effect === "zoom" || effect === "vortex" || effect === "crt";
+      next.style.opacity = fadesIn ? "0" : opacity;
       let oldKf: Keyframe[];
       let newKf: Keyframe[];
+
+      const oldFade: Keyframe[] = [
+        { opacity, transform: "scale(1)" },
+        { opacity: 0, transform: "scale(1.03)" },
+      ];
+
       if (effect === "fade") {
-        oldKf = [{ opacity: bg.opacity }, { opacity: 0 }];
+        oldKf = [{ opacity }, { opacity: 0 }];
         newKf = [{ opacity: 0 }, { opacity: bg.opacity }];
       } else if (effect === "zoom") {
         oldKf = [
-          { transform: "scale(1)", opacity: bg.opacity },
-          { transform: "scale(1.06)", opacity: 0 },
+          { transform: "scale(1)", opacity },
+          { transform: "scale(1.08)", opacity: 0 },
         ];
         newKf = [
-          { transform: "scale(.94)", opacity: 0 },
-          { transform: "scale(1)", opacity: bg.opacity },
+          { transform: "scale(.92)", opacity: 0 },
+          { transform: "scale(1)", opacity },
         ];
-      } else if (effect === "spring") {
+      } else if (effect === "vortex") {
         oldKf = [
-          { transform: "translateX(0)", opacity: bg.opacity },
-          { transform: "translateX(-12%)", opacity: 0 },
+          { transform: "rotate(0deg) scale(1)", opacity },
+          { transform: "rotate(-18deg) scale(.86)", opacity: 0 },
         ];
         newKf = [
-          { transform: "translateX(13%) scale(1.02)", opacity: 0 },
-          { transform: "translateX(-1.5%) scale(.995)", opacity: bg.opacity, offset: 0.72 },
-          { transform: "translateX(0) scale(1)", opacity: bg.opacity },
+          { transform: "rotate(24deg) scale(1.28)", opacity: 0 },
+          { transform: "rotate(0deg) scale(1)", opacity },
+        ];
+      } else if (effect === "crt") {
+        oldKf = [{ opacity, filter: "brightness(1)" }, { opacity: 0, filter: "brightness(2)" }];
+        newKf = [
+          { transform: "scaleY(.02)", opacity: 0, filter: "brightness(2.6)" },
+          { transform: "scaleY(1)", opacity, filter: "brightness(1)" },
+        ];
+      } else if (effect === "wipe") {
+        oldKf = oldFade;
+        newKf = [
+          { clipPath: "polygon(0 0, 0 0, 0 100%, 0 100%)" },
+          { clipPath: "polygon(0 0, 100% 0, 100% 100%, 0 100%)" },
+        ];
+      } else if (effect === "disc") {
+        oldKf = oldFade;
+        newKf = [
+          { clipPath: "circle(0% at 50% 50%)" },
+          { clipPath: "circle(75% at 50% 50%)" },
+        ];
+      } else if (effect === "diamond") {
+        oldKf = oldFade;
+        newKf = [
+          { clipPath: "polygon(50% 50%, 50% 50%, 50% 50%, 50% 50%)" },
+          { clipPath: "polygon(50% -10%, 110% 50%, 50% 110%, -10% 50%)" },
+        ];
+      } else if (effect === "golden") {
+        oldKf = oldFade;
+        newKf = [
+          { clipPath: "circle(0% at 38% 38%)" },
+          { clipPath: "circle(125% at 38% 38%)" },
+        ];
+      } else if (effect === "melt") {
+        oldKf = oldFade;
+        newKf = [
+          { clipPath: "polygon(0 0, 100% 0, 100% 0, 0 0)", filter: "blur(2px)" },
+          { clipPath: "polygon(0 0, 100% 0, 100% 100%, 0 100%)", filter: "blur(0px)" },
+        ];
+      } else if (effect === "stripes") {
+        oldKf = oldFade;
+        next.style.maskImage = "repeating-linear-gradient(90deg, #000 0 6%, transparent 6% 12%)";
+        next.style.maskSize = "220% 100%";
+        newKf = [
+          { maskPosition: "110% 0" },
+          { maskPosition: "0% 0" },
+        ];
+      } else if (effect === "pixel") {
+        oldKf = oldFade;
+        next.style.maskImage = "linear-gradient(#000, #000)";
+        next.style.maskRepeat = "repeat";
+        next.style.maskSize = "8% 8%";
+        newKf = [
+          { maskSize: "8% 8%", maskPosition: "0 0" },
+          { maskSize: "100% 100%", maskPosition: "0 0" },
+        ];
+      } else if (effect === "honeycomb") {
+        oldKf = oldFade;
+        const hex = "url(\"data:image/svg+xml," + encodeURIComponent(
+          "<svg xmlns='http://www.w3.org/2000/svg' width='28' height='32'><path d='M14 1 26 8v16L14 31 2 24V8z' fill='white'/></svg>"
+        ) + "\")";
+        next.style.maskImage = hex;
+        next.style.maskRepeat = "repeat";
+        next.style.maskSize = "28px 32px";
+        newKf = [
+          { maskSize: "0px 0px" },
+          { maskSize: "28px 32px" },
         ];
       } else {
-        oldKf = [
-          { transform: "translateX(0) scale(1)", opacity: bg.opacity },
-          { transform: "translateX(-10%) scale(.98)", opacity: 0 },
-        ];
-        newKf = [
-          { transform: "translateX(10%) scale(1.03)", opacity: 0 },
-          { transform: "translateX(0) scale(1)", opacity: bg.opacity },
-        ];
+        oldKf = oldFade;
+        newKf = [{ opacity }, { opacity }];
       }
+
       const oldAnim = old.animate(oldKf, { duration, easing, fill: "both" });
       const nextAnim = next.animate(newKf, { duration, easing, fill: "both" });
       switchTimer = window.setTimeout(() => {
@@ -295,7 +366,13 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
         nextAnim.cancel?.();
         oldAnim.cancel?.();
         next.style.transform = "none";
-        next.style.opacity = String(bg.opacity);
+        next.style.opacity = opacity;
+        next.style.clipPath = "";
+        next.style.maskImage = "";
+        next.style.maskSize = "";
+        next.style.maskPosition = "";
+        next.style.maskRepeat = "";
+        next.style.filter = "none";
         next.id = BG_ID;
         currentLayer = next;
       }, duration + 20);
@@ -303,6 +380,12 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       old.remove();
       next.style.transform = "none";
       next.style.opacity = String(bg.opacity);
+      next.style.clipPath = "";
+      next.style.maskImage = "";
+      next.style.maskSize = "";
+      next.style.maskPosition = "";
+      next.style.maskRepeat = "";
+      next.style.filter = "none";
       next.id = BG_ID;
       currentLayer = next;
     }
