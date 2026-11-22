@@ -175,13 +175,18 @@ def _build_app():
 
         @work(thread=True, exclusive=True)
         def _ai_draft(self, kind: str, prompt: str) -> None:
-            proc = subprocess.run(
-                [sys.executable, str(ENTRY), "ai", "--kind", kind, prompt],
-                cwd=str(HERE), capture_output=True, text=True,
-            )
-            text = (proc.stdout or "").strip()
-            if proc.returncode != 0:
-                text = (text + "\n" + (proc.stderr or "")).strip() or "AI 草稿生成失败"
+            try:
+                proc = subprocess.run(
+                    [sys.executable, str(ENTRY), "ai", "--kind", kind, prompt],
+                    cwd=str(HERE), capture_output=True, text=True, timeout=120,
+                )
+                text = (proc.stdout or "").strip()
+                if proc.returncode != 0:
+                    text = (text + "\n" + (proc.stderr or "")).strip() or "AI 草稿生成失败"
+            except subprocess.TimeoutExpired:
+                text = "AI 草稿生成超时（120 秒）；请检查 API 地址/网络后重试。"
+            except OSError as e:
+                text = f"AI 草稿启动失败：{e}"
             self.call_from_thread(self._show_preview, text)
 
         def _start(self, args: list[str]) -> None:
