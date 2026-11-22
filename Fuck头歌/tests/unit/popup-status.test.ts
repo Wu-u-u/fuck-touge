@@ -88,6 +88,10 @@ function makeApi(initialStatus: ScriptStatus | null, initialLogs: ScriptLogEntry
       },
       onChanged: {
         addListener: (callback) => listeners.push(callback),
+        removeListener: (callback) => {
+          const i = listeners.indexOf(callback);
+          if (i >= 0) listeners.splice(i, 1);
+        },
       },
     },
   };
@@ -101,6 +105,17 @@ afterEach(() => {
 });
 
 describe("popup 脚本状态", () => {
+  it("dispose 移除 storage 监听且可重复调用", async () => {
+    const { api, listeners } = makeApi(status(), [log()]);
+    const dispose = initPopup(api);
+    await sleep(20);
+    expect(listeners.length).toBe(2);
+    dispose();
+    expect(listeners.length).toBe(0);
+    dispose();
+    expect(listeners.length).toBe(0);
+  });
+
   it("running 绿色，显示当前槽位/课程，并渲染日志", async () => {
     const { api } = makeApi(status(), [log(), log({ text: "开始评测", level: "warn" })]);
     initPopup(api);

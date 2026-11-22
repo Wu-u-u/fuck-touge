@@ -41,6 +41,12 @@ export interface PopupChromeApi {
           area: string,
         ) => void,
       ): void;
+      removeListener?(
+        callback: (
+          changes: Record<string, { newValue?: unknown; oldValue?: unknown }>,
+          area: string,
+        ) => void,
+      ): void;
     };
   };
 }
@@ -50,7 +56,7 @@ const LABELS: Record<string, string> = { catppuccin: "Catppuccin", github: "GitH
 const isEducoder = (url?: string): boolean =>
   /^https?:\/\/([^/]*\.)?educoder\.net\//.test(url || "");
 
-export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): void {
+export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): () => void {
   const tt = doc.getElementById("tt") as HTMLInputElement;
   const tf = doc.getElementById("tf") as HTMLInputElement;
   const tc = doc.getElementById("tc") as HTMLInputElement;
@@ -71,6 +77,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   const logList = doc.getElementById("logList") as HTMLElement | null;
   const copyLogsBtn = doc.getElementById("copyLogs") as HTMLButtonElement | null;
   const clearLogsBtn = doc.getElementById("clearLogs") as HTMLButtonElement | null;
+  const cleanups: Array<() => void> = [];
 
   const setMsg = (text: string, warn = false): void => {
     msg.textContent = text;
@@ -141,9 +148,11 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
       writeCustom();
     });
     readCustom();
-    chromeApi.storage?.onChanged?.addListener((changes, area) => {
+    const onCustomStorage = (changes: Record<string, { newValue?: unknown }>, area: string): void => {
       if (area === "local" && changes[CUSTOM_CONFIG_KEY]) readCustom();
-    });
+    };
+    chromeApi.storage?.onChanged?.addListener(onCustomStorage);
+    cleanups.push(() => chromeApi.storage?.onChanged?.removeListener?.(onCustomStorage));
   }
 
   /* 答题脚本状态 / 日志：只展示当前槽位，不提供启动/停止控制 */
@@ -373,7 +382,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   if (scriptCard) {
     readScriptState();
     try {
-      chromeApi.storage?.onChanged?.addListener((changes, area) => {
+      const onScriptStorage = (changes: Record<string, { newValue?: unknown }>, area: string): void => {
         if (area !== "local") return;
         if (changes[SCRIPT_STATUS_KEY]) {
           scriptStatus = normalizeScriptStatus(changes[SCRIPT_STATUS_KEY].newValue);
@@ -384,14 +393,13 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
           scriptLogs = normalizeScriptLogs(changes[SCRIPT_LOGS_KEY].newValue);
           renderScriptLogs();
         }
-      });
+      };
+      chromeApi.storage?.onChanged?.addListener(onScriptStorage);
+      cleanups.push(() => chromeApi.storage?.onChanged?.removeListener?.(onScriptStorage));
     } catch (e) {}
     statusTimer = window.setInterval(() => {
       if (scriptStatus) renderScriptStatus();
     }, 1000);
-    window.addEventListener("unload", () => {
-      if (statusTimer) clearInterval(statusTimer);
-    });
   }
 
   async function withPage<T>(
@@ -473,6 +481,23 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
       ),
     );
   })();
+
+  let disposed = false;
+  const dispose = (): void => {
+    if (disposed) return;
+    disposed = true;
+    if (statusTimer) {
+      clearInterval(statusTimer);
+      statusTimer = 0;
+    }
+    for (const fn of cleanups.splice(0)) {
+      try { fn(); } catch (e) {}
+    }
+    window.removeEventListener("unload", onUnload);
+  };
+  const onUnload = (): void => dispose();
+  window.addEventListener("unload", onUnload);
+  return dispose;
 }
 
 // 真实弹窗环境自动初始化；单测（jsdom，无 chrome）只导入 initPopup
