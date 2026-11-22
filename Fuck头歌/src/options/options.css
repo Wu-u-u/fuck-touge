@@ -967,7 +967,7 @@ input[type="color"]:focus-visible { outline: 2px solid var(--accent); outline-of
 .wallpaper-add:disabled { opacity: .45; cursor: not-allowed; }
 .wallpaper-add b { font-size: 20px; font-weight: 300; line-height: 1; }
 
-.wallpaper-hint { color: var(--dim); font-size: 11px; }
+.wallpaper-hint { color: var(--dim); font-size: 12.5px; line-height: 1.5; }
 
 .crop-dialog {
   width: min(720px, calc(100vw - 42px));
