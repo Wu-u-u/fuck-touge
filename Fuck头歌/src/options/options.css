@@ -287,6 +287,8 @@ h2 {
 .preview {
   --mock-panel-opacity: .8;
   --mock-editor-opacity: 1;
+  --preview-image-opacity: 1;
+  --preview-image-fit: cover;
   position: relative;
   display: flex;
   align-items: center;
@@ -295,6 +297,10 @@ h2 {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 12px;
+  background: var(--bg);
+}
+
+.preview:not(.has-image) {
   background:
     repeating-conic-gradient(#1a1a2a 0% 25%, #151522 0% 50%) 50% / 24px 24px;
 }
@@ -304,7 +310,9 @@ h2 {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: var(--preview-image-fit);
+  opacity: var(--preview-image-opacity);
+  transition: opacity .12s ease;
 }
 
 .preview-empty {

@@ -254,6 +254,12 @@ const syncMockPreview = (): void => {
   const bg = config.background;
   els.bgPreview.style.setProperty("--mock-panel-opacity", String(bg.panelOpacity));
   els.bgPreview.style.setProperty("--mock-editor-opacity", String(bg.editorOpacity));
+  // 预览也跟随图片透明度和填充方式，否则只有面板滑块“看起来有变化”
+  els.bgPreview.style.setProperty("--preview-image-opacity", String(bg.opacity));
+  els.bgPreview.style.setProperty(
+    "--preview-image-fit",
+    bg.fit === "stretch" ? "fill" : bg.fit,
+  );
 };
 
 const renderBackground = (): void => {
@@ -1194,6 +1200,7 @@ els.bgOpacity.addEventListener("input", () => {
   const value = Number(els.bgOpacity.value);
   config.background.opacity = Math.min(1, Math.max(0, 1 - value / 100));
   els.bgOpacityVal.textContent = `${Math.round((1 - config.background.opacity) * 100)}%`;
+  syncMockPreview();
   saveSoon();
 });
 
@@ -1215,6 +1222,7 @@ els.bgEditorOpacity.addEventListener("input", () => {
 
 els.bgFit.addEventListener("change", () => {
   config.background.fit = els.bgFit.value as BackgroundFit;
+  syncMockPreview();
   saveNow();
 });
 
