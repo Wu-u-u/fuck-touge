@@ -342,6 +342,46 @@ describe("custom visual", () => {
     );
   });
 
+  it("removeBg 后迟到的 media 回包不会恢复图层", async () => {
+    const wp = {
+      id: "wp-cancel", name: "取消", image: "", mediaKey: "fuckTougeMedia:wp-cancel",
+      kind: "image" as const, animated: false, seed: "#ffffff",
+      crop: { x: 0, y: 0, w: 1, h: 1 }, width: 10, height: 10,
+    };
+    let theme = true;
+    controller = createCustomVisual({
+      isThemeOn: () => theme,
+      isAnswerPage: () => true,
+      isTopFrame: () => true,
+    });
+    controller.install();
+    vi.useFakeTimers();
+    try {
+      window.dispatchEvent(new MessageEvent("message", {
+        data: {
+          source: "fuck-touge-bridge",
+          type: "config",
+          config: makeConfig({ background: { enabled: true, image: "", wallpapers: [wp], activeId: wp.id, opacity: .4, fit: "cover" } }),
+        },
+        source: window,
+      }));
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+
+      theme = false;
+      controller.apply();
+
+      window.dispatchEvent(new MessageEvent("message", {
+        data: { source: "fuck-touge-bridge", type: "media-url", key: wp.mediaKey, url: "blob:late" },
+        source: window,
+      }));
+      await Promise.resolve();
+      expect(document.getElementById("ft-bg")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("mediaKey 壁纸在主题重开后重新请求媒体并恢复图层", async () => {
     const wp = {
       id: "wp-test", name: "测试", image: "", mediaKey: "fuckTougeMedia:wp-test",

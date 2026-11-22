@@ -49,8 +49,9 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   let mediaUrl = "";
   let mediaReleased = false;
   let mediaReloadKey = "";
+  let mediaSeq = 0;
   const mediaUrls = new Map<string, string>();
-  const mediaPending = new Map<string, { promise: Promise<string | null>; resolve: (url: string | null) => void; timer: number }>();
+  const mediaPending = new Map<string, { promise: Promise<string | null | undefined>; resolve: (url: string | null | undefined) => void; timer: number }>();
   const mediaWarned = new Set<string>();
   let configSeq = 0;
   let switchTimer = 0;
@@ -118,6 +119,13 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       document.getElementById(BG_NEXT_ID)?.remove();
     } catch (e) {}
     releaseShaderRenderer();
+    mediaSeq++;
+    // 关闭背景/离开答题页时取消在途 media 请求，30s timer 与迟到的 bridge 回包都不再处理
+    for (const [key, pending] of mediaPending) {
+      clearTimeout(pending.timer);
+      pending.resolve(undefined);
+      mediaPending.delete(key);
+    }
     // 关闭背景/离开答题页后不再需要页面 object URL；重新开启时从 IDB 再取
     for (const url of mediaUrls.values()) {
       try { URL.revokeObjectURL(url); } catch (e) {}
@@ -163,10 +171,12 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     media.style.top = `${(H - ch * sy) / 2 - crop.y * nh * sy}px`;
   };
 
-  const getMediaUrl = async (key: string): Promise<string | null> => {
+  const getMediaUrl = async (key: string): Promise<string | null | undefined> => {
+    const seq = mediaSeq;
     const ready = mediaUrls.get(key);
     if (ready) return ready;
     const blob = await getCachedMedia(key);
+    if (seq !== mediaSeq) return undefined;
     if (blob) {
       const url = URL.createObjectURL(blob);
       mediaUrls.set(key, url);
@@ -175,8 +185,9 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     const pending = mediaPending.get(key);
     if (pending) return pending.promise;
 
-    let resolve: (url: string | null) => void = () => {};
-    const promise = new Promise<string | null>((r) => { resolve = r; });
+    if (seq !== mediaSeq) return undefined;
+    let resolve: (url: string | null | undefined) => void = () => {};
+    const promise = new Promise<string | null | undefined>((r) => { resolve = r; });
     const timer = window.setTimeout(() => {
       const p = mediaPending.get(key);
       if (!p) return;
@@ -692,7 +703,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     mediaUrl = "";
     apply();
     const url = await getMediaUrl(wp.mediaKey);
-    if (seq !== configSeq) return;
+    if (seq !== configSeq || url === undefined) return;
     mediaUrl = url || "";
     if (url) mediaReleased = false;
     if (!url && !mediaWarned.has(wp.mediaKey)) {
