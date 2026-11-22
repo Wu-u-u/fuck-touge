@@ -8,7 +8,20 @@ import type { EditorOptions } from "./editor-options";
 export type ThemeName = "catppuccin" | "github";
 
 export type BackgroundFit = "cover" | "stretch" | "contain";
-export type BackgroundTransition = "slide" | "fade" | "zoom" | "spring" | "instant";
+export type BackgroundTransition =
+  | "random"
+  | "fade"
+  | "wipe"
+  | "disc"
+  | "stripes"
+  | "zoom"
+  | "honeycomb"
+  | "vortex"
+  | "pixel"
+  | "diamond"
+  | "golden"
+  | "melt"
+  | "crt";
 
 export type WallpaperKind = "image" | "gif" | "video";
 

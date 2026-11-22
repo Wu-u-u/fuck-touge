@@ -17,7 +17,7 @@ export const DEFAULT_CUSTOM_CONFIG: CustomConfig = {
     panelOpacity: 0.8,
     editorOpacity: 1,
     fit: "cover",
-    transition: "slide",
+    transition: "random",
     fixed: true,
   },
   colors: {},
@@ -53,7 +53,10 @@ export const COLOR_DEFS: ColorDef[] = [
 
 const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const FITS: BackgroundFit[] = ["cover", "stretch", "contain"];
-const TRANSITIONS: BackgroundTransition[] = ["slide", "fade", "zoom", "spring", "instant"];
+const TRANSITIONS: BackgroundTransition[] = [
+  "random", "fade", "wipe", "disc", "stripes", "zoom",
+  "honeycomb", "vortex", "pixel", "diamond", "golden", "melt", "crt",
+];
 
 export const isHexColor = (value: unknown): value is string =>
   typeof value === "string" && HEX_RE.test(value.trim());

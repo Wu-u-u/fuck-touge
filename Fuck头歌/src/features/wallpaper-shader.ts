@@ -40,6 +40,20 @@ export const TRANSITION_EFFECTS: readonly TransitionEffect[] = [
   "crt",
 ];
 
+/** 固定效果直接用；random 时避免连续两次抽到同一个。 */
+export function pickTransitionEffect(
+  configured: TransitionEffect | "random",
+  lastEffect: TransitionEffect | "",
+  rand: () => number = Math.random,
+): TransitionEffect {
+  if (configured !== "random") return configured;
+  let effect = TRANSITION_EFFECTS[Math.floor(rand() * TRANSITION_EFFECTS.length)];
+  if (effect === lastEffect) {
+    effect = TRANSITION_EFFECTS[(TRANSITION_EFFECTS.indexOf(effect) + 1) % TRANSITION_EFFECTS.length];
+  }
+  return effect;
+}
+
 const EFFECT_INDEX: Record<TransitionEffect, number> = {
   fade: 0,
   wipe: 1,
@@ -614,6 +628,7 @@ const getRenderer = (): ShaderRenderer | null => {
   cachedRenderer = createRenderer();
   return cachedRenderer;
 };
+
 
 /**
  * 启动一次 GPU 过渡。返回 null 表示环境不支持/媒体未就绪，调用方应回退 CSS。

@@ -3,7 +3,7 @@ import { dataUrlToBlob, getCachedMedia, putCachedMedia, pruneCachedMedia } from 
 import { toast } from "../ui/toast";
 import type { CustomConfig, Wallpaper } from "../shared/types";
 import { isAnswerPage } from "./theme/skin";
-import { TRANSITION_EFFECTS, releaseShaderRenderer, startShaderTransition, type ShaderTransitionHandle, type TransitionEffect } from "./wallpaper-shader";
+import { pickTransitionEffect, releaseShaderRenderer, startShaderTransition, type ShaderTransitionHandle, type TransitionEffect } from "./wallpaper-shader";
 
 const STYLE_ID = "ft-custom-visual";
 const BG_ID = "ft-bg";
@@ -51,7 +51,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   const mediaWarned = new Set<string>();
   let configSeq = 0;
   let switchTimer = 0;
-  let lastEffect = "";
+  let lastEffect: TransitionEffect | "" = "";
   let switchSeq = 0;
   let activeShader: ShaderTransitionHandle | null = null;
   // WeakMap：旧图层移除后自动释放，不需要每次切换手动 delete
@@ -115,6 +115,11 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       document.getElementById(BG_NEXT_ID)?.remove();
     } catch (e) {}
     releaseShaderRenderer();
+    // 关闭背景/离开答题页后不再需要页面 object URL；重新开启时从 IDB 再取
+    for (const url of mediaUrls.values()) {
+      try { URL.revokeObjectURL(url); } catch (e) {}
+    }
+    mediaUrls.clear();
   };
 
   const createLayer = (id: string): HTMLDivElement => {
@@ -290,11 +295,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     const oldId = currentId;
     const oldWp = layerWp.get(old);
     currentId = wp.id;
-    const effects = TRANSITION_EFFECTS;
-    let effect: TransitionEffect = effects[Math.floor(Math.random() * effects.length)];
-    if (effect === lastEffect) {
-      effect = effects[(effects.indexOf(effect) + 1) % effects.length];
-    }
+    const effect = pickTransitionEffect(bg.transition, lastEffect);
     lastEffect = effect;
     if (!old.animate || prefersReducedMotion()) {
       const el = createLayer(BG_ID);

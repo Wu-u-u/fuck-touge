@@ -19,7 +19,7 @@ import {
 } from "../shared/editor-options";
 import { applyMaterialPalette, clearMaterialPalette, seedFromImage } from "../shared/material-theme";
 import { dataUrlToBlob } from "../features/media-cache";
-import type { BackgroundFit, CustomColorKey, CustomConfig, Wallpaper, WallpaperCrop, WallpaperKind } from "../shared/types";
+import type { BackgroundFit, BackgroundTransition, CustomColorKey, CustomConfig, Wallpaper, WallpaperCrop, WallpaperKind } from "../shared/types";
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector(sel) as T;
 
@@ -41,6 +41,7 @@ const els = {
   bgEditorOpacity: $<HTMLInputElement>("#bgEditorOpacity"),
   bgEditorOpacityVal: $<HTMLOutputElement>("#bgEditorOpacityVal"),
   bgFit: $<HTMLSelectElement>("#bgFit"),
+  bgTransition: $<HTMLSelectElement>("#bgTransition"),
   bgMeta: $<HTMLDivElement>("#bgMeta"),
   wallpaperList: $<HTMLDivElement>("#wallpaperList"),
   cropDialog: $<HTMLDialogElement>("#cropDialog"),
@@ -259,6 +260,7 @@ const renderBackground = (): void => {
   els.bgEditorOpacity.value = String(Math.round(bg.editorOpacity * 100));
   els.bgEditorOpacityVal.textContent = `${Math.round(bg.editorOpacity * 100)}%`;
   els.bgFit.value = bg.fit;
+  els.bgTransition.value = bg.transition;
   els.removeBg.disabled = !active;
   els.pickImage.disabled = bg.wallpapers.length >= MAX_WALLPAPERS;
 
@@ -1138,6 +1140,13 @@ els.bgEditorOpacity.addEventListener("input", () => {
 els.bgFit.addEventListener("change", () => {
   config.background.fit = els.bgFit.value as BackgroundFit;
   saveNow();
+});
+
+els.bgTransition.addEventListener("change", () => {
+  config.background.transition = els.bgTransition.value as BackgroundTransition;
+  saveNow();
+  const label = els.bgTransition.selectedOptions[0]?.textContent || "随机";
+  setStatus(`过渡效果：${label}`, "ok");
 });
 
 

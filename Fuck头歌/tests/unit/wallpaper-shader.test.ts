@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TRANSITION_EFFECTS, coverTransform, effectParams } from "../../src/features/wallpaper-shader";
+import { TRANSITION_EFFECTS, coverTransform, effectParams, pickTransitionEffect } from "../../src/features/wallpaper-shader";
 
 describe("coverTransform", () => {
   it("cover 全图：横向铺满、纵向裁掉上下", () => {
@@ -49,5 +49,23 @@ describe("effectParams", () => {
     }
     expect(effectParams("pixel").cellSize).toBe(0.04);
     expect(effectParams("diamond").cellSize).toBe(0.07);
+  });
+});
+
+describe("pickTransitionEffect", () => {
+  it("固定效果始终返回同一个", () => {
+    expect(pickTransitionEffect("crt", "fade")).toBe("crt");
+    expect(pickTransitionEffect("wipe", "")).toBe("wipe");
+  });
+
+  it("random 不连续重复，且只返回合法效果", () => {
+    const first = pickTransitionEffect("random", "", () => 0);
+    expect(first).toBe(TRANSITION_EFFECTS[0]);
+    const second = pickTransitionEffect("random", first, () => 0);
+    expect(second).not.toBe(first);
+    expect(TRANSITION_EFFECTS).toContain(second);
+    for (let i = 0; i < 20; i++) {
+      expect(TRANSITION_EFFECTS).toContain(pickTransitionEffect("random", ""));
+    }
   });
 });
