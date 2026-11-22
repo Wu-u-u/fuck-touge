@@ -16,6 +16,7 @@ from eduauto.archive import (Chapter, find_level, load_answers, sync_chapter_nam
                              write_back_answers, write_scan_skeleton)
 from eduauto.util import die, fmt_secs, log, norm
 from eduauto.answers import answer_to_toml, read_saved_answer, read_test_result, wait_outcome
+from eduauto.ai import AIError, draft_answer, record_operation
 from eduauto.browser import classroom_page, ensure_browser, ensure_login
 from eduauto.config import load_course_order, load_state, remember_course_order
 from eduauto.course import (choose_course, current_course, ensure_answers_file,
@@ -283,6 +284,7 @@ def cmd_harvest(args, cfg: dict) -> None:
     course = current_course(browser, cfg)
     if course is None:
         die("没有当前课程：先 python3 答题.py cd -ls，再 python3 答题.py cd 序号/课程名")
+    cfg.setdefault("run", {})["ai"] = bool(getattr(args, "ai", False))
     answers_path = course.answers or find_answers_file(cfg, course.code)
     if answers_path is None:
         die(f"课程「{course.name}」还没有答案档案：先 python3 答题.py cd {course.name}")
@@ -590,6 +592,45 @@ def prepare_chapter(browser: cdp.Browser, cfg: dict, course, ch: Chapter):
             browser.close_target(classroom.target["id"])
 
 
+def _ai_fill_answer(page: Page, st: dict, lv, ch: Chapter, idx: int, cfg: dict) -> bool:
+    """空答案时让 AI 读当前题面并写入档案；只支持单文件代码/选择题。"""
+    if lv is None or not lv.answer_empty():
+        return True
+    if lv.files or lv.multi is True:
+        record_operation("skip", f"{ch.name} 第{idx}关：多文件关卡不自动作答", "skip")
+        return False
+    kind = "choice" if st.get("choiceCount", 0) > 0 else "code"
+    try:
+        body = str(page.ws.eval("(document.body&&document.body.innerText)||''") or "")
+    except cdp.CDPError:
+        body = ""
+    if not body.strip():
+        record_operation("fail", f"{ch.name} 第{idx}关：页面题面为空", "error")
+        return False
+    prompt = body[-8000:]
+    last = ""
+    for attempt in (1, 2):
+        try:
+            answer = draft_answer(prompt, cfg, kind=kind,
+                                  context=f"{ch.name} 第{idx}关 {st.get('name','')}")
+            lv.answer = answer
+            answers_path = Path(str(cfg["run"]["answers"]))
+            payload = answer_to_toml(kind, answer)
+            changed = write_back_answers(answers_path, {ch.name: {idx: payload}}, force=True)
+            record_operation("answer", f"{ch.name} 第{idx}关 {kind} 尝试{attempt}",
+                             "ok" if changed else "warn")
+            if changed:
+                log(f"  · AI 已写入第{idx}关答案（{kind}，{len(str(answer))} 字符）")
+                return True
+            last = "档案写入返回 0"
+        except (AIError, RuntimeError, OSError) as e:
+            last = str(e)
+            record_operation("answer", f"{ch.name} 第{idx}关 {kind} 尝试{attempt}：{last}", "error")
+            log(f"  ! AI 第{idx}关尝试{attempt}失败：{e}")
+    log(f"  ! AI 无法生成第{idx}关答案：{last}")
+    return False
+
+
 def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
                     ch: Chapter, status: list[dict],
                     stats: "dict | None" = None,
@@ -671,6 +712,10 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
                 if st.get("index") == idx:
                     die(f"第{idx}关跳过时无法跳到下一关，已暂停。")
                 continue
+
+            # AI 自动补空答案（只处理单文件代码/选择题）
+            if cfg.get("run", {}).get("ai"):
+                _ai_fill_answer(page, st, lv, ch, idx, cfg)
 
             # 作答
             if st.get("hasEditor") and lv.multi is False and not lv.files:

@@ -10,6 +10,7 @@ import os
 import re
 import tempfile
 import time
+import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -24,19 +25,32 @@ class AIError(RuntimeError):
 
 @dataclass
 class AIConfig:
-    base_url: str = "https://api.openai.com/v1"
-    model: str = "gpt-4o-mini"
+    base_url: str = "https://api.deepseek.com/v1"
+    model: str = "deepseek-chat"
     api_key_env: str = "OPENAI_API_KEY"
+    api_key_file: str = "~/.config/educoder-auto/ai.toml"
+    api_key: str = ""
     timeout: float = 60.0
 
 
 def from_config(cfg: dict) -> AIConfig:
     raw = cfg.get("ai") if isinstance(cfg.get("ai"), dict) else {}
+    local = {}
+    key_file = Path(str(raw.get("api_key_file") or AIConfig.api_key_file)).expanduser()
+    if key_file.is_file():
+        try:
+            with open(key_file, "rb") as f:
+                data = tomllib.load(f)
+            local = data.get("ai") if isinstance(data.get("ai"), dict) else {}
+        except (OSError, tomllib.TOMLDecodeError):
+            local = {}
     return AIConfig(
-        base_url=str(raw.get("base_url") or AIConfig.base_url).rstrip("/"),
-        model=str(raw.get("model") or AIConfig.model),
-        api_key_env=str(raw.get("api_key_env") or AIConfig.api_key_env),
-        timeout=float(raw.get("timeout") or AIConfig.timeout),
+        base_url=str(raw.get("base_url") or local.get("base_url") or AIConfig.base_url).rstrip("/"),
+        model=str(raw.get("model") or local.get("model") or AIConfig.model),
+        api_key_env=str(raw.get("api_key_env") or local.get("api_key_env") or AIConfig.api_key_env),
+        api_key_file=str(key_file),
+        api_key=str(local.get("api_key") or raw.get("api_key") or ""),
+        timeout=float(raw.get("timeout") or local.get("timeout") or AIConfig.timeout),
     )
 
 
@@ -79,7 +93,7 @@ def draft_answer(prompt: str, cfg: dict, *, kind: str = "code",
     if not str(prompt or "").strip():
         raise AIError("题目为空")
     ac = from_config(cfg)
-    api_key = os.environ.get(ac.api_key_env, "").strip()
+    api_key = str(ac.api_key or "").strip() or os.environ.get(ac.api_key_env, "").strip()
     if not api_key:
         raise AIError(f"未设置 {ac.api_key_env}；只生成草稿，不读取配置文件里的密钥")
     messages = [{"role": "system", "content": _system_prompt(kind)}]
@@ -138,6 +152,20 @@ def save_draft(path: Path, text: str) -> None:
         except OSError:
             pass
         raise
+
+
+AI_LOG = Path(__file__).resolve().parent.parent / "ai-logs" / "operations.tsv"
+
+
+def record_operation(op: str, detail: str = "", status: str = "ok") -> None:
+    """记录 AI 操作摘要；不记录密钥。"""
+    try:
+        AI_LOG.parent.mkdir(parents=True, exist_ok=True)
+        line = f"{time.strftime('%Y-%m-%d %H:%M:%S')}\t{op}\t{status}\t{detail[:500]}\n"
+        with AI_LOG.open("a", encoding="utf-8") as f:
+            f.write(line)
+    except OSError:
+        pass
 
 
 def record_draft(path: Path, index: Path | None = None) -> None:

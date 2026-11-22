@@ -22,3 +22,4 @@ install-zen-edge.sh
 Thumbs.db
 rust/**/target/
 头歌答题脚本/ai-drafts/
+头歌答题脚本/ai-logs/

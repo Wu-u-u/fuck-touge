@@ -193,7 +193,7 @@ scan 不再是独立命令：
 
 【AI 答案草稿（可选）】
 
-    export OPENAI_API_KEY="你的密钥"
+    # 本机私有 key：~/.config/educoder-auto/ai.toml（0600），或环境变量
     python3 答题.py ai --kind code "题目描述..."
     python3 答题.py ai --kind choice "题目和选项..."
     python3 答题.py ai --kind code "题目" --out ai-drafts/draft.txt
@@ -207,7 +207,9 @@ scan 不再是独立命令：
     uv run --with textual python tui.py
     uv run --with textual python tui.py --self-test   # 无头自检
 
-界面提供：列课程、输入课程名/序号后进入课程、打开浏览器、开始刷题、采集答案、停止、实时日志，以及 AI 代码/选项草稿预览和确认（不会自动提交）。
+界面为 Frosted 石墨蓝双栏：左侧槽位/课程/任务与主要操作，右侧 AI 预览、草稿和实时日志。
+「AI 限定范围」在当前课程内直接补空答案并自动评测；「AI 完全自主」先执行当前课程，换课程由左侧课程输入或后续扩展控制。
+所有 AI 答案会直接写入档案并继续评测；多文件关卡暂不自动处理。
 顶部状态来自 state.status.json；扩展 popup 的状态日志同时保留。
 TUI 只是现有命令的封装；答题、浏览器和状态上报逻辑不变。
 

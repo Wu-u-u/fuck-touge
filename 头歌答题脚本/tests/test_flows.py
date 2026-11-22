@@ -441,5 +441,32 @@ check("run 预加载流水线按时接管下一章",
       and ("prepare", "预加载章3") in _events,
       f"code={_pipeline_code} events={_events} out={_pipeline_out}")
 
+
+# ---------- AI 自动补空答案：直接写档案 ----------
+import tempfile as _tempfile
+from unittest.mock import patch as _patch
+
+_ai_tmp = Path(_tempfile.mkdtemp())
+_ai_arch = _ai_tmp / "ai-auto.toml"
+_ai_arch.write_text(
+    "[[chapters]]\nname = \"AI章\"\nhomework_id = \"1\"\n\n"
+    "[[chapters.levels]]\nname = \"L1\"\nanswer = \"\"\n",
+    encoding="utf-8")
+_ai_ch = Chapter({"name": "AI章", "homework_id": "1",
+                  "levels": [{"name": "L1", "answer": ""}]})
+class _AIWS:
+    def eval(self, expr):
+        return "题目：1+1 等于几？ A)1 B)2"
+class _AIPage:
+    ws = _AIWS()
+_ai_cfg = {"run": {"answers": str(_ai_arch), "ai": True}}
+with _patch.object(flows, "draft_answer", lambda *a, **k: "B"):
+    _ok = flows._ai_fill_answer(_AIPage(), {"choiceCount": 2}, _ai_ch.levels[0], _ai_ch, 1, _ai_cfg)
+_ai_data = tomllib.loads(_ai_arch.read_text(encoding="utf-8"))
+check("AI 自动填空答案并写档案",
+      _ok and _ai_ch.levels[0].answer == "B"
+      and _ai_data["chapters"][0]["levels"][0]["answer"] == "B",
+      f"ok={_ok} lv={_ai_ch.levels[0].answer} data={_ai_data}")
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

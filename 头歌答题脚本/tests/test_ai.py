@@ -51,7 +51,8 @@ srv = HTTPServer(("127.0.0.1", 0), Handler)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 base = f"http://127.0.0.1:{srv.server_port}/v1"
 cfg = {"ai": {"base_url": base, "model": "fake-model",
-              "api_key_env": "TEST_AI_KEY", "timeout": 5}}
+              "api_key_env": "TEST_AI_KEY", "timeout": 5,
+              "api_key_file": "/nonexistent/ai.toml"}}
 
 with patch.dict(os.environ, {"TEST_AI_KEY": "test-secret"}):
     out = draft_answer("第一题选什么？", cfg, kind="choice", context="多选")

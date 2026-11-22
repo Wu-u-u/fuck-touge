@@ -41,54 +41,75 @@ def _build_app():
 
     class FuckTougeTui(App):
         TITLE = "Fuck 头歌 · 控制台"
-        SUB_TITLE = "答题脚本 v0.9.57"
+        SUB_TITLE = "答题脚本 v0.9.76"
         BINDINGS = [("q", "quit", "退出")]
 
         CSS = """
-        Screen { layout: vertical; }
-        #top { height: auto; padding: 1 2; }
-        #status { height: 3; padding: 0 2; color: $text-muted; }
-        #recent { height: auto; padding: 0 2; color: $text-muted; }
-        #slot { width: 16; }
+        Screen { layout: vertical; background: #10141b; color: #dbe4f0; }
+        Header { background: #182231; color: #cfe3ff; }
+        Footer { background: #182231; color: #9fb0c7; }
+        #body { height: 1fr; }
+        #sidebar {
+            width: 42; min-width: 34; padding: 1;
+            background: #141b26; border-right: solid #2b3b52;
+        }
+        #main { width: 1fr; padding: 1 2; }
+        #status {
+            height: 4; padding: 1; border: round #3d6fa8;
+            background: #172233; color: #d9e8ff;
+        }
+        #recent { height: 5; color: #8fa4bf; }
+        #slot { width: 12; }
         #course { width: 1fr; }
-        #ai_prompt { width: 1fr; height: 5; }
-        #preview { height: 8; margin: 0 2; border: round $accent; }
-        #actions { height: auto; padding: 0 2; }
-        #log { height: 1fr; margin: 1 2; border: round $accent; }
-        .hint { color: $text-muted; }
+        #ai_prompt { width: 1fr; height: 8; border: round #2b3b52; }
+        #preview { height: 12; border: round #2b3b52; background: #111821; }
+        #log { height: 1fr; border: round #2b3b52; background: #0e141d; }
+        #actions, #ai_actions, #draft_actions { height: auto; padding: 1 0; }
+        Button { width: 100%; margin: 0 0 1 0; background: #1b2a3d; color: #dbe4f0; }
+        Button:hover { background: #27405c; }
+        Button.-success { background: #1d4d3d; }
+        Button.-error { background: #4a252c; }
+        .hint { color: #8197b2; padding: 1 0 0 0; }
+        .section { color: #9ec5ff; text-style: bold; padding: 1 0 0 0; }
         """
 
         def compose(self) -> ComposeResult:
             yield Header()
-            with Vertical(id="top"):
-                yield Static("等待脚本状态…", id="status")
-                yield Static("", id="recent")
-                yield Static("账号槽位（只使用你在输入框里指定的槽位）", classes="hint")
-                yield Input(value="1", id="slot", placeholder="槽位，例如 1")
-                yield Static("课程名或序号（可选；先「列课程」查看）", classes="hint")
-                yield Input(id="course", placeholder="例如 4 / Java程序设计-2026秋")
-                yield Static("AI 草稿（需要 OPENAI_API_KEY；只生成，不提交）", classes="hint")
-                yield TextArea("", id="ai_prompt")
-                yield Static("AI 草稿预览（只读；确认不会自动提交）", classes="hint")
-                yield TextArea("", id="preview", read_only=True)
-                yield Static("操作", classes="hint")
-            with Horizontal(id="actions"):
-                yield Button("列课程", id="cd")
-                yield Button("进入课程", id="cd_target")
-                yield Button("打开浏览器", id="browser")
-                yield Button("开始刷题", id="run", variant="success")
-                yield Button("采集答案", id="harvest")
-                yield Button("AI 代码", id="ai_code")
-                yield Button("AI 选项", id="ai_choice")
-                yield Button("确认草稿", id="confirm")
-                yield Button("复制草稿", id="copy_draft")
-                yield Button("清空预览", id="clear_preview")
-                yield Button("网页状态", id="webui")
-                yield Button("保存草稿", id="save_draft")
-                yield Button("最近草稿", id="recent_drafts")
-                yield Button("载入最近草稿", id="load_recent")
-                yield Button("停止", id="stop", variant="error")
-            yield RichLog(id="log", markup=False, wrap=True)
+            with Horizontal(id="body"):
+                with Vertical(id="sidebar"):
+                    yield Static("等待脚本状态…", id="status")
+                    yield Static("", id="recent")
+                    yield Static("槽位", classes="hint")
+                    yield Input(value="1", id="slot", placeholder="例如 1")
+                    yield Static("课程（名称或列表序号）", classes="hint")
+                    yield Input(id="course", placeholder="例如 4 / Java程序设计-2026秋")
+                    yield Static("AI 题目 / 自主任务", classes="hint")
+                    yield TextArea("", id="ai_prompt")
+                    yield Static("操作", classes="section")
+                    with Vertical(id="actions"):
+                        yield Button("列课程", id="cd")
+                        yield Button("进入课程", id="cd_target")
+                        yield Button("打开浏览器", id="browser")
+                        yield Button("开始刷题", id="run", variant="success")
+                        yield Button("AI 限定范围", id="ai_scoped", variant="success")
+                        yield Button("AI 完全自主", id="ai_autonomous", variant="success")
+                        yield Button("采集答案", id="harvest")
+                        yield Button("网页状态", id="webui")
+                        yield Button("停止", id="stop", variant="error")
+                with Vertical(id="main"):
+                    yield Static("AI 预览 / 当前题面", classes="section")
+                    yield TextArea("", id="preview", read_only=True)
+                    with Horizontal(id="draft_actions"):
+                        yield Button("AI 代码", id="ai_code")
+                        yield Button("AI 选项", id="ai_choice")
+                        yield Button("保存", id="save_draft")
+                        yield Button("最近", id="recent_drafts")
+                        yield Button("载入", id="load_recent")
+                        yield Button("复制", id="copy_draft")
+                        yield Button("清空", id="clear_preview")
+                        yield Button("AI 日志", id="ai_log")
+                    yield Static("实时日志", classes="section")
+                    yield RichLog(id="log", markup=False, wrap=True)
             yield Footer()
 
         def on_mount(self) -> None:
@@ -160,6 +181,20 @@ def _build_app():
             save_draft(path, text)
             record_draft(path)
             self.query_one("#log", RichLog).write(f"[草稿已保存：{path}；未写入档案、未提交]")
+
+        def _recent_ai_ops(self) -> None:
+            path = HERE / "ai-logs" / "operations.tsv"
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()[-20:]
+            except OSError:
+                lines = []
+            log = self.query_one("#log", RichLog)
+            if not lines:
+                log.write("还没有 AI 操作日志。")
+                return
+            log.write("最近 AI 操作：")
+            for line in lines:
+                log.write("  " + line)
 
         def _recent_drafts(self) -> None:
             index = HERE / "ai-drafts" / "index.tsv"
@@ -282,6 +317,20 @@ def _build_app():
                 self._start(["browser", self._slot()])
             elif bid == "run":
                 self._start(["run", "-y"])
+            elif bid == "ai_scoped":
+                self.query_one("#log", RichLog).write(
+                    "[AI 自动：将直接补齐当前课程空答案并自动评测；按钮即视为批准]"
+                )
+                self._start(["run", "-y", "--ai"])
+            elif bid == "ai_autonomous":
+                task = (self.query_one("#ai_prompt", TextArea).text or "").strip()
+                self.query_one("#log", RichLog).write(
+                    f"[AI 自主任务：{task or '处理当前课程未完成关卡'}]"
+                )
+                self.query_one("#log", RichLog).write(
+                    "[当前版本先执行当前课程；需要换课程请在左侧课程框指定]"
+                )
+                self._start(["run", "-y", "--ai"])
             elif bid == "harvest":
                 self._start(["harvest"])
             elif bid in ("ai_code", "ai_choice"):
@@ -304,6 +353,8 @@ def _build_app():
                 self._start_webui()
             elif bid == "save_draft":
                 self._save_draft()
+            elif bid == "ai_log":
+                self._recent_ai_ops()
             elif bid == "recent_drafts":
                 self._recent_drafts()
             elif bid == "load_recent":
@@ -333,7 +384,9 @@ def _run_selftest() -> None:
             assert app.query_one("#log") is not None
             assert app.query_one("#ai_prompt") is not None
             assert app.query_one("#preview") is not None
-            assert app.query_one("#confirm") is not None
+            assert app.query_one("#ai_scoped") is not None
+            assert app.query_one("#ai_autonomous") is not None
+            assert app.query_one("#ai_log") is not None
             assert app.query_one("#save_draft") is not None
             assert app.query_one("#copy_draft") is not None
             assert app.query_one("#clear_preview") is not None

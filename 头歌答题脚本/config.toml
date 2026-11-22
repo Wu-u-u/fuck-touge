@@ -32,8 +32,8 @@ eval_timeout = 180
 level_timeout = 60
 
 [ai]
-# 可选：AI 草稿接口（OpenAI-compatible）；密钥只从环境变量读取，不写这里
-base_url = "https://api.openai.com/v1"
-model = "gpt-4o-mini"
+# 可选：AI 草稿接口（OpenAI-compatible）；密钥从本机 ~/.config/educoder-auto/ai.toml 或环境变量读取，不写这里
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
 api_key_env = "OPENAI_API_KEY"
 timeout = 60
