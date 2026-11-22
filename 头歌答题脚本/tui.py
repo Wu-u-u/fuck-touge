@@ -80,6 +80,7 @@ def _build_app():
                 yield Button("AI 选项", id="ai_choice")
                 yield Button("确认草稿", id="confirm")
                 yield Button("复制草稿", id="copy_draft")
+                yield Button("清空预览", id="clear_preview")
                 yield Button("网页状态", id="webui")
                 yield Button("保存草稿", id="save_draft")
                 yield Button("最近草稿", id="recent_drafts")
@@ -123,6 +124,15 @@ def _build_app():
 
         def _slot(self) -> str:
             return (self.query_one("#slot", Input).value or "1").strip()
+
+        def _clear_preview(self) -> None:
+            self._last_ai = ""
+            area = self.query_one("#preview", TextArea)
+            try:
+                area.load_text("")
+            except AttributeError:
+                area.text = ""
+            self.query_one("#log", RichLog).write("[AI 预览已清空]")
 
         def _copy_draft(self) -> None:
             text = str(getattr(self, "_last_ai", "") or "").strip()
@@ -277,6 +287,8 @@ def _build_app():
                 self.query_one("#log", RichLog).write(
                     "[草稿已确认，但不会自动写入档案或提交]" if text else "[预览为空]"
                 )
+            elif bid == "clear_preview":
+                self._clear_preview()
             elif bid == "copy_draft":
                 self._copy_draft()
             elif bid == "webui":
@@ -315,6 +327,7 @@ def _run_selftest() -> None:
             assert app.query_one("#confirm") is not None
             assert app.query_one("#save_draft") is not None
             assert app.query_one("#copy_draft") is not None
+            assert app.query_one("#clear_preview") is not None
             assert app.query_one("#webui") is not None
             assert app.query_one("#recent_drafts") is not None
             assert app.query_one("#load_recent") is not None
