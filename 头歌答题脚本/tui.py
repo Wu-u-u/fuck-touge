@@ -37,7 +37,7 @@ def _build_app():
 
     class FuckTougeTui(App):
         TITLE = "Fuck 头歌 · 控制台"
-        SUB_TITLE = "答题脚本 v0.9.51"
+        SUB_TITLE = "答题脚本 v0.9.52"
         BINDINGS = [("q", "quit", "退出")]
 
         CSS = """
@@ -77,6 +77,7 @@ def _build_app():
                 yield Button("确认草稿", id="confirm")
                 yield Button("保存草稿", id="save_draft")
                 yield Button("最近草稿", id="recent_drafts")
+                yield Button("载入最近草稿", id="load_recent")
                 yield Button("停止", id="stop", variant="error")
             yield RichLog(id="log", markup=False, wrap=True)
             yield Footer()
@@ -136,6 +137,18 @@ def _build_app():
             log.write("最近草稿：")
             for line in reversed(lines):
                 log.write("  " + line.replace("\t", "  "))
+
+        def _load_latest_draft(self) -> None:
+            index = HERE / "ai-drafts" / "index.tsv"
+            try:
+                line = index.read_text(encoding="utf-8").splitlines()[-1]
+                path = Path(line.split("\t", 1)[1])
+                text = path.read_text(encoding="utf-8")
+            except (OSError, IndexError):
+                self.query_one("#log", RichLog).write("没有可载入的 AI 草稿。")
+                return
+            self._show_preview(text)
+            self.query_one("#log", RichLog).write(f"[已载入：{path}]")
 
         def _show_preview(self, text: str) -> None:
             self._last_ai = text
@@ -215,6 +228,8 @@ def _build_app():
                 self._save_draft()
             elif bid == "recent_drafts":
                 self._recent_drafts()
+            elif bid == "load_recent":
+                self._load_latest_draft()
             elif bid == "stop":
                 if self._proc is not None and self._proc.poll() is None:
                     self._proc.terminate()
@@ -240,6 +255,7 @@ def _run_selftest() -> None:
             assert app.query_one("#confirm") is not None
             assert app.query_one("#save_draft") is not None
             assert app.query_one("#recent_drafts") is not None
+            assert app.query_one("#load_recent") is not None
             assert app.query_one("#course") is not None
         print("tui selftest ok")
 
