@@ -12,9 +12,9 @@ import {
 const BRIDGE_SOURCE = "fuck-touge-bridge";
 const MAIN_SOURCE = "fuck-touge-main";
 
-const post = (config: unknown): void => {
+const post = (config: unknown, media: Blob | null = null): void => {
   try {
-    window.postMessage({ source: BRIDGE_SOURCE, type: "config", config }, "*");
+    window.postMessage({ source: BRIDGE_SOURCE, type: "config", config, media }, "*");
   } catch (e) {}
 };
 
@@ -38,14 +38,15 @@ const resolveActive = async (cfg: ReturnType<typeof normalizeCustomConfig>) => {
     const data = await storageGet(active.mediaKey);
     active.image = typeof data[active.mediaKey] === "string" ? String(data[active.mediaKey]) : "";
   }
-  return pageView(cfg);
+  return { cfg: pageView(cfg), media: null as Blob | null };
 };
 
 const push = (): void => {
   try {
     chrome.storage.local.get(CUSTOM_CONFIG_KEY, async (result) => {
       if (chrome.runtime?.lastError) return;
-      post(await resolveActive(normalizeCustomConfig(result?.[CUSTOM_CONFIG_KEY])));
+      const resolved = await resolveActive(normalizeCustomConfig(result?.[CUSTOM_CONFIG_KEY]));
+      post(resolved.cfg, resolved.media);
     });
   } catch (e) {
     post(pageView(normalizeCustomConfig(null)));
@@ -155,7 +156,7 @@ window.addEventListener("message", (e: MessageEvent): void => {
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local" || !changes[CUSTOM_CONFIG_KEY]) return;
-    post(pageView(normalizeCustomConfig(changes[CUSTOM_CONFIG_KEY].newValue)));
+    void resolveActive(normalizeCustomConfig(changes[CUSTOM_CONFIG_KEY].newValue)).then((r) => post(r.cfg, r.media));
   });
 } catch (e) {}
 

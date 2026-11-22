@@ -42,6 +42,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
   let retryTimer = 0;
   let currentId = "";
   let currentLayer: HTMLDivElement | null = null;
+  let mediaUrl = "";
   let switchTimer = 0;
   const layerWp = new Map<HTMLDivElement, Wallpaper>();
 
@@ -129,7 +130,12 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     media.style.top = `${(H - ch * sy) / 2 - crop.y * nh * sy}px`;
   };
 
-  const createMedia = (wp: Wallpaper, bg: CustomConfig["background"], layer: HTMLDivElement): HTMLImageElement | HTMLVideoElement => {
+  const createMedia = (
+    wp: Wallpaper,
+    bg: CustomConfig["background"],
+    layer: HTMLDivElement,
+    src: string,
+  ): HTMLImageElement | HTMLVideoElement => {
     let media: HTMLImageElement | HTMLVideoElement;
     if (wp.kind === "video") {
       const video = document.createElement("video");
@@ -138,7 +144,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       video.playsInline = true;
       video.autoplay = true;
       video.preload = "auto";
-      video.src = wp.image;
+      video.src = src;
       video.addEventListener("loadedmetadata", () => layoutLayer(layer, wp, bg), { once: true });
       video.play?.().catch(() => {});
       media = video;
@@ -146,7 +152,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
       const img = document.createElement("img");
       img.alt = "";
       img.decoding = "async";
-      img.src = wp.image;
+      img.src = src;
       img.addEventListener("load", () => layoutLayer(layer, wp, bg), { once: true });
       media = img;
     }
@@ -161,7 +167,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     return media;
   };
 
-  const styleLayer = (el: HTMLDivElement, bg: CustomConfig["background"], wp: Wallpaper): void => {
+  const styleLayer = (el: HTMLDivElement, bg: CustomConfig["background"], wp: Wallpaper, src: string): void => {
     el.style.background = "transparent";
     el.style.opacity = String(bg.opacity);
     el.style.position = "fixed";
@@ -173,7 +179,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     const existing = el.firstElementChild;
     const sameKind = existing && (wp.kind === "video" ? existing instanceof HTMLVideoElement : existing instanceof HTMLImageElement);
     if (!sameKind) {
-      const media = createMedia(wp, bg, el);
+      const media = createMedia(wp, bg, el, src);
       el.replaceChildren(media);
     }
     layerWp.set(el, wp);
@@ -211,7 +217,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
 
     if (!currentLayer || !currentLayer.isConnected) {
       const el = createLayer(BG_ID);
-      styleLayer(el, bg, wp);
+      styleLayer(el, bg, wp, mediaUrl || wp.image);
       document.body.appendChild(el);
       currentLayer = el;
       currentId = wp.id;
@@ -219,7 +225,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     }
 
     if (currentId === wp.id) {
-      styleLayer(currentLayer, bg, wp);
+      styleLayer(currentLayer, bg, wp, mediaUrl || wp.image);
       return;
     }
 
@@ -230,7 +236,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     const effect = effects[Math.floor(Math.random() * effects.length)];
     if (!old.animate || prefersReducedMotion()) {
       const el = createLayer(BG_ID);
-      styleLayer(el, bg, wp);
+      styleLayer(el, bg, wp, mediaUrl || wp.image);
       document.body.appendChild(el);
       old.remove();
       currentLayer = el;
@@ -238,7 +244,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     }
 
     const next = createLayer(BG_NEXT_ID);
-    styleLayer(next, bg, wp);
+    styleLayer(next, bg, wp, mediaUrl || wp.image);
     next.style.opacity = "0";
     next.style.transformOrigin = "center";
     document.body.appendChild(next);
