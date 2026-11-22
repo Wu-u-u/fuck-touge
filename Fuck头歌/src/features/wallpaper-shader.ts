@@ -662,6 +662,7 @@ export async function startShaderTransition(
   canvas.width = rw;
   canvas.height = rh;
   canvas.dataset.effect = opts.effect;
+  canvas.dataset.duration = String(opts.duration);
   canvas.style.position = "fixed";
   canvas.style.inset = "0";
   canvas.style.width = "100%";

@@ -314,11 +314,12 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
     currentLayer = next;
 
     const seq = ++switchSeq;
-    switchTimer = window.setTimeout(() => {}, 2600);
+    const transitionMs = Math.min(4000, Math.max(500, Math.round(bg.transitionDuration || 1500)));
+    switchTimer = window.setTimeout(() => {}, transitionMs + 1100);
 
     const animateCss = (): void => {
     try {
-      const duration = 1500;
+      const duration = transitionMs;
       const easing = "cubic-bezier(.22,1,.36,1)";
       const opacity = String(bg.opacity);
       const fadesIn = effect === "fade" || effect === "zoom" || effect === "vortex";
@@ -486,7 +487,7 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
         oldWallpaper: oldWp,
         newWallpaper: wp,
         effect,
-        duration: 1500,
+        duration: transitionMs,
         isCurrent: () => seq === switchSeq,
       }).then((handle) => {
         if (seq !== switchSeq) {

@@ -48,7 +48,7 @@ function mount(cfg: CustomConfig, themeOn = true, answer = true): void {
 describe("custom config", () => {
   it("默认值", () => {
     const cfg = normalizeCustomConfig(null);
-    expect(cfg.background).toEqual({ enabled: false, image: "", wallpapers: [], activeId: "", opacity: 0.4, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", transition: "random", fixed: true });
+    expect(cfg.background).toEqual({ enabled: false, image: "", wallpapers: [], activeId: "", opacity: 0.4, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", transition: "random", transitionDuration: 1500, fixed: true });
     expect(cfg.colors).toEqual({});
   });
 
@@ -69,7 +69,7 @@ describe("custom config", () => {
     const cfg = normalizeCustomConfig({
       background: { enabled: true, image: "javascript:alert(1)", opacity: 9, fit: "wat", fixed: "no" },
     });
-    expect(cfg.background).toEqual({ enabled: true, image: "", wallpapers: [], activeId: "", opacity: 1, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", transition: "random", fixed: true });
+    expect(cfg.background).toEqual({ enabled: true, image: "", wallpapers: [], activeId: "", opacity: 1, panelOpacity: 0.8, editorOpacity: 1, fit: "cover", transition: "random", transitionDuration: 1500, fixed: true });
   });
 
   it("开关可以先开启、后选图", () => {
@@ -112,6 +112,7 @@ describe("custom config", () => {
       editorOpacity: .9,
       fit: "contain",
       transition: "random",
+      transitionDuration: 1500,
       fixed: true,
     });
     expect(cfg.colors).toEqual({ bg: "#abc", text: "#aabbcc", border: "#11223344" });
@@ -137,6 +138,14 @@ describe("custom config", () => {
     expect(normalizeCustomConfig({ background: { transition: "crt" } }).background.transition).toBe("crt");
     expect(normalizeCustomConfig({ background: { transition: "slide" } }).background.transition).toBe("random");
     expect(normalizeCustomConfig({ background: { transition: "wat" } }).background.transition).toBe("random");
+  });
+
+  it("过渡时长：默认 1500ms，限制在 500–4000ms", () => {
+    expect(normalizeCustomConfig({}).background.transitionDuration).toBe(1500);
+    expect(normalizeCustomConfig({ background: { transitionDuration: 800 } }).background.transitionDuration).toBe(800);
+    expect(normalizeCustomConfig({ background: { transitionDuration: 100 } }).background.transitionDuration).toBe(500);
+    expect(normalizeCustomConfig({ background: { transitionDuration: 9999 } }).background.transitionDuration).toBe(4000);
+    expect(normalizeCustomConfig({ background: { transitionDuration: "1500" } }).background.transitionDuration).toBe(1500);
   });
 
   it("单图旧配置迁移成壁纸列表，Material 使用当前壁纸 seed", () => {

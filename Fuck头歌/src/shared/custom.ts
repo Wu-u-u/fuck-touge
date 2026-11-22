@@ -18,6 +18,7 @@ export const DEFAULT_CUSTOM_CONFIG: CustomConfig = {
     editorOpacity: 1,
     fit: "cover",
     transition: "random",
+    transitionDuration: 1500,
     fixed: true,
   },
   colors: {},
@@ -147,6 +148,10 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
   const transition = TRANSITIONS.includes(bgRaw.transition as BackgroundTransition)
     ? (bgRaw.transition as BackgroundTransition)
     : DEFAULT_CUSTOM_CONFIG.background.transition;
+  const transitionDuration =
+    typeof bgRaw.transitionDuration === "number" && Number.isFinite(bgRaw.transitionDuration)
+      ? Math.min(4000, Math.max(500, Math.round(bgRaw.transitionDuration)))
+      : DEFAULT_CUSTOM_CONFIG.background.transitionDuration;
   const fixed = true; // 2.7 起始终固定
 
   const wallpapers: Wallpaper[] = [];
@@ -198,7 +203,7 @@ export function normalizeCustomConfig(raw: unknown): CustomConfig {
 
   return {
     version: 1,
-    background: { enabled, image, wallpapers, activeId, opacity, panelOpacity, editorOpacity, fit, transition, fixed },
+    background: { enabled, image, wallpapers, activeId, opacity, panelOpacity, editorOpacity, fit, transition, transitionDuration, fixed },
     colors,
     editor: copyEditorOptions(src.editor),
     materialYou,

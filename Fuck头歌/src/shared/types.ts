@@ -58,6 +58,8 @@ export interface BackgroundConfig {
   editorOpacity: number;
   fit: BackgroundFit;
   transition: BackgroundTransition;
+  /** 过渡时长（毫秒），默认 1500；范围 500–4000 */
+  transitionDuration: number;
   /** 旧字段；2.7 起固定为 true，不再在 UI 暴露 */
   fixed: boolean;
 }

@@ -42,6 +42,7 @@ const els = {
   bgEditorOpacityVal: $<HTMLOutputElement>("#bgEditorOpacityVal"),
   bgFit: $<HTMLSelectElement>("#bgFit"),
   bgTransition: $<HTMLSelectElement>("#bgTransition"),
+  bgTransitionDuration: $<HTMLSelectElement>("#bgTransitionDuration"),
   bgMeta: $<HTMLDivElement>("#bgMeta"),
   wallpaperList: $<HTMLDivElement>("#wallpaperList"),
   cropDialog: $<HTMLDialogElement>("#cropDialog"),
@@ -261,6 +262,8 @@ const renderBackground = (): void => {
   els.bgEditorOpacityVal.textContent = `${Math.round(bg.editorOpacity * 100)}%`;
   els.bgFit.value = bg.fit;
   els.bgTransition.value = bg.transition;
+  els.bgTransitionDuration.value = String(bg.transitionDuration);
+  if (!els.bgTransitionDuration.value) els.bgTransitionDuration.value = "1500";
   els.removeBg.disabled = !active;
   els.pickImage.disabled = bg.wallpapers.length >= MAX_WALLPAPERS;
 
@@ -1147,6 +1150,14 @@ els.bgTransition.addEventListener("change", () => {
   saveNow();
   const label = els.bgTransition.selectedOptions[0]?.textContent || "随机";
   setStatus(`过渡效果：${label}`, "ok");
+});
+
+els.bgTransitionDuration.addEventListener("change", () => {
+  const ms = Number(els.bgTransitionDuration.value) || 1500;
+  config.background.transitionDuration = Math.min(4000, Math.max(500, Math.round(ms)));
+  saveNow();
+  const label = els.bgTransitionDuration.selectedOptions[0]?.textContent || `${ms} 毫秒`;
+  setStatus(`过渡速度：${label}`, "ok");
 });
 
 
