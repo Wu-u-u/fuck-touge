@@ -1,5 +1,6 @@
 import { CUSTOM_CONFIG_KEY, activeWallpaper, isMediaKey, normalizeCustomConfig, pageViewConfig } from "../shared/custom";
 import { dataUrlToBlob } from "../features/media-cache";
+import { DelayedRevoker } from "../shared/delayed-revoke";
 import type { CustomConfig } from "../shared/types";
 import {
   MAX_SCRIPT_LOGS,
@@ -20,6 +21,13 @@ const MAIN_SOURCE = "fuck-touge-main";
 /** bridge 生命周期内复用 blob URL；页面 reload 后由页面 IDB 接管 */
 const mediaBlobUrls = new Map<string, string>();
 const validMediaKeys = new Set<string>();
+const blobRevoker = new DelayedRevoker((key) => {
+  if (validMediaKeys.has(key)) return;
+  const current = mediaBlobUrls.get(key);
+  if (!current) return;
+  try { URL.revokeObjectURL(current); } catch (e) {}
+  mediaBlobUrls.delete(key);
+});
 
 const post = (config: unknown): void => {
   try {
@@ -37,16 +45,10 @@ const postCleanup = (cfg: CustomConfig): void => {
     const valid = new Set(keys);
     validMediaKeys.clear();
     keys.forEach((k) => validMediaKeys.add(k));
-    // bridge 自己的 blob URL 也会持有 Blob；延迟 revoke，避免页面过渡中的旧图层被打断
-    for (const [key, url] of mediaBlobUrls) {
-      if (valid.has(key)) continue;
-      setTimeout(() => {
-        if (validMediaKeys.has(key)) return;
-        const current = mediaBlobUrls.get(key);
-        if (!current) return;
-        try { URL.revokeObjectURL(current); } catch (e) {}
-        mediaBlobUrls.delete(key);
-      }, 5000);
+    // bridge 自己的 blob URL 也会持有 Blob；同一 key 只留一个延迟 timer，重新有效时取消
+    for (const key of mediaBlobUrls.keys()) {
+      if (valid.has(key)) blobRevoker.cancel(key);
+      else blobRevoker.schedule(key);
     }
     window.postMessage({ source: BRIDGE_SOURCE, type: "media-cleanup", keys }, "*");
   } catch (e) {}
@@ -155,6 +157,7 @@ window.addEventListener("message", (e: MessageEvent): void => {
 
   if (data.source === MAIN_SOURCE && data.type === "media-release") {
     // 页面关闭背景/离开答题页后不再需要 bridge 持有的 blob URL；下次 media-request 再重建
+    blobRevoker.cancelAll();
     for (const url of mediaBlobUrls.values()) {
       try { URL.revokeObjectURL(url); } catch (e) {}
     }
@@ -165,6 +168,9 @@ window.addEventListener("message", (e: MessageEvent): void => {
   if (data.source === MAIN_SOURCE && data.type === "media-request") {
     const key = typeof data.key === "string" ? data.key : "";
     if (!isMediaKey(key)) return;
+    // 页面正在请求这个 key：它当前有效，取消可能已排队的 revoke
+    validMediaKeys.add(key);
+    blobRevoker.cancel(key);
     void (async () => {
       try {
         const cachedUrl = mediaBlobUrls.get(key);
