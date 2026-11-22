@@ -115,6 +115,15 @@ def draft_answer(prompt: str, cfg: dict, *, kind: str = "code",
 DRAFT_INDEX = Path(__file__).resolve().parent.parent / "ai-drafts" / "index.tsv"
 
 
+def save_draft(path: Path, text: str) -> None:
+    """原子写草稿，避免中途失败留下半截文件。"""
+    target = Path(path).expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(str(text).rstrip() + "\n", encoding="utf-8")
+    os.replace(tmp, target)
+
+
 def record_draft(path: Path, index: Path | None = None) -> None:
     """把 CLI/TUI 保存的草稿登记到最近草稿索引；只写本地索引。"""
     target = index or DRAFT_INDEX
@@ -146,8 +155,7 @@ def cmd_ai(args, cfg: dict) -> None:
     out = str(getattr(args, "out", "") or "").strip()
     if out:
         path = Path(out).expanduser()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text + "\n", encoding="utf-8")
+        save_draft(path, text)
         record_draft(path)
         log(f"  ✓ 草稿已保存：{path}（已登记最近草稿；未写入档案、未提交）")
     print(text)
