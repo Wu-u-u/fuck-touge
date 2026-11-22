@@ -23,6 +23,7 @@ import { createEchoGuard } from "../shared/echo-guard";
 import { runOnPageHide } from "../shared/page-lifecycle";
 import { releaseObjectUrls } from "../shared/object-url";
 import { resetVideoElement } from "../shared/media-preview";
+import { commitLoadedMedia } from "../shared/media-loader";
 import { dataUrlToBlob } from "../features/media-cache";
 import type { BackgroundFit, BackgroundTransition, CustomColorKey, CustomConfig, Wallpaper, WallpaperCrop, WallpaperKind } from "../shared/types";
 
@@ -141,8 +142,8 @@ const loadMediaFor = async (wp: { image: string; mediaKey?: string }): Promise<s
     // 设置页也把 data URL 换成 object URL，避免把 63MB base64 字符串一直放内存里
     const blob = await dataUrlToBlob(data);
     const media = blob ? URL.createObjectURL(blob) : data;
-    mediaCache.set(key, media);
-    return media;
+    const stillUsed = config.background.wallpapers.some((w) => w.mediaKey === key);
+    return commitLoadedMedia(key, media, stillUsed, mediaCache);
   })();
   mediaLoading.set(key, task);
   try {
