@@ -30,6 +30,13 @@ const postCleanup = (cfg: CustomConfig): void => {
     const keys = cfg.background.wallpapers
       .map((w) => w.mediaKey || "")
       .filter((k) => isMediaKey(k));
+    const valid = new Set(keys);
+    // bridge 自己的 blob URL 也会持有 Blob；删除壁纸后必须 revoke
+    for (const [key, url] of mediaBlobUrls) {
+      if (valid.has(key)) continue;
+      try { URL.revokeObjectURL(url); } catch (e) {}
+      mediaBlobUrls.delete(key);
+    }
     window.postMessage({ source: BRIDGE_SOURCE, type: "media-cleanup", keys }, "*");
   } catch (e) {}
 };

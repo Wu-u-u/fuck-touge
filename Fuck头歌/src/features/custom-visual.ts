@@ -329,12 +329,13 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
           { transform: "scale(1)", opacity },
         ];
       } else if (effect === "vortex") {
+        const dir = Math.random() < .5 ? 1 : -1;
         oldKf = [
           { transform: "rotate(0deg) scale(1)", opacity },
-          { transform: "rotate(-18deg) scale(.86)", opacity: 0 },
+          { transform: `rotate(${-18 * dir}deg) scale(.86)`, opacity: 0 },
         ];
         newKf = [
-          { transform: "rotate(24deg) scale(1.28)", opacity: 0 },
+          { transform: `rotate(${24 * dir}deg) scale(1.28)`, opacity: 0 },
           { transform: "rotate(0deg) scale(1)", opacity },
         ];
       } else if (effect === "crt") {
@@ -345,15 +346,23 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
         ];
       } else if (effect === "wipe") {
         oldKf = oldFade;
+        const starts = [
+          "polygon(0 0, 0 0, 0 100%, 0 100%)",
+          "polygon(100% 0, 100% 0, 100% 100%, 100% 100%)",
+          "polygon(0 0, 100% 0, 100% 0, 0 0)",
+          "polygon(0 100%, 100% 100%, 100% 100%, 0 100%)",
+        ];
         newKf = [
-          { clipPath: "polygon(0 0, 0 0, 0 100%, 0 100%)" },
+          { clipPath: starts[Math.floor(Math.random() * starts.length)] },
           { clipPath: "polygon(0 0, 100% 0, 100% 100%, 0 100%)" },
         ];
       } else if (effect === "disc") {
         oldKf = oldFade;
+        const cx = 32 + Math.random() * 36;
+        const cy = 32 + Math.random() * 36;
         newKf = [
-          { clipPath: "circle(0% at 50% 50%)" },
-          { clipPath: "circle(75% at 50% 50%)" },
+          { clipPath: `circle(0% at ${cx}% ${cy}%)` },
+          { clipPath: `circle(130% at ${cx}% ${cy}%)` },
         ];
       } else if (effect === "diamond") {
         oldKf = oldFade;
@@ -363,9 +372,11 @@ export function createCustomVisual(deps: CustomVisualDeps): CustomVisualControll
         ];
       } else if (effect === "golden") {
         oldKf = oldFade;
+        const cx = 32 + Math.random() * 36;
+        const cy = 32 + Math.random() * 36;
         newKf = [
-          { clipPath: "circle(0% at 38% 38%)" },
-          { clipPath: "circle(125% at 38% 38%)" },
+          { clipPath: `circle(0% at ${cx}% ${cy}%)` },
+          { clipPath: `circle(150% at ${cx}% ${cy}%)` },
         ];
       } else if (effect === "melt") {
         oldKf = oldFade;

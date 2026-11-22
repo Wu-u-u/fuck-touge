@@ -70,6 +70,7 @@
   · Ctrl + Alt + W 在答题页循环切换壁纸；切换效果每次随机，参考 Noctalia：
     fade / wipe / disc / stripes / zoom / honeycomb / vortex /
     pixel / diamond / golden / melt / crt，约 1.2 秒。
+    wipe 方向、disc/golden 中心、vortex 旋转方向每次随机。
   · 移除“背景固定/随页面滚动”开关，统一固定。
   · 大视频/多壁纸首次读取后通过同源 blob URL 交给页面，不再复制几十 MB 字符串；
     页面 IndexedDB 缓存后，后续切换/刷新更快。高级设置里非当前视频只显示 ▶ 占位，选中后才加载。
