@@ -46,6 +46,7 @@ def _build_app():
         Screen { layout: vertical; }
         #top { height: auto; padding: 1 2; }
         #status { height: 3; padding: 0 2; color: $text-muted; }
+        #recent { height: auto; padding: 0 2; color: $text-muted; }
         #slot { width: 16; }
         #course { width: 1fr; }
         #ai_prompt { width: 1fr; }
@@ -59,6 +60,7 @@ def _build_app():
             yield Header()
             with Vertical(id="top"):
                 yield Static("等待脚本状态…", id="status")
+                yield Static("", id="recent")
                 yield Static("账号槽位（只使用你在输入框里指定的槽位）", classes="hint")
                 yield Input(value="1", id="slot", placeholder="槽位，例如 1")
                 yield Static("课程名或序号（可选；先「列课程」查看）", classes="hint")
@@ -106,10 +108,14 @@ def _build_app():
                 text = f"{state}  槽位 {d.get('slot', '--')}" + (f"  {ctx}" if ctx else "")
                 if msg:
                     text += "  " + msg[:100]
+                logs = d.get("logs") if isinstance(d.get("logs"), list) else []
+                recent = "\n".join(f"[{x.get('level', 'info')}] {x.get('text', '')[:120]}"
+                                    for x in logs[-3:] if isinstance(x, dict))
             except (OSError, json.JSONDecodeError):
-                pass
+                recent = ""
             try:
                 self.query_one("#status", Static).update(text)
+                self.query_one("#recent", Static).update(recent)
             except Exception:
                 pass
 
