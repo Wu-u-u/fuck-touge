@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -121,9 +122,19 @@ def save_draft(path: Path, text: str) -> None:
     """原子写草稿，避免中途失败留下半截文件。"""
     target = Path(path).expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_name(target.name + ".tmp")
-    tmp.write_text(str(text).rstrip() + "\n", encoding="utf-8")
-    os.replace(tmp, target)
+    fd, tmp_name = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp",
+                                    dir=str(target.parent))
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(str(text).rstrip() + "\n")
+        os.replace(tmp, target)
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def record_draft(path: Path, index: Path | None = None) -> None:
