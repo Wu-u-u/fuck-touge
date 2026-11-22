@@ -71,6 +71,10 @@ check("日志最多保留 25 条", payload and len(payload["logs"]) == 25,
 check("日志带上下文",
       payload and payload["logs"][-1]["course"] == "课程A"
       and payload["logs"][-1]["levelName"] == "第1关", repr(payload["logs"][-1] if payload else None))
+from pathlib import Path as _P
+_saved = json.loads(_P(STATE_FILE).read_text(encoding="utf-8")) if _P(STATE_FILE).exists() else {}
+check("本地状态快照保留日志历史", len(_saved.get("logs", [])) == 25,
+      str(len(_saved.get("logs", []))))
 snap = json.loads(STATE_FILE.read_text(encoding="utf-8"))
 check("本地状态快照保留 25 条历史", len(snap.get("logs", [])) == 25,
       str(len(snap.get("logs", []))))

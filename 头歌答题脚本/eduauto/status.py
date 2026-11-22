@@ -140,7 +140,10 @@ class StatusPublisher:
                 "logs": list(self._logs),
             }
             self._logs.clear()
-        self._write_file(payload)
+        file_payload = dict(payload)
+        with self._lock:
+            file_payload["logs"] = list(self._history)
+        self._write_file(file_payload)
         if browser is None:
             return
         try:
