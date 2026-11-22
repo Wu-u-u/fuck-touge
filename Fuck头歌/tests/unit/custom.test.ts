@@ -140,6 +140,13 @@ describe("custom config", () => {
     expect(normalizeCustomConfig({ background: { transition: "wat" } }).background.transition).toBe("random");
   });
 
+  it("过渡效果/时长经过 JSON 序列化后仍保留（持久化 round-trip）", () => {
+    const cfg = normalizeCustomConfig({ background: { transition: "golden", transitionDuration: 2200 } });
+    const round = normalizeCustomConfig(JSON.parse(JSON.stringify(cfg)));
+    expect(round.background.transition).toBe("golden");
+    expect(round.background.transitionDuration).toBe(2200);
+  });
+
   it("过渡时长：默认 1500ms，限制在 500–4000ms", () => {
     expect(normalizeCustomConfig({}).background.transitionDuration).toBe(1500);
     expect(normalizeCustomConfig({ background: { transitionDuration: 800 } }).background.transitionDuration).toBe(800);
