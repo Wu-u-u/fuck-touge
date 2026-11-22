@@ -20,6 +20,7 @@ import {
 import { applyMaterialPalette, clearMaterialPalette, seedFromImage } from "../shared/material-theme";
 import { createSaveQueue, flushOnPageHide } from "../shared/save-queue";
 import { createEchoGuard } from "../shared/echo-guard";
+import { runOnPageHide } from "../shared/page-lifecycle";
 import { dataUrlToBlob } from "../features/media-cache";
 import type { BackgroundFit, BackgroundTransition, CustomColorKey, CustomConfig, Wallpaper, WallpaperCrop, WallpaperKind } from "../shared/types";
 
@@ -1065,7 +1066,7 @@ const load = (): void => {
 };
 
 try {
-  chrome.storage.onChanged.addListener((changes, area) => {
+  const onCustomStorage = (changes: Record<string, { newValue?: unknown }>, area: string): void => {
     if (area !== "local" || !changes[CUSTOM_CONFIG_KEY]) return;
     const next = normalizeCustomConfig(changes[CUSTOM_CONFIG_KEY].newValue);
     const json = JSON.stringify(next);
@@ -1078,6 +1079,12 @@ try {
     applyMaterialPreview();
     void hydrateMedia();
     setStatus("已同步弹窗开关", "ok");
+  };
+  chrome.storage.onChanged.addListener(onCustomStorage);
+  runOnPageHide(() => {
+    try {
+      chrome.storage.onChanged.removeListener(onCustomStorage);
+    } catch (e) {}
   });
 } catch (e) {}
 

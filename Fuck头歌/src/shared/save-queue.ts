@@ -3,6 +3,8 @@
  * 抽成纯模块便于单测，避免只能靠 Edge 手工验证。
  */
 
+import { runOnPageHide } from "./page-lifecycle";
+
 export interface SaveQueue {
   /** 安排一次延迟保存；多次调用只保留最后一次 */
   schedule(): void;
@@ -39,9 +41,5 @@ export function createSaveQueue(save: () => void, delay = 260): SaveQueue {
 
 /** pagehide 时 flush 未落盘的保存；返回取消监听的函数。 */
 export function flushOnPageHide(queue: SaveQueue, target: EventTarget = window): () => void {
-  const onHide = (): void => {
-    queue.flush();
-  };
-  target.addEventListener("pagehide", onHide);
-  return () => target.removeEventListener("pagehide", onHide);
+  return runOnPageHide(() => queue.flush(), target);
 }
