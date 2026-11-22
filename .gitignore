@@ -21,3 +21,4 @@ install-zen-edge.sh
 .DS_Store
 Thumbs.db
 rust/**/target/
+头歌答题脚本/ai-drafts/
