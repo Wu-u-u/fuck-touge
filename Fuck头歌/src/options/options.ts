@@ -94,6 +94,7 @@ interface CropState {
   stageH: number;
 }
 let cropState: CropState | null = null;
+let cropSaving = false;
 let cropTargetId = "";
 let cropDrag: { sx: number; sy: number; x: number; y: number } | null = null;
 
@@ -718,6 +719,10 @@ const addWallpaper = async (
     setStatus("最多 5 张壁纸，先删一张再添加", "err");
     return false;
   }
+  if (config.background.wallpapers.some((w) => mediaFor(w) === image)) {
+    setStatus("这张壁纸已经添加过了", "err");
+    return false;
+  }
   const id = newWallpaperId();
   const mediaKey = `fuckTougeMedia:${id}`;
   await new Promise<void>((resolve) => {
@@ -854,6 +859,7 @@ const applyCropView = (): void => {
 
 const openCrop = async (dataUrl: string, name: string, kind: WallpaperKind, nw: number, nh: number, targetId = ""): Promise<void> => {
   cropState = null;
+  cropSaving = false;
   cropTargetId = targetId;
   cropDrag = null;
   const isVideo = kind === "video";
@@ -935,7 +941,7 @@ els.cropCancel.addEventListener("click", () => {
 });
 
 els.cropSave.addEventListener("click", () => {
-  if (!cropState) return;
+  if (!cropState || cropSaving) return;
   const c = cropState;
   const scale = c.baseScale * c.zoom;
   const sx = Math.max(0, -c.x / scale);
@@ -948,30 +954,45 @@ els.cropSave.addEventListener("click", () => {
     w: Math.max(0.05, Math.min(1, sw / c.nw)),
     h: Math.max(0.05, Math.min(1, sh / c.nh)),
   };
+  cropSaving = true;
+  els.cropSave.disabled = true;
+  els.cropSave.classList.add("loading");
+  els.cropSave.setAttribute("aria-busy", "true");
+  els.cropCancel.disabled = true;
   void (async () => {
-    const seed = c.kind === "video" ? await seedFromVideo(c.dataUrl) : ((await seedFromImage(c.dataUrl)) || "#cba6f7");
-    if (cropTargetId) {
-      const wp = config.background.wallpapers.find((w) => w.id === cropTargetId);
-      if (wp) {
-        wp.crop = crop;
-        wp.seed = seed;
-        config.background.activeId = wp.id;
-        config.background.image = wp.image;
-        config.materialSeed = seed;
-        saveNow();
-        render();
-        applyMaterialPreview();
-        setStatus("已重新裁剪 · 原图保留", "ok");
+    try {
+      const seed = c.kind === "video" ? await seedFromVideo(c.dataUrl) : ((await seedFromImage(c.dataUrl)) || "#cba6f7");
+      if (cropTargetId) {
+        const wp = config.background.wallpapers.find((w) => w.id === cropTargetId);
+        if (wp) {
+          wp.crop = crop;
+          wp.seed = seed;
+          config.background.activeId = wp.id;
+          config.background.image = "";
+          config.materialSeed = seed;
+          saveNow();
+          render();
+          applyMaterialPreview();
+          setStatus("已重新裁剪 · 原图保留", "ok");
+        }
+        cropTargetId = "";
+        els.cropDialog.close();
+        cropState = null;
+        return;
       }
-      cropTargetId = "";
-      els.cropDialog.close();
-      cropState = null;
-      return;
-    }
-    if (await addWallpaper(c.dataUrl, c.name, c.kind, seed, crop, c.nw, c.nh)) {
-      setStatus("壁纸已添加 · 原图保留，裁剪只记录区域", "ok");
-      els.cropDialog.close();
-      cropState = null;
+      if (await addWallpaper(c.dataUrl, c.name, c.kind, seed, crop, c.nw, c.nh)) {
+        setStatus("壁纸已添加 · 原图保留，裁剪只记录区域", "ok");
+        els.cropDialog.close();
+        cropState = null;
+      }
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "裁剪处理失败", "err");
+    } finally {
+      cropSaving = false;
+      els.cropSave.disabled = false;
+      els.cropSave.classList.remove("loading");
+      els.cropSave.removeAttribute("aria-busy");
+      els.cropCancel.disabled = false;
     }
   })();
 });
