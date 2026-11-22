@@ -45,6 +45,16 @@ describe("script status normalization", () => {
     expect(normalizeScriptLog({ text: "" })).toBeNull();
   });
 
+  it("乱序日志按 at 升序归一化/合并", () => {
+    const raw = [
+      normalizeScriptLog({ at: 3000, level: "info", text: "c" })!,
+      normalizeScriptLog({ at: 1000, level: "info", text: "a" })!,
+      normalizeScriptLog({ at: 2000, level: "info", text: "b" })!,
+    ];
+    expect(normalizeScriptLogs(raw).map((x) => x.text)).toEqual(["a", "b", "c"]);
+    expect(mergeScriptLogs([raw[0], raw[2]], [raw[1]]).map((x) => x.text)).toEqual(["a", "b", "c"]);
+  });
+
   it("日志合并按 时间/级别/槽位/上下文/文本 去重，并保留上限", () => {
     const log = (at: number, text: string) => normalizeScriptLog({ at, level: "info", slot: "1", text })!;
     const first = log(1000, "评测成功");

@@ -80,7 +80,9 @@ export function normalizeScriptLogs(raw: unknown): ScriptLogEntry[] {
     const log = normalizeScriptLog(item);
     if (log) out.push(log);
   }
-  return out.slice(-MAX_SCRIPT_LOGS);
+  return out
+    .sort((a, b) => a.at - b.at)
+    .slice(-MAX_SCRIPT_LOGS);
 }
 
 const logKey = (log: ScriptLogEntry): string =>
@@ -103,6 +105,7 @@ export function mergeScriptLogs(
     seen.add(key);
     merged.push(log);
   }
+  merged.sort((a, b) => a.at - b.at);
   return merged.slice(-max);
 }
 
