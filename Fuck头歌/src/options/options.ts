@@ -1244,6 +1244,11 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden && saveTimer) saveNow();
 });
 
+// 关闭设置页时把尚未落盘的 260ms debounce 立即写完，避免快速关页丢设置
+window.addEventListener("pagehide", () => {
+  if (saveTimer) saveNow();
+});
+
 buildColorRows();
 buildEditorDirect();
 buildEditorGroups();
