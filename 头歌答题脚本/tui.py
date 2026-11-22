@@ -142,7 +142,8 @@ def _build_app():
                 return
             folder = HERE / "ai-drafts"
             folder.mkdir(exist_ok=True)
-            path = folder / f"ai-{time.strftime('%Y%m%d-%H%M%S')}.txt"
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            path = folder / f"ai-{stamp}-{time.time_ns() % 1_000_000:06d}.txt"
             save_draft(path, text)
             record_draft(path)
             self.query_one("#log", RichLog).write(f"[草稿已保存：{path}；未写入档案、未提交]")
