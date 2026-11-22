@@ -117,6 +117,26 @@ describe("popup 脚本状态", () => {
     expect((document.getElementById("copyLogs") as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("心跳只改 updatedAt 时不重写状态节点，message 变化才更新", async () => {
+    const { api, listeners } = makeApi(status(), [log()]);
+    initPopup(api);
+    await sleep(20);
+    const card = document.getElementById("scriptCard")!;
+    let mutations = 0;
+    const obs = new MutationObserver((records) => { mutations += records.length; });
+    obs.observe(card, { childList: true, subtree: true, characterData: true, attributes: true });
+
+    // 只推进 updatedAt，可见文案（context 作为 meta）不变
+    listeners.forEach((cb) => cb({ [SCRIPT_STATUS_KEY]: { newValue: status({ updatedAt: Date.now() + 1000 }) } }, "local"));
+    await sleep(10);
+    expect(mutations).toBe(0);
+
+    listeners.forEach((cb) => cb({ [SCRIPT_STATUS_KEY]: { newValue: status({ message: "新消息" }) } }, "local"));
+    await sleep(10);
+    expect(mutations).toBeGreaterThan(0);
+    obs.disconnect();
+  });
+
   it("多槽位：只显示当前状态槽位日志（旧格式无 slot 保留）", async () => {
     const { api, listeners } = makeApi(status({ slot: "1" }), [
       log({ slot: "1", text: "槽位一日志" }),

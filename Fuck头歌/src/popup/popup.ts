@@ -150,6 +150,7 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   const scriptStorage = chromeApi.storage?.local;
   let scriptStatus: ScriptStatus | null = null;
   let scriptLogs: ScriptLogEntry[] = [];
+  let lastStatusKey: string | null = null;
   let statusTimer = 0;
 
   const pad2 = (n: number): string => String(n).padStart(2, "0");
@@ -213,6 +214,11 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
         message = status.message || "脚本报告错误";
       }
     }
+
+    // 心跳每秒都会走到这里；可见内容没变时不再写入，避免无谓 DOM 变更
+    const key = [tone, title, slot, meta, message].join("\n");
+    if (key === lastStatusKey) return;
+    lastStatusKey = key;
 
     scriptCard.dataset.state = tone;
     if (scriptTitle) scriptTitle.textContent = title;
