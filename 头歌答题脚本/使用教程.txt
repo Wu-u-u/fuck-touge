@@ -143,6 +143,7 @@ scan 不再是独立命令：
   python3 答题.py run -y "章节名"         # 只刷指定章节（可多个，如 run -y 五 七）
   python3 答题.py run -y -b 1 2 3        # 当前课程不变，依次切到 1/2/3 号槽位各跑一遍
   python3 答题.py run -y --keep-going     # 单章失败后继续后续章节（最后仍返回 2）
+  python3 答题.py run -y --ai             # 空答案让 AI 生成；多文件会逐文件写回
 
 作用（按顺序）：
   1. 读 answers.toml；

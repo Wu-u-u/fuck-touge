@@ -468,6 +468,26 @@ check("AI 自动填空答案并写档案",
       and _ai_data["chapters"][0]["levels"][0]["answer"] == "B",
       f"ok={_ok} lv={_ai_ch.levels[0].answer} data={_ai_data}")
 
+_ai_mf_arch = _ai_tmp / "ai-mf.toml"
+_ai_mf_arch.write_text(
+    "[[chapters]]\nname = \"MF章\"\nhomework_id = \"2\"\n\n"
+    "[[chapters.levels]]\nname = \"L1\"\nmulti = true\nanswer = \"\"\n",
+    encoding="utf-8")
+_ai_mf_ch = Chapter({"name": "MF章", "homework_id": "2",
+                     "levels": [{"name": "L1", "multi": True}]})
+_ai_mf_cfg = {"run": {"answers": str(_ai_mf_arch), "ai": True}}
+with _patch.object(flows, "draft_answer", lambda *a, **k: "class X {}"), \
+     _patch.object(flows, "list_code_files", lambda page: (["src/A.java", "src/B.java"], "")), \
+     _patch.object(flows, "record_operation", lambda *a, **k: None):
+    _mf_ok = flows._ai_fill_answer(_AIPage(), {"hasEditor": True}, _ai_mf_ch.levels[0], _ai_mf_ch, 1, _ai_mf_cfg)
+_ai_mf_data = tomllib.loads(_ai_mf_arch.read_text(encoding="utf-8"))
+_ai_mf_files = _ai_mf_data["chapters"][0]["levels"][0].get("files", [])
+check("AI 自动填多文件答案并写档案",
+      _mf_ok and len(_ai_mf_files) == 2
+      and [x["path"] for x in _ai_mf_files] == ["src/A.java", "src/B.java"]
+      and all(x["answer"].strip() for x in _ai_mf_files),
+      f"ok={_mf_ok} files={_ai_mf_files} data={_ai_mf_data}")
+
 
 # ---------- 缺答案只跳过本章，不 break 整轮 ----------
 _missing_chs = [

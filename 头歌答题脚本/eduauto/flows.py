@@ -629,9 +629,6 @@ def _ai_fill_answer(page: Page, st: dict, lv, ch: Chapter, idx: int, cfg: dict) 
     """空答案时让 AI 读当前题面并写入档案；只支持单文件代码/选择题。"""
     if lv is None or not lv.answer_empty():
         return True
-    if lv.files or lv.multi is True:
-        record_operation("skip", f"{ch.name} 第{idx}关：多文件关卡不自动作答", "skip")
-        return False
     kind = "choice" if st.get("choiceCount", 0) > 0 else "code"
     try:
         body = str(page.ws.eval("(document.body&&document.body.innerText)||''") or "")
@@ -641,13 +638,53 @@ def _ai_fill_answer(page: Page, st: dict, lv, ch: Chapter, idx: int, cfg: dict) 
         record_operation("fail", f"{ch.name} 第{idx}关：页面题面为空", "error")
         return False
     prompt = body[-8000:]
+    answers_path = Path(str(cfg["run"]["answers"]))
+
+    # 多文件关卡：逐文件问 AI，写回 files 子块；不自动提交。
+    if lv.files or lv.multi is True:
+        paths = [str(x.get("path") or "") for x in lv.files
+                 if str(x.get("path") or "").strip()]
+        if not paths:
+            try:
+                paths = list_code_files(page)[0]
+            except (RuntimeError, cdp.CDPError) as e:
+                record_operation("fail", f"{ch.name} 第{idx}关：读取代码文件失败：{e}", "error")
+                return False
+        if not paths:
+            record_operation("skip", f"{ch.name} 第{idx}关：没有代码文件", "skip")
+            return False
+        last = ""
+        for attempt in (1, 2):
+            try:
+                files = []
+                for path in paths:
+                    code = draft_answer(
+                        prompt, cfg, kind="code",
+                        context=f"{ch.name} 第{idx}关 {st.get('name','')} 文件 {path}",
+                    )
+                    files.append((path, code))
+                lv.files = [{"path": p, "answer": c} for p, c in files]
+                payload = answer_to_toml("files", files)
+                changed = write_back_answers(answers_path, {ch.name: {idx: payload}}, force=True)
+                record_operation("answer", f"{ch.name} 第{idx}关 files 尝试{attempt}",
+                                 "ok" if changed else "warn")
+                if changed:
+                    log(f"  · AI 已写入第{idx}关多文件答案（{len(files)} 个文件）")
+                    return True
+                last = "档案写入返回 0"
+            except (AIError, RuntimeError, OSError) as e:
+                last = str(e)
+                record_operation("answer", f"{ch.name} 第{idx}关 files 尝试{attempt}：{last}", "error")
+                log(f"  ! AI 第{idx}关多文件尝试{attempt}失败：{e}")
+        log(f"  ! AI 无法生成第{idx}关多文件答案：{last}")
+        return False
+
     last = ""
     for attempt in (1, 2):
         try:
             answer = draft_answer(prompt, cfg, kind=kind,
                                   context=f"{ch.name} 第{idx}关 {st.get('name','')}")
             lv.answer = answer
-            answers_path = Path(str(cfg["run"]["answers"]))
             payload = answer_to_toml(kind, answer)
             changed = write_back_answers(answers_path, {ch.name: {idx: payload}}, force=True)
             record_operation("answer", f"{ch.name} 第{idx}关 {kind} 尝试{attempt}",
