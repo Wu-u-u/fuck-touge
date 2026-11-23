@@ -30,6 +30,24 @@ class ChapterIncomplete(RuntimeError):
     """本章缺答案/档案不完整；跳过本章，不终止整轮。"""
 
 
+FAIL_LABELS = {
+    "missing": "缺答案",
+    "status": "状态/详情",
+    "entry": "进入章节",
+    "write": "写入",
+    "choice": "选项",
+    "eval": "评测响应",
+    "eval_fail": "评测未通过",
+    "eval_timeout": "评测超时",
+    "navigation": "跳关",
+    "exception": "异常",
+}
+
+
+def _mark_failure(stats: dict, kind: str) -> None:
+    stats.setdefault("failure_kind", kind)
+
+
 def _book_matches(chapters, name: str) -> list:
     """返回与卡片名匹配的档案章节：完全相等优先，其次双向子串。"""
     n = norm(name)
@@ -1022,20 +1040,23 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
             log("  ! 详情页没有读到关卡列表，跳过本章")
             if prepared is not None:
                 browser.close_target(prepared[1]["id"])
-            results[ch.name] = {"done": 0, "skipped": 0, "failed": 1}
+            results[ch.name] = {"done": 0, "skipped": 0, "failed": 1,
+                                "failure_kind": "status"}
             return
         if len(rows) != len(ch.levels):
             log(f"  ! 平台关卡数（{len(rows)}）与档案（{len(ch.levels)}）不一致，"
                 "请先 harvest 补骨架；跳过本章")
             if prepared is not None:
                 browser.close_target(prepared[1]["id"])
-            results[ch.name] = {"done": 0, "skipped": 0, "failed": 1}
+            results[ch.name] = {"done": 0, "skipped": 0, "failed": 1,
+                                "failure_kind": "status"}
             return
         if not _rows_match_levels(rows, ch):
             log("  ! 详情表关卡名与档案不一致（可能读到了上一章的旧表），跳过本章")
             if prepared is not None:
                 browser.close_target(prepared[1]["id"])
-            results[ch.name] = {"done": 0, "skipped": 0, "failed": 1}
+            results[ch.name] = {"done": 0, "skipped": 0, "failed": 1,
+                                "failure_kind": "status"}
             return
         to_run = [lv for i, lv in enumerate(ch.levels, 1)
                   if not lv.skip and not is_passed_row(row_at(rows, i, lv.name))]
@@ -1051,7 +1072,7 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
                 browser.close_target(prepared[1]["id"])
             log(f"  ! 本章缺答案，跳过整章：{'、'.join(missing)}")
             results[ch.name] = {"done": 0, "skipped": 0, "failed": 1,
-                                "missing": len(missing)}
+                                "missing": len(missing), "failure_kind": "missing"}
             return
         t_ch = time.time()
         stats = {"done": 0, "skipped": 0, "failed": 0, "missing": 0}
@@ -1113,6 +1134,7 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
             s = results.get(ch.name) or {"done": 0, "skipped": 0, "failed": 0, "missing": 0}
             s["failed"] = 1
             s["missing"] = max(1, int(s.get("missing", 0)))
+            s["failure_kind"] = "missing"
             results[ch.name] = s
             if i + 2 < len(todo):
                 start_preload(i + 2)
@@ -1126,6 +1148,7 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
             s = results.get(ch.name) or {"done": 0, "skipped": 0, "failed": 0}
             if not s.get("failed"):
                 s["failed"] = 1
+            s.setdefault("failure_kind", "exception")
             s["aborted"] = True
             results[ch.name] = s
             if keep_going and not isinstance(e, KeyboardInterrupt):
@@ -1151,7 +1174,10 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
         extra = f"（用时 {fmt_secs(s['secs'])}）" if s.get("secs") else ""
         miss = s.get("missing", 0)
         miss_txt = f"，缺答案 {miss} 关" if miss else ""
-        log(f"  {name}：作答 {s['done']} 关，跳过 {s['skipped']} 关，失败 {s['failed']} 关{miss_txt}{extra}")
+        kind = s.get("failure_kind")
+        kind_txt = f"（{FAIL_LABELS.get(kind, kind)}）" if kind else ""
+        log(f"  {name}：作答 {s['done']} 关，跳过 {s['skipped']} 关，"
+            f"失败 {s['failed']} 关{kind_txt}{miss_txt}{extra}")
     if abort_code:
         log(f"\n已中止（总用时 {fmt_secs(time.time() - t0)}）。浏览器保持打开，可自行检查。")
         return abort_code
