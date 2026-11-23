@@ -32,6 +32,9 @@ describe("script status normalization", () => {
       message: "写代码",
     });
     expect(s!.updatedAt).toBeGreaterThan(0);
+    expect(
+      normalizeScriptStatus({ state: "stopped", message: "完成。浏览器保持打开，可自行检查。" })!.message,
+    ).toBe("完成。");
   });
 
   it("日志最多保留 25 条，空文本丢弃", () => {
@@ -46,6 +49,16 @@ describe("script status normalization", () => {
     expect(logs[0].text).toBe("log-5");
     expect(logs[logs.length - 1].text).toBe("log-29");
     expect(normalizeScriptLog({ text: "" })).toBeNull();
+  });
+
+  it("清理收尾日志里的“浏览器保持打开”噪声", () => {
+    const kept = normalizeScriptLog({
+      at: 1,
+      level: "info",
+      text: "完成（总用时 3 秒）。浏览器保持打开，可自行检查。",
+    })!;
+    expect(kept.text).toBe("完成（总用时 3 秒）。");
+    expect(normalizeScriptLog({ text: "浏览器保持打开，可自行检查。" })).toBeNull();
   });
 
   it("乱序日志按 at 升序归一化/合并", () => {

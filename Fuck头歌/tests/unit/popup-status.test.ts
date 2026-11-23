@@ -165,6 +165,21 @@ describe("popup 脚本状态", () => {
     expect((document.getElementById("copyLogs") as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("日志时间显示到分钟，且不显示“浏览器保持打开”噪声", async () => {
+    const at = new Date(2026, 0, 1, 9, 5, 7).getTime();
+    const { api } = makeApi(status({ slot: "1" }), [
+      log({ slot: "1", at, text: "普通日志" }),
+      log({ slot: "1", at: at + 1000, text: "完成。浏览器保持打开，可自行检查。" }),
+    ]);
+    initPopup(api);
+    await sleep(20);
+    const times = [...document.querySelectorAll(".log-time")].map((e) => e.textContent);
+    expect(times[0]).toMatch(/^09:05$/);
+    expect(times[0].split(":")).toHaveLength(2);
+    expect(document.getElementById("logList")!.textContent).not.toContain("浏览器保持打开");
+    expect(document.getElementById("logList")!.textContent).toContain("完成。");
+  });
+
   it("日志的课程/章节变化时更新行 title（签名包含上下文）", async () => {
     const { api, listeners } = makeApi(status(), [log({ course: "课程一", chapter: "章一" })]);
     initPopup(api);

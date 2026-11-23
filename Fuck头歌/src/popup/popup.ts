@@ -173,8 +173,8 @@ export function initPopup(chromeApi: PopupChromeApi, doc: Document = document): 
   const pad2 = (n: number): string => String(n).padStart(2, "0");
   const clockText = (at: number): string => {
     const d = new Date(at);
-    if (!Number.isFinite(d.getTime())) return "--:--:--";
-    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+    if (!Number.isFinite(d.getTime())) return "--:--";
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
   };
   const fullTimeText = (at: number): string => {
     const d = new Date(at);

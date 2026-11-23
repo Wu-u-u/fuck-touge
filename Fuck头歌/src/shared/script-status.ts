@@ -41,6 +41,13 @@ const text = (value: unknown, max: number): string => {
 const time = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : Date.now();
 
+/** 脚本收尾日志里的固定噪声，不占 popup 的 25 条额度 */
+const cleanLogText = (body: string): string =>
+  body
+    .replace(/浏览器保持打开[，,、\s]*可自行检查[。.]?/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
 export function normalizeScriptStatus(raw: unknown): ScriptStatus | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
@@ -54,14 +61,14 @@ export function normalizeScriptStatus(raw: unknown): ScriptStatus | null {
     course: text(o.course, 80),
     chapter: text(o.chapter, 80),
     level: text(o.level, 40),
-    message: text(o.message, 200),
+    message: cleanLogText(text(o.message, 200)),
   };
 }
 
 export function normalizeScriptLog(raw: unknown): ScriptLogEntry | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  const body = text(o.text, 300);
+  const body = cleanLogText(text(o.text, 300));
   if (!body) return null;
   return {
     at: time(o.at),

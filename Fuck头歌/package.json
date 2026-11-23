@@ -1,6 +1,6 @@
 {
   "name": "fuck-touge-extension",
-  "version": "2.7.1",
+  "version": "2.7.2",
   "private": true,
   "description": "Fuck 头歌浏览器扩展（TypeScript + esbuild 构建）",
   "scripts": {
