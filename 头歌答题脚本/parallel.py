@@ -41,6 +41,7 @@ def run_slot(slot: int, port: int, course: str, yes: bool, ai: bool, dry: bool) 
         cmd.append("-y")
     if ai:
         cmd.append("--ai")
+    cmd += ["--login-timeout", "90"]
     print(f"[槽 {slot}] {' '.join(cmd)}", flush=True)
     if dry:
         return 0
@@ -60,6 +61,7 @@ def main() -> None:
     ap.add_argument("--jobs", type=int, default=2)
     ap.add_argument("-y", "--yes", action="store_true")
     ap.add_argument("--ai", action="store_true")
+    ap.add_argument("--login-timeout", type=float, default=90)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     slots = list(dict.fromkeys(args.slots))
@@ -84,7 +86,8 @@ def main() -> None:
             port = 9301 + (start + i)
             procs.append((slot, subprocess.Popen(
                 [sys.executable, str(ENTRY), "worker", str(slot),
-                 "--course", args.course] + (["-y"] if args.yes else []) + (["--ai"] if args.ai else []),
+                 "--course", args.course] + (["-y"] if args.yes else []) + (["--ai"] if args.ai else [])
+                + (["--login-timeout", str(args.login_timeout)] if args.login_timeout else []),
                 cwd=str(HERE), env=_child_env(slot, port),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
             )))

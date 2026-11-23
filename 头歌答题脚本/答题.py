@@ -119,6 +119,7 @@ def main() -> None:
     add_chapter_args(p_worker)
     p_worker.add_argument("-y", "--yes", action="store_true")
     p_worker.add_argument("--ai", action="store_true")
+    p_worker.add_argument("--login-timeout", type=float, default=90)
     p_run = sub.add_parser("run", help="按答案档案自动答题（开跑前会列出每关答案状态）")
     add_chapter_args(p_run)
     p_run.add_argument("-y", "--yes", action="store_true", help="不询问直接开始")

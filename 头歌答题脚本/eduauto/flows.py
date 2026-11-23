@@ -1163,7 +1163,7 @@ def cmd_worker(args, cfg: dict) -> None:
     try:
         browser = ensure_browser(cfg)
         page = open_course_list(browser, cfg)
-        ensure_login(browser, page.ws)
+        ensure_login(browser, page.ws, timeout=float(getattr(args, "login_timeout", 90) or 90))
         names = list_courses(page)
         wanted = choose_course(names, args.course)
         target, course = select_course(browser, page, wanted)

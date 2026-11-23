@@ -94,6 +94,8 @@ def load_config(path: Path) -> dict:
             port = int(env_port)
         except ValueError:
             die(f"EDUAUTO_PORT 不是整数：{env_port!r}")
+        if not 1 <= port <= 65535:
+            die(f"EDUAUTO_PORT 超出范围：{env_port!r}")
     cfg["edge"]["port"] = port
     if not isinstance(cfg["run"].get("answers_dir"), str) or not cfg["run"]["answers_dir"].strip():
         die("配置文件格式错误：run.answers_dir 必须是非空路径字符串。")
