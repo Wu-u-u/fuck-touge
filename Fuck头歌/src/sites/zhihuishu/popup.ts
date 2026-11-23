@@ -5,9 +5,12 @@ import {
   ZHS_CONFIG_KEY,
   ZHS_LOGS_KEY,
   ZHS_STATUS_KEY,
+  ZHS_WATCH_KEY,
+  formatZhsWatch,
   normalizeZhsConfig,
   normalizeZhsLogs,
   normalizeZhsStatus,
+  normalizeZhsWatch,
   type ZhsConfig,
   type ZhsLog,
   type ZhsStatus,
@@ -36,16 +39,20 @@ const stateLabel: Record<string, string> = {
 let config: ZhsConfig = { ...DEFAULT_ZHS_CONFIG };
 let status: ZhsStatus | null = null;
 let logs: ZhsLog[] = [];
+let watch = normalizeZhsWatch(null);
 
 const enabled = $<HTMLInputElement>("enabled");
 const speed = $<HTMLInputElement>("speed");
 const autoNext = $<HTMLInputElement>("autoNext");
+const reviewRow = $("reviewRow");
+const reviewCompleted = $<HTMLInputElement>("reviewCompleted");
 const quality = $<HTMLInputElement>("quality");
 const statePill = $("statePill");
 const statusTitle = $("statusTitle");
 const statusMsg = $("statusMsg");
 const logCount = $("logCount");
 const logList = $("logList");
+const watchTime = $("watchTime");
 
 const save = (patch: Partial<ZhsConfig>): void => {
   config = normalizeZhsConfig({ ...config, ...patch });
@@ -55,6 +62,8 @@ const save = (patch: Partial<ZhsConfig>): void => {
   if (enabled) enabled.checked = config.enabled;
   if (speed) speed.checked = Math.abs(config.speed - 1.25) < 0.01;
   if (autoNext) autoNext.checked = config.autoNext;
+  if (reviewRow) reviewRow.hidden = !config.autoNext;
+  if (reviewCompleted) reviewCompleted.checked = config.reviewCompleted;
   if (quality) quality.checked = config.quality === "smooth";
   const mode = document.querySelector<HTMLInputElement>(`input[name="mode"][value="${config.mode}"]`);
   if (mode) mode.checked = true;
@@ -108,16 +117,23 @@ const render = (): void => {
   if (enabled) enabled.checked = config.enabled;
   if (speed) speed.checked = Math.abs(config.speed - 1.25) < 0.01;
   if (autoNext) autoNext.checked = config.autoNext;
+  if (reviewRow) reviewRow.hidden = !config.autoNext;
+  if (reviewCompleted) reviewCompleted.checked = config.reviewCompleted;
   if (quality) quality.checked = config.quality === "smooth";
   const mode = document.querySelector<HTMLInputElement>(`input[name="mode"][value="${config.mode}"]`);
   if (mode) mode.checked = true;
   renderStatus();
+  if (watchTime) watchTime.textContent = formatZhsWatch(watch.seconds);
   renderLogs();
 };
 
 enabled?.addEventListener("change", () => save({ enabled: !!enabled.checked }));
 speed?.addEventListener("change", () => save({ speed: speed.checked ? 1.25 : 1 }));
-autoNext?.addEventListener("change", () => save({ autoNext: !!autoNext.checked }));
+autoNext?.addEventListener("change", () => {
+  save({ autoNext: !!autoNext.checked });
+  if (reviewRow) reviewRow.hidden = !autoNext.checked;
+});
+reviewCompleted?.addEventListener("change", () => save({ reviewCompleted: !!reviewCompleted.checked }));
 quality?.addEventListener("change", () => save({ quality: quality.checked ? "smooth" : "auto" }));
 document.querySelectorAll<HTMLInputElement>('input[name="mode"]').forEach((radio) => {
   radio.addEventListener("change", () => {
@@ -130,14 +146,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes[ZHS_CONFIG_KEY]) config = normalizeZhsConfig(changes[ZHS_CONFIG_KEY].newValue);
   if (changes[ZHS_STATUS_KEY]) status = normalizeZhsStatus(changes[ZHS_STATUS_KEY].newValue);
   if (changes[ZHS_LOGS_KEY]) logs = normalizeZhsLogs(changes[ZHS_LOGS_KEY].newValue);
+  if (changes[ZHS_WATCH_KEY]) watch = normalizeZhsWatch(changes[ZHS_WATCH_KEY].newValue);
   render();
 });
 
 try {
-  chrome.storage.local.get([ZHS_CONFIG_KEY, ZHS_STATUS_KEY, ZHS_LOGS_KEY], (result) => {
+  chrome.storage.local.get([ZHS_CONFIG_KEY, ZHS_STATUS_KEY, ZHS_LOGS_KEY, ZHS_WATCH_KEY], (result) => {
     config = normalizeZhsConfig(result?.[ZHS_CONFIG_KEY]);
     status = normalizeZhsStatus(result?.[ZHS_STATUS_KEY]);
     logs = normalizeZhsLogs(result?.[ZHS_LOGS_KEY]);
+    watch = normalizeZhsWatch(result?.[ZHS_WATCH_KEY]);
     render();
   });
 } catch (e) {

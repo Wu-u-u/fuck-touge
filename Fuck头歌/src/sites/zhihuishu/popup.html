@@ -11,6 +11,7 @@
     --green: #a6e3a1; --yellow: #f9e2af; --red: #f38ba8; --gray: #7f849c;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html { color-scheme: dark; }
   body {
     margin: 0; width: 340px; padding: 9px;
@@ -32,6 +33,14 @@
   .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; }
   .label { font-size: 12.5px; }
   .hint { margin-top: 2px; color: var(--dim); font-size: 10.5px; }
+  .sub-row { margin: -3px 0 0 10px; padding: 3px 0; }
+  .sub-row .label { font-size: 11.5px; color: var(--dim); }
+  .watch { display: flex; align-items: baseline; gap: 7px; margin-top: 9px; padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border)); border-radius: 9px;
+    background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  .watch-label { color: var(--dim); font-size: 10.5px; }
+  .watch-time { color: var(--accent); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .watch-hint { margin-left: auto; color: var(--dim); font-size: 9.5px; }
   .switch { position: relative; width: 38px; height: 22px; flex: none; }
   .switch input { opacity: 0; width: 0; height: 0; }
   .switch span { position: absolute; inset: 0; border-radius: 99px; cursor: pointer;
@@ -100,6 +109,13 @@
       <div class="label">自动下一集</div>
       <label class="switch"><input id="autoNext" type="checkbox"><span></span></label>
     </div>
+    <div class="row sub-row" id="reviewRow" hidden>
+      <div>
+        <div class="label">观看已完成课程</div>
+        <div class="hint">全部看完后继续重播已完成章节，补足观看时长</div>
+      </div>
+      <label class="switch"><input id="reviewCompleted" type="checkbox"><span></span></label>
+    </div>
     <div class="row">
       <div class="label">流畅画质</div>
       <label class="switch"><input id="quality" type="checkbox"><span></span></label>
@@ -108,6 +124,11 @@
     <div class="status">
       <div class="status-title" id="statusTitle">未启动</div>
       <div class="status-msg" id="statusMsg">打开智慧树视频页后启动</div>
+    </div>
+    <div class="watch">
+      <span class="watch-label">今日观看</span>
+      <strong class="watch-time" id="watchTime">00:00:00</strong>
+      <span class="watch-hint">真实时间 · 不计倍速</span>
     </div>
 
     <div class="log-head"><span>运行日志</span><span id="logCount">0</span></div>

@@ -94,6 +94,21 @@ chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
       .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
     return true;
   }
+  if (message?.type === "zhs:move") {
+    const x = Number(message.x);
+    const y = Number(message.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      sendResponse({ ok: false, error: "移动坐标无效" });
+      return false;
+    }
+    void attach(tabId)
+      .then(() => chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
+        type: "mouseMoved", x: Math.round(x), y: Math.round(y), button: "none", clickCount: 0,
+      }))
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+    return true;
+  }
   if (message?.type === "zhs:click") {
     const x = Number(message.x);
     const y = Number(message.y);

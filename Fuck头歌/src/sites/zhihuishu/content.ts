@@ -5,18 +5,22 @@ import {
   ZHS_CONFIG_KEY,
   ZHS_LOGS_KEY,
   ZHS_STATUS_KEY,
+  ZHS_WATCH_KEY,
+  addZhsWatch,
   answerOptionIndexes,
   isCompletedState,
   mergeZhsLogs,
   normalizeZhsConfig,
   normalizeZhsLogs,
   normalizeZhsStatus,
+  normalizeZhsWatch,
   parseCorrectAnswer,
   textIndicatesCompleted,
   type ZhsConfig,
   type ZhsLog,
   type ZhsState,
   type ZhsStatus,
+  type ZhsWatch,
 } from "./types";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -129,6 +133,14 @@ let lastNextAt = 0;
 let lastNextLabel = "";
 let lastChapter = "";
 let qualityApplied = false;
+let speedUiApplied = false;
+let lastSpeedAttempt = 0;
+let speedWarned = false;
+let lastQualityAttempt = 0;
+let qualityWarned = false;
+let watch: ZhsWatch = normalizeZhsWatch(null);
+let lastWatchAt = 0;
+let lastWatchSave = 0;
 
 const chapterText = (): string => {
   const current = document.querySelector(".current_play, [class*='current_play']");
@@ -177,6 +189,13 @@ const click = async (el: HTMLElement, label: string): Promise<boolean> => {
   }
   await sleep(120);
   return true;
+};
+
+const move = async (el: HTMLElement): Promise<void> => {
+  if (!visible(el)) return;
+  const { x, y } = topPoint(el);
+  await send({ type: "zhs:move", x, y });
+  await sleep(180);
 };
 
 const applyAnswer = async (dialog: HTMLElement, answer: string[], options: HTMLElement[]): Promise<boolean> => {
@@ -300,69 +319,205 @@ const completed = (video: HTMLVideoElement): boolean => {
   });
 };
 
-const findNext = (): HTMLElement | null => {
+type NextChoice = { el: HTMLElement; completed: boolean };
+
+const findNext = (allowCompleted: boolean): NextChoice | null => {
   const items = [...document.querySelectorAll<HTMLElement>(".clearfix.video, [class*='video-item']")]
     .filter(visible);
   if (items.length) {
     const current = items.findIndex((item) => item.classList.contains("current_play") || /current_play/.test(item.className));
-    const next = current >= 0 ? items[current + 1] : items.find((item) => !/已完成|完成/.test(textOf(item)));
-    if (next && !/已完成|完成/.test(textOf(next))) return next;
+    const ordered = current >= 0
+      ? items.slice(current + 1).concat(items.slice(0, current))
+      : items.slice();
+    const incomplete = ordered.find((item) => !textIndicatesCompleted(textOf(item)));
+    if (incomplete) return { el: incomplete, completed: false };
+    if (allowCompleted) {
+      const review = ordered.find((item) => textIndicatesCompleted(textOf(item)))
+        || items[current >= 0 ? current : 0];
+      if (review) return { el: review, completed: true };
+    }
   }
   const buttons = [...document.querySelectorAll<HTMLElement>(
     "button, [role='button'], a, .next, [class*='next-btn'], [class*='nextBtn'], [class*='next-topic']",
   )].filter(visible);
-  return buttons.find((button) => /下一节|下一课|下一个/.test(textOf(button))) || null;
+  const button = buttons.find((item) => /下一节|下一课|下一个/.test(textOf(item)));
+  return button ? { el: button, completed: false } : null;
 };
 
-const applyVideoSettings = (video: HTMLVideoElement): void => {
-  if (Math.abs(video.playbackRate - config.speed) > 0.01) {
-    try { video.playbackRate = config.speed; } catch (e) {}
+const rateOf = (el: HTMLElement): number => {
+  const attr = el.getAttribute("rate");
+  const raw = attr || textOf(el).replace(/[^0-9.]/g, "");
+  return parseFloat(raw);
+};
+
+const speedMenuItem = (target: number): HTMLElement | null => {
+  const items = [...document.querySelectorAll<HTMLElement>(
+    ".speedList [rate], .speedList li, .speedTab15, .speedTab125, [class*='speedTab']",
+  )].filter(visible);
+  return items.find((item) => {
+    const rate = rateOf(item);
+    return Number.isFinite(rate) && Math.abs(rate - target) < 0.001;
+  }) || null;
+};
+
+/**
+ * 不直接改 video.playbackRate；先让平台自己的倍速菜单生效，
+ * 这样播放器 UI 和内部状态一致，避免“速度变了但界面还是 1.0”的检测点。
+ */
+const ensureSpeed = async (video: HTMLVideoElement): Promise<void> => {
+  if (speedUiApplied && Math.abs(video.playbackRate - config.speed) > 0.05) speedUiApplied = false;
+  if (speedUiApplied) return;
+  if (Date.now() - lastSpeedAttempt < 5000) return;
+  lastSpeedAttempt = Date.now();
+  let box = document.querySelector<HTMLElement>(".speedBox");
+  if (!box) {
+    if (!speedWarned) {
+      speedWarned = true;
+      pushLog("warn", "播放器没有倍速菜单，保持原速（不直接改 playbackRate）");
+    }
+    return;
+  }
+  if (!visible(box)) await move(video);
+  box = document.querySelector<HTMLElement>(".speedBox");
+  if (!visible(box)) {
+    if (!speedWarned) {
+      speedWarned = true;
+      pushLog("warn", "倍速菜单未显示，保持原速");
+    }
+    return;
+  }
+  let list = document.querySelector<HTMLElement>(".speedList");
+  if (!visible(list)) {
+    // 有些播放器是 hover 展开，不是 click 展开；先移动真实鼠标，再必要时点击。
+    await move(box);
+    await sleep(250);
+    list = document.querySelector<HTMLElement>(".speedList");
+  }
+  if (!visible(list)) {
+    await click(box, "倍速菜单");
+    await sleep(350);
+    list = document.querySelector<HTMLElement>(".speedList");
+  }
+  const item = speedMenuItem(config.speed);
+  if (!item) {
+    if (!speedWarned) {
+      speedWarned = true;
+      pushLog("warn", `播放器没有 ${config.speed}x 档位，保持原速`);
+    }
+    return;
+  }
+  if (await click(item, `倍速 ${config.speed}x`)) {
+    await sleep(500);
+    if (Math.abs(video.playbackRate - config.speed) < 0.05) {
+      speedUiApplied = true;
+      pushLog("info", `已通过播放器菜单设置 ${config.speed}x`);
+      return;
+    }
+  }
+  if (!speedWarned) {
+    speedWarned = true;
+    pushLog("warn", "倍速菜单点击后未生效，保持原速");
   }
 };
 
 const applyQuality = async (): Promise<void> => {
   if (qualityApplied || config.quality !== "smooth") return;
-  const box = document.querySelector<HTMLElement>(".definiBox");
-  if (!visible(box)) return;
-  qualityApplied = true;
-  await click(box, "清晰度菜单");
-  await sleep(300);
+  if (Date.now() - lastQualityAttempt < 5000) return;
+  lastQualityAttempt = Date.now();
+  let box = document.querySelector<HTMLElement>(".definiBox");
+  if (!visible(box)) {
+    const video = findVideo();
+    if (video) await move(video);
+    box = document.querySelector<HTMLElement>(".definiBox");
+  }
+  if (!visible(box)) {
+    if (!qualityWarned) {
+      qualityWarned = true;
+      pushLog("warn", "清晰度菜单未显示，保持默认画质");
+    }
+    return;
+  }
+  await move(box);
+  await sleep(250);
+  if (!visible(document.querySelector<HTMLElement>(".line1bq"))) {
+    await click(box, "清晰度菜单");
+    await sleep(350);
+  }
   const smooth = document.querySelector<HTMLElement>(".line1bq");
-  if (visible(smooth)) await click(smooth, "流畅画质");
+  if (!visible(smooth)) {
+    if (!qualityWarned) {
+      qualityWarned = true;
+      pushLog("warn", "未找到流畅画质选项，保持默认画质");
+    }
+    return;
+  }
+  if (await click(smooth, "流畅画质")) {
+    qualityApplied = true;
+    pushLog("info", "已通过播放器菜单设置流畅画质");
+  }
 };
 
 const goNext = async (): Promise<void> => {
   if (busy) return;
-  const next = findNext();
+  const next = findNext(config.reviewCompleted);
   if (!next) {
-    writeStatus("done", "没有下一节");
+    writeStatus("done", config.reviewCompleted ? "没有可复习的已完成课程" : "没有下一节");
     return;
   }
-  const label = textOf(next).slice(0, 100);
+  const label = textOf(next.el).slice(0, 100);
   if (label === lastNextLabel && Date.now() - lastNextAt < 60_000) {
     writeStatus("next", "已点击下一节，但页面还没切换");
     return;
   }
   if (Date.now() - lastNextAt < 8000) return;
   busy = true;
+  lastWatchAt = 0;
   lastNextAt = Date.now();
   lastNextLabel = label;
   try {
-    writeStatus("next", "准备下一节");
-    const ok = await click(next, "下一节");
+    writeStatus("next", next.completed ? "复习已完成课程" : "准备下一节");
+    const ok = await click(next.el, next.completed ? "复习已完成课程" : "下一节");
     if (ok) {
-      pushLog("info", `切换到：${label.slice(0, 80)}`);
+      pushLog("info", `${next.completed ? "复习" : "切换到"}：${label.slice(0, 80)}`);
       qualityApplied = false;
+      speedUiApplied = false;
+      speedWarned = false;
+      qualityWarned = false;
+      lastSpeedAttempt = 0;
+      lastQualityAttempt = 0;
       await sleep(1200);
       const video = findVideo();
       if (video) {
-        applyVideoSettings(video);
+        await ensureSpeed(video);
         void video.play().catch(() => {});
       }
     }
   } finally {
     busy = false;
   }
+};
+
+const saveWatch = (force = false): void => {
+  const now = Date.now();
+  if (!force && now - lastWatchSave < 2000) return;
+  lastWatchSave = now;
+  try {
+    void chrome.storage.local.set({ [ZHS_WATCH_KEY]: watch });
+  } catch (e) {}
+};
+
+const accumulateWatch = (video: HTMLVideoElement | null): void => {
+  const now = Date.now();
+  const active = !!video && !video.paused && document.visibilityState === "visible";
+  if (!active) {
+    lastWatchAt = 0;
+    return;
+  }
+  if (lastWatchAt > 0) {
+    watch = addZhsWatch(watch, (now - lastWatchAt) / 1000, now);
+    saveWatch();
+  }
+  lastWatchAt = now;
 };
 
 const tick = async (): Promise<void> => {
@@ -373,11 +528,13 @@ const tick = async (): Promise<void> => {
     lastNextLabel = "";
   }
   if (isBlockedPage()) {
+    lastWatchAt = 0;
     writeStatus("blocked", "检测到安全验证，已暂停，请手动完成");
     return;
   }
   const quiz = findQuiz();
   if (quiz) {
+    lastWatchAt = 0;
     await handleQuiz(quiz);
     return;
   }
@@ -388,10 +545,12 @@ const tick = async (): Promise<void> => {
   }
   const video = findVideo();
   if (!video) {
+    lastWatchAt = 0;
     writeStatus("waiting", "等待视频加载");
     return;
   }
-  applyVideoSettings(video);
+  await ensureSpeed(video);
+  accumulateWatch(video);
   if (config.quality === "smooth" && !qualityApplied && !video.paused) {
     void applyQuality();
   }
@@ -407,7 +566,12 @@ const tick = async (): Promise<void> => {
     writeStatus("paused", "视频已暂停，尝试恢复播放");
     void video.play().catch(() => writeStatus("paused", "浏览器阻止自动播放，请手动点播放"));
   } else {
-    writeStatus("playing", `播放中 · ${config.speed}x`);
+    const actual = Number.isFinite(video.playbackRate) ? video.playbackRate : 1;
+    const applied = Math.abs(actual - config.speed) < 0.05;
+    writeStatus(
+      "playing",
+      applied ? `播放中 · ${actual}x` : `播放中 · 原速 ${actual}x（${config.speed}x 菜单未生效）`,
+    );
   }
 };
 
@@ -433,15 +597,18 @@ const stop = (): void => {
     clearInterval(timer);
     timer = 0;
   }
+  saveWatch(true);
+  lastWatchAt = 0;
   writeStatus("idle", "已停止");
   void send({ type: "zhs:detach" });
 };
 
 const load = (): void => {
   try {
-    chrome.storage.local.get([ZHS_CONFIG_KEY, ZHS_LOGS_KEY], (result) => {
+    chrome.storage.local.get([ZHS_CONFIG_KEY, ZHS_LOGS_KEY, ZHS_WATCH_KEY], (result) => {
       config = normalizeZhsConfig(result?.[ZHS_CONFIG_KEY]);
       logs = normalizeZhsLogs(result?.[ZHS_LOGS_KEY]);
+      watch = normalizeZhsWatch(result?.[ZHS_WATCH_KEY]);
       if (config.enabled) start();
       else writeStatus("idle", "未启动");
     });
@@ -452,7 +619,18 @@ const load = (): void => {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes[ZHS_CONFIG_KEY]) return;
-  config = normalizeZhsConfig(changes[ZHS_CONFIG_KEY].newValue);
+  const next = normalizeZhsConfig(changes[ZHS_CONFIG_KEY].newValue);
+  if (next.speed !== config.speed) {
+    speedUiApplied = false;
+    speedWarned = false;
+    lastSpeedAttempt = 0;
+  }
+  if (next.quality !== config.quality) {
+    qualityApplied = false;
+    qualityWarned = false;
+    lastQualityAttempt = 0;
+  }
+  config = next;
   if (config.enabled) start();
   else stop();
 });
@@ -460,6 +638,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 if (window.top === window.self) {
   load();
   window.addEventListener("pagehide", () => {
+    saveWatch(true);
     if (started) void send({ type: "zhs:detach" });
   });
 }

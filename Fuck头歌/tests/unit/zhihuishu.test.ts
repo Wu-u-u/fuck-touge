@@ -10,15 +10,29 @@ import {
   normalizeZhsLog,
   normalizeZhsLogs,
   normalizeZhsStatus,
+  normalizeZhsWatch,
+  addZhsWatch,
+  formatZhsWatch,
   parseCorrectAnswer,
 } from "../../src/sites/zhihuishu/types";
 
 describe("zhihuishu config/status", () => {
   it("normalizes config and keeps safe speed", () => {
     expect(normalizeZhsConfig({ enabled: true, mode: "correct", speed: 9, autoNext: false, quality: "auto" }))
-      .toEqual({ enabled: true, mode: "correct", speed: 2, autoNext: false, quality: "auto" });
+      .toEqual({ enabled: true, mode: "correct", speed: 2, autoNext: false, reviewCompleted: false, quality: "auto" });
     expect(normalizeZhsConfig({ speed: 0.2 }).speed).toBe(0.5);
     expect(normalizeZhsConfig({}).mode).toBe("quick");
+    expect(normalizeZhsConfig({ reviewCompleted: true }).reviewCompleted).toBe(true);
+  });
+
+  it("counts today's wall-clock watch time and resets on a new day", () => {
+    const now = new Date(2026, 10, 23, 12, 0, 0).getTime();
+    const empty = normalizeZhsWatch({ date: "2026-11-22", seconds: 100 }, now);
+    expect(empty).toEqual({ date: "2026-11-23", seconds: 0 });
+    const added = addZhsWatch({ date: "2026-11-23", seconds: 10 }, 2.6, now);
+    expect(added.seconds).toBe(12);
+    expect(formatZhsWatch(3723)).toBe("01:02:03");
+    expect(addZhsWatch(added, 999, now).seconds).toBe(22);
   });
 
   it("normalizes status and log entries", () => {

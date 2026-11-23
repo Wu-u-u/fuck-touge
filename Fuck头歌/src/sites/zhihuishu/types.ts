@@ -3,6 +3,7 @@
 export const ZHS_CONFIG_KEY = "fuckTougeZhsConfig";
 export const ZHS_STATUS_KEY = "fuckTougeZhsStatus";
 export const ZHS_LOGS_KEY = "fuckTougeZhsLogs";
+export const ZHS_WATCH_KEY = "fuckTougeZhsWatch";
 export const MAX_ZHS_LOGS = 25;
 
 export type ZhsMode = "correct" | "quick";
@@ -14,6 +15,7 @@ export interface ZhsConfig {
   mode: ZhsMode;
   speed: number;
   autoNext: boolean;
+  reviewCompleted: boolean;
   quality: ZhsQuality;
 }
 
@@ -22,6 +24,7 @@ export const DEFAULT_ZHS_CONFIG: ZhsConfig = {
   mode: "quick",
   speed: 1.25,
   autoNext: true,
+  reviewCompleted: false,
   quality: "smooth",
 };
 
@@ -36,6 +39,11 @@ export interface ZhsLog {
   at: number;
   level: string;
   text: string;
+}
+
+export interface ZhsWatch {
+  date: string;
+  seconds: number;
 }
 
 const STATES: ZhsState[] = [
@@ -55,6 +63,7 @@ export function normalizeZhsConfig(raw: unknown): ZhsConfig {
     mode,
     speed,
     autoNext: o.autoNext !== false,
+    reviewCompleted: o.reviewCompleted === true,
     quality,
   };
 }
@@ -146,6 +155,34 @@ export function isCompletedState(input: {
 /** “未完成/未学完”不能当成已完成。 */
 export function textIndicatesCompleted(text: string): boolean {
   return /完成|学完/.test(text) && !/未完成|未学完/.test(text);
+}
+
+const dayKey = (at = Date.now()): string => {
+  const d = new Date(at);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+export function normalizeZhsWatch(raw: unknown, now = Date.now()): ZhsWatch {
+  const date = dayKey(now);
+  const o = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const seconds = typeof o.seconds === "number" && Number.isFinite(o.seconds) && o.seconds > 0
+    ? Math.floor(o.seconds)
+    : 0;
+  return { date, seconds: o.date === date ? seconds : 0 };
+}
+
+export function addZhsWatch(raw: unknown, delta: number, now = Date.now()): ZhsWatch {
+  const current = normalizeZhsWatch(raw, now);
+  if (!Number.isFinite(delta) || delta <= 0) return current;
+  return { date: current.date, seconds: Math.floor(current.seconds + Math.min(delta, 10)) };
+}
+
+export function formatZhsWatch(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 export function isZhsUrl(url: string | undefined | null): boolean {
