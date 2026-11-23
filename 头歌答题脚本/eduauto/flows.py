@@ -288,7 +288,6 @@ def cmd_harvest(args, cfg: dict) -> None:
     course = current_course(browser, cfg)
     if course is None:
         die("没有当前课程：先 python3 答题.py cd -ls，再 python3 答题.py cd 序号/课程名")
-    cfg.setdefault("run", {})["ai"] = bool(getattr(args, "ai", False))
     answers_path = course.answers or find_answers_file(cfg, course.code)
     if answers_path is None:
         die(f"课程「{course.name}」还没有答案档案：先 python3 答题.py cd {course.name}")
@@ -567,7 +566,8 @@ def prepare_chapter(browser: cdp.Browser, cfg: dict, course, ch: Chapter):
     target = None
     try:
         classroom = classroom_page(browser, cfg, url=course.classroom)
-        ensure_login(browser, classroom.ws)
+        ensure_login(browser, classroom.ws,
+                     timeout=float(cfg.get("run", {}).get("login_timeout", 90) or 90))
         target, ws = enter_chapter(browser, classroom, ch.name, on_fail="raise")
         page = Page(ws, target)
         target, page, entered = _open_levels_from_detail(browser, target, page)
@@ -965,6 +965,10 @@ def cmd_subjective(args, cfg: dict) -> None:
 
 def _run_selected_course(args, cfg: dict, browser, course) -> int:
     """在当前已选定的浏览器/课程上跑 run，返回退出码（0=成功，2=有失败）。"""
+    login_timeout = float(getattr(args, "login_timeout", 90) or 90)
+    if not 0 < login_timeout <= 600:
+        die("login_timeout 必须在 (0, 600] 秒")
+    cfg.setdefault("run", {})["login_timeout"] = login_timeout
     answers_path = course.answers or find_answers_file(cfg, course.code)
     if answers_path is None:
         die(f"课程「{course.name}」还没有答案档案：先 python3 答题.py cd {course.name}")
@@ -977,7 +981,7 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
         die("答案档案里找不到指定章节。")
 
     classroom = classroom_page(browser, cfg, url=course.classroom)
-    ensure_login(browser, classroom.ws)
+    ensure_login(browser, classroom.ws, timeout=cfg["run"].get("login_timeout", 90))
     script_status.set_state("running", "准备运行")
     script_status.set_context(course=course.name, chapter="", level="")
 
@@ -1159,11 +1163,14 @@ def cmd_worker(args, cfg: dict) -> None:
     if note:
         log(f"→ 档案槽『{slot}』：{note}")
     cfg["edge"]["profile"] = profile
+    login_timeout = float(getattr(args, "login_timeout", 90) or 90)
+    if not 0 < login_timeout <= 600:
+        die("login_timeout 必须在 (0, 600] 秒")
     browser = None
     try:
         browser = ensure_browser(cfg)
         page = open_course_list(browser, cfg)
-        ensure_login(browser, page.ws, timeout=float(getattr(args, "login_timeout", 90) or 90))
+        ensure_login(browser, page.ws, timeout=login_timeout)
         names = list_courses(page)
         wanted = choose_course(names, args.course)
         target, course = select_course(browser, page, wanted)

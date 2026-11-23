@@ -55,7 +55,7 @@ def run_case(proc, rows=None):
         "current_course": lambda browser, cfg: Course(
             "测试课程", "TEST", "http://example", __import__("pathlib").Path("unused.toml")),
         "classroom_page": lambda browser, cfg, old=None, url=None: FakePage(),
-        "ensure_login": lambda browser, ws=None: None,
+        "ensure_login": lambda browser, ws=None, **k: None,
         "scrape_status": lambda *a, **k: (rows if rows is not None else [
             {"name": "L1", "full": "10", "score": "0", "status": "未通过"}]),
         "process_chapter": proc,
@@ -179,7 +179,7 @@ def run_real_die_case():
                "current_course": lambda browser, cfg: Course(
                    "测试课程", "TEST", "http://example", Path("unused.toml")),
                "classroom_page": lambda browser, cfg, old=None, url=None: FakePage(),
-               "ensure_login": lambda browser, ws=None: None,
+               "ensure_login": lambda browser, ws=None, **k: None,
                "scrape_status": lambda *a, **k: [
                    {"name": "L1", "full": "10", "score": "0", "status": "未通过"}],
                "Page": DieRunPage,
@@ -289,7 +289,7 @@ def run_harvest_abort(tmp_dir: Path):
         "ensure_browser": lambda cfg: browser,
         "current_course": lambda browser, cfg: Course(
             "第一章", "abc", "https://cls.test/classrooms/abc/shixun_homework", arch),
-        "ensure_login": lambda browser, ws=None: None,
+        "ensure_login": lambda browser, ws=None, **k: None,
         "list_classroom_cards": lambda page: [
             {"name": "第一章", "hasStart": True, "closed": False, "done": 1, "total": 1}],
         "classroom_page": lambda b, cfg, old=None, url=None: FlowPage(
@@ -420,7 +420,7 @@ _pipeline_patches = {
     "current_course": lambda browser, cfg: Course(
         "测试课程", "TEST", "http://example", Path("unused.toml")),
     "classroom_page": lambda browser, cfg, old=None, url=None: FakePage(),
-    "ensure_login": lambda browser, ws=None: None,
+    "ensure_login": lambda browser, ws=None, **k: None,
     "scrape_status": lambda *a, **k: [
         {"name": "L1", "full": "10", "score": "0", "status": "未通过"}],
     "prepare_chapter": _fake_prepare,
@@ -488,7 +488,7 @@ _missing_patches = {
     "ensure_browser": lambda cfg: FakeBrowser(),
     "current_course": lambda browser, cfg: Course("测试课程", "TEST", "http://example", Path("unused.toml")),
     "classroom_page": lambda browser, cfg, old=None, url=None: FakePage(),
-    "ensure_login": lambda browser, ws=None: None,
+    "ensure_login": lambda browser, ws=None, **k: None,
     "scrape_status": lambda *a, **k: [{"name": "L1", "full": "10", "score": "0", "status": "未通过"}],
     "process_chapter": _missing_process,
 }
