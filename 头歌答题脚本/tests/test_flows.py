@@ -515,5 +515,53 @@ check("缺答案章跳过但继续后续章",
       and "缺答案章" in _missing_out and "后续章" in _missing_out,
       f"code={_missing_code} events={_missing_events} out={_missing_out}")
 
+# keep-going：第一帧失败后仍执行后续章节
+class KeepArgs(Args):
+    keep_going = True
+
+_keep_chs = [
+    Chapter({"name": "失败章", "homework_id": "1",
+             "levels": [{"name": "L1", "answer": "A", "type": "choice"}]}),
+    Chapter({"name": "后续章", "homework_id": "2",
+             "levels": [{"name": "L1", "answer": "A", "type": "choice"}]}),
+]
+_keep_events = []
+def _keep_process(browser, classroom, cfg, ch, rows, stats=None, preopened=None):
+    _keep_events.append(ch.name)
+    if ch.name == "失败章":
+        raise SystemExit(2)
+    stats = stats or {"done": 0, "skipped": 0, "failed": 0, "missing": 0}
+    stats["done"] += 1
+    return stats
+_keep_patches = {
+    "load_answers": lambda p, **k: _keep_chs,
+    "resolve_chapter_args": lambda chs, pats, strict=True: chs,
+    "ensure_browser": lambda cfg: FakeBrowser(),
+    "current_course": lambda browser, cfg: Course("测试课程", "TEST", "http://example", Path("unused.toml")),
+    "classroom_page": lambda browser, cfg, old=None, url=None: FakePage(),
+    "ensure_login": lambda browser, ws=None, **k: None,
+    "scrape_status": lambda *a, **k: [{"name": "L1", "full": "10", "score": "0", "status": "未通过"}],
+    "prepare_chapter": lambda *a, **k: None,
+    "process_chapter": _keep_process,
+}
+_saved_keep = {}
+for _name, _value in _keep_patches.items():
+    _saved_keep[_name] = getattr(flows, _name)
+    setattr(flows, _name, _value)
+try:
+    _keep_buf = io.StringIO()
+    with contextlib.redirect_stdout(_keep_buf):
+        _keep_code = flows._run_selected_course(
+            KeepArgs(), CFG, FakeBrowser(),
+            Course("测试课程", "TEST", "http://example", Path("unused.toml")))
+finally:
+    for _name, _value in _saved_keep.items():
+        setattr(flows, _name, _value)
+_keep_out = _keep_buf.getvalue()
+check("--keep-going 在单章失败后继续后续章",
+      _keep_code == 2 and _keep_events == ["失败章", "后续章"]
+      and "继续后续章节" in _keep_out,
+      f"code={_keep_code} events={_keep_events} out={_keep_out}")
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

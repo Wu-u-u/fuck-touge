@@ -165,6 +165,7 @@ def main() -> None:
     ap.add_argument("--jobs", type=int, default=2)
     ap.add_argument("-y", "--yes", action="store_true")
     ap.add_argument("--ai", action="store_true")
+    ap.add_argument("--keep-going", action="store_true")
     ap.add_argument("--login-timeout", type=float, default=90)
     ap.add_argument("--allow-shared-login", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
@@ -194,7 +195,7 @@ def main() -> None:
         for i, slot in enumerate(slots):
             print(f"[槽 {slot}] port={9301+i} state=state/runs/<run>/worker-{slot}.json "
                   f"python3 答题.py worker {slot} --course {args.course}"
-                  + (" -y" if args.yes else "") + (" --ai" if args.ai else ""))
+                  + (" -y" if args.yes else "") + (" --ai" if args.ai else "") + (" --keep-going" if args.keep_going else ""))
         return
 
     run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
@@ -233,6 +234,8 @@ def main() -> None:
                     cmd.append("-y")
                 if args.ai:
                     cmd.append("--ai")
+                if args.keep_going:
+                    cmd.append("--keep-going")
                 cmd += ["--login-timeout", str(args.login_timeout)]
                 print(f"[槽 {slot}] start port={port}", flush=True)
                 procs.append((slot, port, time.time(), worker_path, subprocess.Popen(

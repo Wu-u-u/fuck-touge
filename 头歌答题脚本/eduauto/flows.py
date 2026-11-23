@@ -1095,6 +1095,7 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
     if len(todo) > 1:
         start_preload(1)
 
+    keep_going = bool(getattr(args, "keep_going", False))
     abort_code = 0
     for i, ch in enumerate(todo):
         t = preload_threads.pop(i, None)
@@ -1113,6 +1114,8 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
             s["failed"] = 1
             s["missing"] = max(1, int(s.get("missing", 0)))
             results[ch.name] = s
+            if i + 2 < len(todo):
+                start_preload(i + 2)
             continue
         except (SystemExit, RuntimeError, KeyboardInterrupt) as e:
             if isinstance(e, RuntimeError):
@@ -1125,6 +1128,11 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
                 s["failed"] = 1
             s["aborted"] = True
             results[ch.name] = s
+            if keep_going and not isinstance(e, KeyboardInterrupt):
+                log("  → --keep-going：继续后续章节")
+                if i + 2 < len(todo):
+                    start_preload(i + 2)
+                continue
             abort_code = e.code if isinstance(e, SystemExit) and e.code else 2
             break
         if i + 2 < len(todo):

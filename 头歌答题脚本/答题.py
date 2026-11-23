@@ -119,11 +119,13 @@ def main() -> None:
     add_chapter_args(p_worker)
     p_worker.add_argument("-y", "--yes", action="store_true")
     p_worker.add_argument("--ai", action="store_true")
+    p_worker.add_argument("--keep-going", action="store_true", help="单章失败后继续后续章节")
     p_worker.add_argument("--login-timeout", type=float, default=90)
     p_run = sub.add_parser("run", help="按答案档案自动答题（开跑前会列出每关答案状态）")
     add_chapter_args(p_run)
     p_run.add_argument("-y", "--yes", action="store_true", help="不询问直接开始")
     p_run.add_argument("--ai", action="store_true", help="空答案时让 AI 读取题面并写入档案（仍会评测）")
+    p_run.add_argument("--keep-going", action="store_true", help="单章失败后继续后续章节，最后仍返回 2")
     p_run.add_argument(
         "-b", "--batch", nargs="+", type=int, metavar="槽位",
         help="批量槽位：用当前槽位的当前课程，依次切换到这些槽位跑同一门课，例如 -b 1 2 3",
