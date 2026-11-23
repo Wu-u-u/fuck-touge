@@ -219,6 +219,17 @@ scan 不再是独立命令：
 顶部状态来自 state.status.json；扩展 popup 的状态日志同时保留。
 TUI 只是现有命令的封装；答题、浏览器和状态上报逻辑不变。
 
+【多账号并行（实验）】
+
+每个 worker 使用独立 Edge、独立 state、独立调试端口：
+
+    python3 parallel.py --slots 1 2 3 --course Java程序设计-2026秋 --jobs 2
+    python3 parallel.py --slots 1 2 --course 4 --jobs 2 --ai
+    python3 parallel.py --slots 1 2 --course Java程序设计-2026秋 --dry-run
+
+默认 2 个并发，最多 6；每个槽位内部仍串行（同账号不并行评测）。
+槽位需要已经登录，state.json 会复制为 state/worker-<槽位>.json。
+
 【四、输出术语对照表】
 
   ✓ Fuck头歌 已加载（版本以实际为准）   扩展已装进副本浏览器，自动跳关有保障

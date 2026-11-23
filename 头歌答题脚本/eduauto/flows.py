@@ -17,8 +17,8 @@ from eduauto.archive import (Chapter, find_level, load_answers, sync_chapter_nam
 from eduauto.util import die, fmt_secs, log, norm
 from eduauto.answers import answer_to_toml, read_saved_answer, read_test_result, wait_outcome
 from eduauto.ai import AIError, draft_answer, record_operation
-from eduauto.browser import classroom_page, ensure_browser, ensure_login
-from eduauto.config import load_course_order, load_state, remember_course_order
+from eduauto.browser import classroom_page, ensure_browser, ensure_login, stop_browser
+from eduauto.config import load_course_order, load_state, remember_course_order, setup_slot
 from eduauto.course import (choose_course, current_course, ensure_answers_file,
                             find_answers_file, list_courses, open_course_list, select_course)
 from eduauto.code import answer_choice, choice_letters, close_file_menu, list_code_files, set_code, write_files
@@ -1151,6 +1151,31 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
         return 2
     log(f"\n完成（总用时 {fmt_secs(time.time() - t0)}）。浏览器保持打开，可自行检查。")
     return 0
+
+
+def cmd_worker(args, cfg: dict) -> None:
+    """单槽 worker：设置槽位 + 进入指定课程 + run，供 parallel.py 子进程调用。"""
+    slot, profile, note = setup_slot(cfg, str(args.slot))
+    if note:
+        log(f"→ 档案槽『{slot}』：{note}")
+    cfg["edge"]["profile"] = profile
+    browser = None
+    try:
+        browser = ensure_browser(cfg)
+        page = open_course_list(browser, cfg)
+        ensure_login(browser, page.ws)
+        names = list_courses(page)
+        wanted = choose_course(names, args.course)
+        target, course = select_course(browser, page, wanted)
+        if page.target.get("id") and page.target["id"] != target.get("id"):
+            browser.close_target(page.target["id"])
+        ensure_answers_file(cfg, course)
+        code = _run_selected_course(args, cfg, browser, course)
+        if code:
+            sys.exit(code)
+    finally:
+        if browser is not None:
+            stop_browser(int(cfg["edge"]["port"]))
 
 
 def cmd_run(args, cfg: dict) -> None:

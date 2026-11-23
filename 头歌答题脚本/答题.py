@@ -113,6 +113,12 @@ def main() -> None:
     p_harvest = sub.add_parser("harvest", help="扫描并采集：缺骨架补骨架，有已满分关卡就采集答案")
     add_chapter_args(p_harvest)
     p_harvest.add_argument("-f", "--force", action="store_true", help="覆盖档案里已有答案")
+    p_worker = sub.add_parser("worker", help=argparse.SUPPRESS)
+    p_worker.add_argument("slot")
+    p_worker.add_argument("--course", required=True)
+    add_chapter_args(p_worker)
+    p_worker.add_argument("-y", "--yes", action="store_true")
+    p_worker.add_argument("--ai", action="store_true")
     p_run = sub.add_parser("run", help="按答案档案自动答题（开跑前会列出每关答案状态）")
     add_chapter_args(p_run)
     p_run.add_argument("-y", "--yes", action="store_true", help="不询问直接开始")
@@ -170,6 +176,9 @@ def main() -> None:
         cmd_harvest(args, cfg)
     elif args.cmd == "run":
         cmd_run(args, cfg)
+    elif args.cmd == "worker":
+        from eduauto.flows import cmd_worker
+        cmd_worker(args, cfg)
     elif args.cmd == "subjective":
         cmd_subjective(args, cfg)
     elif args.cmd == "ai":

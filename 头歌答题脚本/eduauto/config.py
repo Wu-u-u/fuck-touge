@@ -22,7 +22,7 @@ from eduauto.util import die, log
 HERE = Path(__file__).resolve().parent.parent  # 脚本目录（eduauto 的上一级）
 
 
-STATE_FILE = HERE / "state.json"                      # 档案槽位记忆
+STATE_FILE = Path(os.environ.get("EDUAUTO_STATE_FILE") or (HERE / "state.json")).expanduser()  # 档案槽位记忆/每 worker 可独立
 
 
 PROFILE_BASE = Path("~/.config/educoder-auto").expanduser()   # 脚本自建档案的存放目录
@@ -88,6 +88,12 @@ def load_config(path: Path) -> dict:
         die(f"配置文件格式错误：edge.port 必须是整数（当前 {raw_port!r}）。")
     if not 1 <= port <= 65535:
         die(f"配置文件格式错误：edge.port 必须在 1-65535 之间（当前 {raw_port!r}）。")
+    env_port = os.environ.get("EDUAUTO_PORT")
+    if env_port:
+        try:
+            port = int(env_port)
+        except ValueError:
+            die(f"EDUAUTO_PORT 不是整数：{env_port!r}")
     cfg["edge"]["port"] = port
     if not isinstance(cfg["run"].get("answers_dir"), str) or not cfg["run"]["answers_dir"].strip():
         die("配置文件格式错误：run.answers_dir 必须是非空路径字符串。")
