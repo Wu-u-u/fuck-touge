@@ -151,21 +151,30 @@ def close_file_menu(page: Page) -> None:
     for _ in range(3):
         items = _file_items(page)
         if not any(it.get("visible") for it in items):
-            return
+            return True
         page.ws.mouse_move(20, 400)                  # 移开鼠标
         time.sleep(0.3)
         items = _file_items(page)
         if not any(it.get("visible") for it in items):
-            return
+            return True
         pos = page.ws.eval_json(FILE_TRIGGER_JS)     # 兜底：点一下触发器
-        if not pos:
+        if pos:
+            page.ws.mouse_click(pos["x"], pos["y"])
             time.sleep(0.3)
-            continue
-        page.ws.mouse_click(pos["x"], pos["y"])
-        time.sleep(0.3)
-    # 下拉收起检测存在抖动（平台 re-render/鼠标位置），这里不再中断流程：
-    # 记录告警并返回 False，调用方继续；真正被遮罩吞点击时后续步骤会自行报错。
-    log("    ！「代码文件」下拉收不起来（移开鼠标和点击触发器都无效），继续尝试后续步骤")
+    # 有些平台的 antd Dropdown 不响应 hover/触发器点击，Escape 是最后的正常关闭手段
+    try:
+        for typ in ("keyDown", "keyUp"):
+            page.ws.call("Input.dispatchKeyEvent", {
+                "type": typ, "key": "Escape", "code": "Escape",
+                "windowsVirtualKeyCode": 27, "nativeVirtualKeyCode": 27,
+            })
+        time.sleep(0.5)
+        if not any(it.get("visible") for it in _file_items(page)):
+            return True
+    except cdp.CDPError:
+        pass
+    # 不静默继续：下拉会挡住遮罩，后续等评测按钮可能等到超时。
+    log("    ！「代码文件」下拉收不起来（移开鼠标、点击触发器、Esc 均无效）")
     return False
 
 

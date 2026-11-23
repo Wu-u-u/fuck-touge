@@ -856,6 +856,11 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
             ctx = {"index0": idx, "url0": st.get("url"), "fail0": fail0,
                    "is_last": not st.get("hasNext"),
                    "test_result0": (read_test_result(page) or {}).get("text")}
+            # 下拉/遮罩没关时，wait_eval_ready 可能一直等到超时；先确认能关。
+            if getattr(page, "ws", None) is not None and not close_file_menu(page):
+                stats["failed"] += 1
+                die(f"第{idx}关「{lname}」代码文件下拉无法收起，"
+                    "评测按钮会被遮罩挡住，已暂停；请手动关闭下拉后重试。")
             log("    点「评测」…")
             if not page.click_eval():
                 stats["failed"] += 1
