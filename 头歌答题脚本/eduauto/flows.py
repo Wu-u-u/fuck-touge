@@ -26,6 +26,10 @@ from eduauto.workspace import ChapterEnterError, advance_level, card_progress_js
 from eduauto.subjective import (harvest_subjective, load_subjective, run_subjective,
                                 sidecar_path)
 
+class ChapterIncomplete(RuntimeError):
+    """本章缺答案/档案不完整；跳过本章，不终止整轮。"""
+
+
 def _book_matches(chapters, name: str) -> list:
     """返回与卡片名匹配的档案章节：完全相等优先，其次双向子串。"""
     n = norm(name)
@@ -572,6 +576,14 @@ def prepare_chapter(browser: cdp.Browser, cfg: dict, course, ch: Chapter):
         st, reached_first = rewind_to_first(page)
         if not st.get("index") or not reached_first:
             raise RuntimeError("无法回到第 1 关")
+        # 选择题/编辑器 DOM 可能还没渲染完；wait_level 会等 ready + 题目控件。
+        st = page.wait_level(want_index=st.get("index"), timeout=15)
+        if (st.get("ready") != "complete"
+                or not (st.get("hasEditor") or st.get("choiceCount", 0) > 0)):
+            log(f"  · 预加载未就绪：{ch.name}，交给主流程")
+            if target.get("id"):
+                browser.close_target(target["id"])
+            return None
         lv = find_level(ch, st.get("index") or 1, st.get("name") or "")
         if lv is not None and (lv.files or lv.multi is True):
             log(f"  · 多文件关卡不预加载：{ch.name}，交给主流程")
@@ -588,8 +600,11 @@ def prepare_chapter(browser: cdp.Browser, cfg: dict, course, ch: Chapter):
         log(f"  ! 预加载失败：{ch.name}（{e}）")
         return None
     finally:
-        if classroom is not None and classroom.target.get("id"):
-            browser.close_target(classroom.target["id"])
+        classroom_id = classroom.target.get("id") if classroom is not None else None
+        target_id = target.get("id") if target else None
+        # SPA 可能把课堂页导航成任务页；同一个 id 只关一次。绝不关主线程页面。
+        if classroom_id and classroom_id != target_id:
+            browser.close_target(classroom_id)
 
 
 def _ai_fill_answer(page: Page, st: dict, lv, ch: Chapter, idx: int, cfg: dict) -> bool:
@@ -723,8 +738,7 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
                 code = str(lv.answer or "")
                 if not code.strip():
                     stats["failed"] += 1
-                    die(f"第{idx}关「{lname}」的 answer 是空的，已暂停。\n"
-                        f"  请填写：{cfg['run']['answers']}")
+                    raise ChapterIncomplete(f"第{idx}关「{lname}」的 answer 是空的")
                 try:
                     set_code(page, code)
                 except RuntimeError as e:
@@ -750,8 +764,8 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
                     if missing:
                         close_file_menu(page)
                         stats["failed"] += 1
-                        die(f"第{idx}关「{lname}」还有代码文件没填答案："
-                            + "、".join(missing) + f"\n  请填写：{cfg['run']['answers']}")
+                        raise ChapterIncomplete(
+                            f"第{idx}关「{lname}」还有代码文件没填答案：" + "、".join(missing))
                     try:
                         write_files(page, paths, lv.files)
                     except RuntimeError as e:
@@ -764,8 +778,7 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
                         code = str(lv.files[0].get("answer") or "")
                     if not code.strip():
                         stats["failed"] += 1
-                        die(f"第{idx}关「{lname}」的 answer 是空的，已暂停。\n"
-                            f"  请填写：{cfg['run']['answers']}")
+                        raise ChapterIncomplete(f"第{idx}关「{lname}」的 answer 是空的")
                     try:
                         set_code(page, code)
                     except RuntimeError as e:
@@ -774,8 +787,7 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
             elif st.get("choiceCount", 0) > 0:
                 if lv.answer_empty():
                     stats["failed"] += 1
-                    die(f"第{idx}关「{lname}」的 answer 是空的，已暂停。\n"
-                        f"  请填写：{cfg['run']['answers']}")
+                    raise ChapterIncomplete(f"第{idx}关「{lname}」的 answer 是空的")
                 try:
                     answer_choice(page, choice_letters(lv.answer))
                 except (ValueError, RuntimeError) as e:
@@ -830,6 +842,13 @@ def process_chapter(browser: cdp.Browser, classroom: Page, cfg: dict,
             log(f"    （本关用时 {time.time() - t_level:.1f} 秒）")
         ok = True
         return stats
+    except ChapterIncomplete:
+        # 缺答案属于“跳过本章”，不保留现场；外层会继续下一章。
+        try:
+            browser.close_target(target["id"])
+        except Exception:
+            pass
+        raise
     finally:
         if ok:
             browser.close_target(target["id"])
@@ -1023,13 +1042,15 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
             results[ch.name] = {"done": 0, "skipped": len(ch.levels), "failed": 0}
             return
         missing = [lv.name for lv in to_run if lv.answer_empty()]
-        if missing:
+        if missing and not cfg.get("run", {}).get("ai"):
             if prepared is not None:
                 browser.close_target(prepared[1]["id"])
-            die(f"章节「{ch.name}」还有关卡没填答案：{'、'.join(missing)}\n"
-                f"  请填写后重新运行：{cfg['run']['answers']}")
+            log(f"  ! 本章缺答案，跳过整章：{'、'.join(missing)}")
+            results[ch.name] = {"done": 0, "skipped": 0, "failed": 1,
+                                "missing": len(missing)}
+            return
         t_ch = time.time()
-        stats = {"done": 0, "skipped": 0, "failed": 0}
+        stats = {"done": 0, "skipped": 0, "failed": 0, "missing": 0}
         results[ch.name] = stats      # 先就位：本章中途 die 时已作答数不丢
         if prepared is not None:
             _, ptarget, ppage, pstate = prepared
@@ -1082,6 +1103,13 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
             browser.close_target(p[1]["id"])
         try:
             run_one(ch, prepared)
+        except ChapterIncomplete as e:
+            log(f"  ! 本章缺答案，跳过整章：{e}")
+            s = results.get(ch.name) or {"done": 0, "skipped": 0, "failed": 0, "missing": 0}
+            s["failed"] = 1
+            s["missing"] = max(1, int(s.get("missing", 0)))
+            results[ch.name] = s
+            continue
         except (SystemExit, RuntimeError, KeyboardInterrupt) as e:
             if isinstance(e, RuntimeError):
                 log(f"  ! 章节中止：{e}")
@@ -1109,7 +1137,9 @@ def _run_selected_course(args, cfg: dict, browser, course) -> int:
     log("\n══════ 汇总 ══════")
     for name, s in results.items():
         extra = f"（用时 {fmt_secs(s['secs'])}）" if s.get("secs") else ""
-        log(f"  {name}：作答 {s['done']} 关，跳过 {s['skipped']} 关，失败 {s['failed']} 关{extra}")
+        miss = s.get("missing", 0)
+        miss_txt = f"，缺答案 {miss} 关" if miss else ""
+        log(f"  {name}：作答 {s['done']} 关，跳过 {s['skipped']} 关，失败 {s['failed']} 关{miss_txt}{extra}")
     if abort_code:
         log(f"\n已中止（总用时 {fmt_secs(time.time() - t0)}）。浏览器保持打开，可自行检查。")
         return abort_code

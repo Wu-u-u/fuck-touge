@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from urllib.parse import urljoin
 
@@ -15,6 +16,10 @@ LEVEL_RE = re.compile(r"第(\d+)关\s*[：:]\s*([^\n]{1,60})")
 
 
 PASS_STATUS = {"已通过", "已提交"}
+
+# 预加载线程和主线程不能同时通过“点击后找新 target”认领标签页；
+# 它们共享浏览器目标列表，必须把整个进入流程串行化。
+_ENTER_LOCK = threading.Lock()
 
 
 # 课堂卡片的双向匹配：档案名常常比卡片标题长（如档案「Java面向对象（二） - 封装、
@@ -130,8 +135,15 @@ def enter_chapter(browser: cdp.Browser, classroom: Page, chapter_name: str,
                   timeout: float = 20, on_fail: str = "die") -> tuple[dict, cdp.WS]:
     """在课堂页点某章的「开始学习」，返回（新标签页 target, 其会话）。
 
-    课堂列表刷新时有 ant-spin 遮罩会挡住点击，这里会等遮罩消失并校验落点，失败自动重试。
+    整个“点击 → 等新标签 → attach”过程必须串行；否则预加载线程和主线程
+    会从全局 pages 列表中认领对方的标签页，随后互相 close，主线程 WS 就会断。
     """
+    with _ENTER_LOCK:
+        return _enter_chapter_locked(browser, classroom, chapter_name, timeout, on_fail)
+
+
+def _enter_chapter_locked(browser: cdp.Browser, classroom: Page, chapter_name: str,
+                          timeout: float, on_fail: str) -> tuple[dict, cdp.WS]:
     if not wait_cards(classroom, 10):
         log("  ! 课堂卡片 10 秒内没有渲染出来，仍尝试查找…")
     before = {t["id"] for t in browser.pages()}

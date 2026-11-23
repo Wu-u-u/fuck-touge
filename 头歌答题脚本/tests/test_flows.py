@@ -468,5 +468,52 @@ check("AI 自动填空答案并写档案",
       and _ai_data["chapters"][0]["levels"][0]["answer"] == "B",
       f"ok={_ok} lv={_ai_ch.levels[0].answer} data={_ai_data}")
 
+
+# ---------- 缺答案只跳过本章，不 break 整轮 ----------
+_missing_chs = [
+    Chapter({"name": "缺答案章", "homework_id": "1",
+             "levels": [{"name": "L1", "answer": "", "type": "choice"}]}),
+    Chapter({"name": "后续章", "homework_id": "2",
+             "levels": [{"name": "L1", "answer": "A", "type": "choice"}]}),
+]
+_missing_events = []
+def _missing_process(browser, classroom, cfg, ch, rows, stats=None, preopened=None):
+    _missing_events.append(ch.name)
+    s = stats or {"done": 0, "skipped": 0, "failed": 0, "missing": 0}
+    s["done"] += 1
+    return s
+_missing_patches = {
+    "load_answers": lambda p, **k: _missing_chs,
+    "resolve_chapter_args": lambda chs, pats, strict=True: chs,
+    "ensure_browser": lambda cfg: FakeBrowser(),
+    "current_course": lambda browser, cfg: Course("测试课程", "TEST", "http://example", Path("unused.toml")),
+    "classroom_page": lambda browser, cfg, old=None, url=None: FakePage(),
+    "ensure_login": lambda browser, ws=None: None,
+    "scrape_status": lambda *a, **k: [{"name": "L1", "full": "10", "score": "0", "status": "未通过"}],
+    "process_chapter": _missing_process,
+}
+_missing_buf = io.StringIO()
+with_patches(
+    _missing_patches,
+    lambda: None)
+# 直接调用以便拿到返回值（catch_exit 只接 SystemExit，不接普通 return）
+_saved = {}
+for _name, _value in _missing_patches.items():
+    _saved[_name] = getattr(flows, _name)
+    setattr(flows, _name, _value)
+try:
+    with contextlib.redirect_stdout(_missing_buf):
+        _missing_code = flows._run_selected_course(
+            Args(), CFG, FakeBrowser(),
+            Course("测试课程", "TEST", "http://example", Path("unused.toml")))
+finally:
+    for _name, _value in _saved.items():
+        setattr(flows, _name, _value)
+_missing_out = _missing_buf.getvalue()
+check("缺答案章跳过但继续后续章",
+      _missing_code == 2 and _missing_events == ["后续章"]
+      and "缺答案章" in _missing_out and "后续章" in _missing_out,
+      f"code={_missing_code} events={_missing_events} out={_missing_out}")
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

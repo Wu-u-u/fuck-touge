@@ -101,7 +101,7 @@ def _build_app():
 
     class FuckTougeTui(App):
         TITLE = "Fuck 头歌 · 控制台"
-        SUB_TITLE = "答题脚本 v0.9.77"
+        SUB_TITLE = "答题脚本 v0.9.78"
         BINDINGS = [("q", "quit", "退出")]
 
         CSS = """
