@@ -58,7 +58,7 @@ def main() -> None:
     ap.add_argument("--slots", nargs="+", type=int, required=True)
     ap.add_argument("--course", required=True)
     ap.add_argument("--jobs", type=int, default=2)
-    ap.add_argument("--yes", action="store_true")
+    ap.add_argument("-y", "--yes", action="store_true")
     ap.add_argument("--ai", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
