@@ -138,6 +138,9 @@ let lastSpeedAttempt = 0;
 let speedWarned = false;
 let lastQualityAttempt = 0;
 let qualityWarned = false;
+let nextHumanPauseAt = 0;
+let humanPauseUntil = 0;
+let videoSeen = false;
 let watch: ZhsWatch = normalizeZhsWatch(null);
 let lastWatchAt = 0;
 let lastWatchSave = 0;
@@ -457,6 +460,8 @@ const applyQuality = async (): Promise<void> => {
   }
 };
 
+const humanPauseDelay = (): number => 42_000 + Math.round(Math.random() * 78_000);
+
 const goNext = async (): Promise<void> => {
   if (busy) return;
   const next = findNext(config.reviewCompleted);
@@ -476,6 +481,8 @@ const goNext = async (): Promise<void> => {
   lastNextLabel = label;
   try {
     writeStatus("next", next.completed ? "复习已完成课程" : "准备下一节");
+    // 每次切换前随机停顿 1.031–2.5s，避免机械连点。
+    await sleep(1031 + Math.round(Math.random() * 1469));
     const ok = await click(next.el, next.completed ? "复习已完成课程" : "下一节");
     if (ok) {
       pushLog("info", `${next.completed ? "复习" : "切换到"}：${label.slice(0, 80)}`);
@@ -549,6 +556,29 @@ const tick = async (): Promise<void> => {
     writeStatus("waiting", "等待视频加载");
     return;
   }
+  if (!videoSeen) {
+    videoSeen = true;
+    nextHumanPauseAt = Date.now() + humanPauseDelay();
+    pushLog("info", "已识别视频，开始播放监控");
+  }
+  const now = Date.now();
+  if (humanPauseUntil > 0) {
+    if (now < humanPauseUntil) {
+      lastWatchAt = 0;
+      writeStatus("paused", "模拟人工动作，暂停约 3 秒");
+      return;
+    }
+    humanPauseUntil = 0;
+    nextHumanPauseAt = now + humanPauseDelay();
+    void video.play().catch(() => {});
+  } else if (!video.paused && now >= nextHumanPauseAt) {
+    humanPauseUntil = now + 3000;
+    nextHumanPauseAt = now + humanPauseDelay();
+    lastWatchAt = 0;
+    try { video.pause(); } catch (e) {}
+    writeStatus("paused", "模拟人工动作，暂停约 3 秒");
+    return;
+  }
   await ensureSpeed(video);
   accumulateWatch(video);
   if (config.quality === "smooth" && !qualityApplied && !video.paused) {
@@ -578,15 +608,11 @@ const tick = async (): Promise<void> => {
 const start = (): void => {
   if (started) return;
   started = true;
-  writeStatus("waiting", "正在连接智慧树页面…");
-  void send({ type: "zhs:attach" }).then((res) => {
-    if (!res?.ok) {
-      pushLog("error", `真实点击未启用：${res?.error || "debugger 权限不可用"}`);
-      writeStatus("error", "真实点击未启用，请重新加载扩展");
-    } else {
-      pushLog("info", "真实点击已连接");
-    }
-  });
+  humanPauseUntil = 0;
+  videoSeen = false;
+  nextHumanPauseAt = Date.now() + humanPauseDelay();
+  writeStatus("waiting", "正在检测视频…");
+  pushLog("info", "自动化已启动（首次点击时建立真实输入连接）");
   if (!timer) timer = window.setInterval(() => { void tick(); }, 1000);
   void tick();
 };
@@ -599,6 +625,7 @@ const stop = (): void => {
   }
   saveWatch(true);
   lastWatchAt = 0;
+  humanPauseUntil = 0;
   writeStatus("idle", "已停止");
   void send({ type: "zhs:detach" });
 };

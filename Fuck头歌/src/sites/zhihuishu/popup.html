@@ -7,7 +7,7 @@
   :root {
     --bg: #11111b; --panel: #181825; --panel2: #1e1e2e;
     --border: #313244; --text: #cdd6f4; --dim: #a6adc8;
-    --accent: #89b4fa; --accent-fg: #11111b;
+    --accent: #4a7fe8; --accent-fg: #fff;
     --green: #a6e3a1; --yellow: #f9e2af; --red: #f38ba8; --gray: #7f849c;
   }
   * { box-sizing: border-box; }
@@ -35,6 +35,11 @@
   .hint { margin-top: 2px; color: var(--dim); font-size: 10.5px; }
   .sub-row { margin: -3px 0 0 10px; padding: 3px 0; }
   .sub-row .label { font-size: 11.5px; color: var(--dim); }
+  .option-row.is-disabled .label,
+  .option-row.is-disabled .hint,
+  .option-row.is-disabled .seg label { opacity: .42; }
+  .switch input:disabled + span { opacity: .4; cursor: not-allowed; }
+  .seg label:has(input:disabled) { opacity: .42; cursor: not-allowed; }
   .watch { display: flex; align-items: baseline; gap: 7px; margin-top: 9px; padding: 8px 10px;
     border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border)); border-radius: 9px;
     background: color-mix(in srgb, var(--accent) 6%, transparent); }
@@ -92,7 +97,7 @@
       <label class="switch"><input id="enabled" type="checkbox"><span></span></label>
     </div>
 
-    <div class="row">
+    <div class="row option-row">
       <div class="label">作答模式</div>
       <div class="seg">
         <label><input type="radio" name="mode" value="correct">正确作答</label>
@@ -101,22 +106,22 @@
     </div>
 
     <div class="divider"></div>
-    <div class="row">
+    <div class="row option-row">
       <div class="label">1.25× 倍速</div>
       <label class="switch"><input id="speed" type="checkbox"><span></span></label>
     </div>
-    <div class="row">
+    <div class="row option-row">
       <div class="label">自动下一集</div>
       <label class="switch"><input id="autoNext" type="checkbox"><span></span></label>
     </div>
-    <div class="row sub-row" id="reviewRow" hidden>
+    <div class="row sub-row option-row" id="reviewRow" hidden>
       <div>
         <div class="label">观看已完成课程</div>
         <div class="hint">全部看完后继续重播已完成章节，补足观看时长</div>
       </div>
       <label class="switch"><input id="reviewCompleted" type="checkbox"><span></span></label>
     </div>
-    <div class="row">
+    <div class="row option-row">
       <div class="label">流畅画质</div>
       <label class="switch"><input id="quality" type="checkbox"><span></span></label>
     </div>
@@ -134,7 +139,7 @@
     <div class="log-head"><span>运行日志</span><span id="logCount">0</span></div>
     <div class="log-list" id="logList"><div class="empty">暂无日志</div></div>
 
-    <p class="note">本项目 <b>MIT 完全开源</b>。`debugger` 权限仅用于在智慧树视频页生成浏览器认可的真实鼠标点击，避免被误判为异常脚本；不读取或上传账号、题库、页面内容，停止后立即 detach。<br><a href="https://github.com/Wu-u-u/fuck-touge" target="_blank" rel="noreferrer">查看源码</a></p>
+    <p class="note">本项目 <b>MIT 完全开源</b>。`debugger` 权限仅用于在智慧树视频页生成浏览器认可的真实鼠标点击，避免被误判为异常脚本；不读取或上传账号、题库、页面内容，停止后立即 detach。<br>Edge 顶部的“已开始调试此浏览器”是浏览器安全提示；真实点击时短暂出现，约 1.5 秒后自动 detach；关闭「启动自动化」会立即消失。<br><a href="https://github.com/Wu-u-u/fuck-touge" target="_blank" rel="noreferrer">查看源码</a></p>
   </div>
   <script src="zhihuishu-popup.js"></script>
 </body>

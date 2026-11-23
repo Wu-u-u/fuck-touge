@@ -4,6 +4,21 @@ import { isZhsUrl } from "../sites/zhihuishu/types";
 const ZHS_POPUP = "popup-zhihuishu.html";
 const EDU_POPUP = "popup.html";
 const attached = new Set<number>();
+const detachTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+const clearDetach = (tabId: number): void => {
+  const timer = detachTimers.get(tabId);
+  if (timer) clearTimeout(timer);
+  detachTimers.delete(tabId);
+};
+
+const scheduleDetach = (tabId: number): void => {
+  clearDetach(tabId);
+  detachTimers.set(tabId, setTimeout(() => {
+    detachTimers.delete(tabId);
+    void detach(tabId);
+  }, 1500));
+};
 
 const setPopup = (tabId: number, url: string | undefined): void => {
   const popup = isZhsUrl(url) ? ZHS_POPUP : EDU_POPUP;
@@ -26,6 +41,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.url || changeInfo.status === "complete") setPopup(tabId, tab.url);
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
+  clearDetach(tabId);
   attached.delete(tabId);
   try {
     void chrome.debugger.detach({ tabId });
@@ -51,6 +67,7 @@ const attach = async (tabId: number): Promise<void> => {
 };
 
 const detach = async (tabId: number): Promise<void> => {
+  clearDetach(tabId);
   attached.delete(tabId);
   try {
     await chrome.debugger.detach({ tabId });
@@ -58,7 +75,10 @@ const detach = async (tabId: number): Promise<void> => {
 };
 
 chrome.debugger.onDetach.addListener((source) => {
-  if (source.tabId) attached.delete(source.tabId);
+  if (source.tabId) {
+    clearDetach(source.tabId);
+    attached.delete(source.tabId);
+  }
 });
 
 const click = async (tabId: number, x: number, y: number): Promise<void> => {
@@ -74,6 +94,7 @@ const click = async (tabId: number, x: number, y: number): Promise<void> => {
   await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
     type: "mouseReleased", x: px, y: py, button: "left", clickCount: 1,
   });
+  scheduleDetach(tabId);
 };
 
 chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
@@ -105,7 +126,7 @@ chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
       .then(() => chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
         type: "mouseMoved", x: Math.round(x), y: Math.round(y), button: "none", clickCount: 0,
       }))
-      .then(() => sendResponse({ ok: true }))
+      .then(() => { scheduleDetach(tabId); sendResponse({ ok: true }); })
       .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
     return true;
   }

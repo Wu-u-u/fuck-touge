@@ -54,6 +54,16 @@ const logCount = $("logCount");
 const logList = $("logList");
 const watchTime = $("watchTime");
 
+const applyDisabled = (): void => {
+  const locked = !config.enabled;
+  const modeInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="mode"]')];
+  for (const el of [speed, autoNext, reviewCompleted, quality, ...modeInputs]) {
+    if (el) el.disabled = locked;
+  }
+  document.querySelectorAll(".option-row").forEach((row) => row.classList.toggle("is-disabled", locked));
+  if (reviewRow) reviewRow.hidden = !config.autoNext;
+};
+
 const save = (patch: Partial<ZhsConfig>): void => {
   config = normalizeZhsConfig({ ...config, ...patch });
   try {
@@ -67,6 +77,7 @@ const save = (patch: Partial<ZhsConfig>): void => {
   if (quality) quality.checked = config.quality === "smooth";
   const mode = document.querySelector<HTMLInputElement>(`input[name="mode"][value="${config.mode}"]`);
   if (mode) mode.checked = true;
+  applyDisabled();
 };
 
 const renderStatus = (): void => {
@@ -122,6 +133,7 @@ const render = (): void => {
   if (quality) quality.checked = config.quality === "smooth";
   const mode = document.querySelector<HTMLInputElement>(`input[name="mode"][value="${config.mode}"]`);
   if (mode) mode.checked = true;
+  applyDisabled();
   renderStatus();
   if (watchTime) watchTime.textContent = formatZhsWatch(watch.seconds);
   renderLogs();
