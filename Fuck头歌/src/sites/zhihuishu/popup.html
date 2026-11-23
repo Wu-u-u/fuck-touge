@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Fuck 智慧树</title>
+<style>
+  :root {
+    --bg: #11111b; --panel: #181825; --panel2: #1e1e2e;
+    --border: #313244; --text: #cdd6f4; --dim: #a6adc8;
+    --accent: #89b4fa; --accent-fg: #11111b;
+    --green: #a6e3a1; --yellow: #f9e2af; --red: #f38ba8; --gray: #7f849c;
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: dark; }
+  body {
+    margin: 0; width: 340px; padding: 9px;
+    font: 13px/1.55 system-ui, "Noto Sans CJK SC", sans-serif;
+    color: var(--text);
+    background: radial-gradient(420px 260px at 12% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%), var(--bg);
+  }
+  .box { padding: 15px 16px 13px; border: 1px solid var(--border); border-radius: 16px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 90%, transparent), color-mix(in srgb, var(--panel2) 78%, transparent));
+    box-shadow: 0 16px 40px rgba(0,0,0,.3); }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  h1 { margin: 0; font-size: 15px; letter-spacing: .2px; }
+  .pill { padding: 3px 8px; border-radius: 999px; font-size: 10px; color: var(--dim);
+    background: color-mix(in srgb, var(--gray) 12%, transparent); }
+  .pill[data-state="playing"] { color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); }
+  .pill[data-state="quiz"], .pill[data-state="next"], .pill[data-state="waiting"] { color: var(--yellow); }
+  .pill[data-state="error"], .pill[data-state="blocked"] { color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); }
+  .sub { margin: 3px 0 12px; color: var(--dim); font-size: 11px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; }
+  .label { font-size: 12.5px; }
+  .hint { margin-top: 2px; color: var(--dim); font-size: 10.5px; }
+  .switch { position: relative; width: 38px; height: 22px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; border-radius: 99px; cursor: pointer;
+    background: color-mix(in srgb, var(--dim) 30%, var(--panel2)); transition: .15s; }
+  .switch span::before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px;
+    border-radius: 50%; background: #fff; transition: .15s; }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::before { transform: translateX(16px); }
+  .seg { display: flex; gap: 4px; }
+  .seg label { padding: 4px 7px; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--dim); font-size: 10.5px; cursor: pointer; }
+  .seg input { display: none; }
+  .seg label:has(input:checked) { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .divider { margin: 9px 0 2px; padding-top: 9px; border-top: 1px solid color-mix(in srgb, var(--border) 75%, transparent); }
+  .status { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px;
+    background: color-mix(in srgb, var(--panel2) 78%, transparent); }
+  .status-title { font-size: 12.5px; font-weight: 600; }
+  .status-msg { margin-top: 2px; color: var(--dim); font-size: 10.5px; overflow-wrap: anywhere; }
+  .log-head { display: flex; justify-content: space-between; margin-top: 10px; color: var(--dim); font-size: 10.5px; }
+  .log-list { max-height: 142px; overflow-y: auto; scrollbar-gutter: stable;
+    margin-top: 4px; padding: 5px 7px; border: 1px solid var(--border); border-radius: 8px;
+    background: color-mix(in srgb, var(--bg) 82%, transparent); font-size: 11.5px; line-height: 1.55; }
+  .log-item { display: flex; gap: 5px; padding: 2px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 42%, transparent); }
+  .log-item:last-child { border-bottom: 0; }
+  .log-time { flex: none; color: var(--dim); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+  .log-level { flex: none; color: var(--dim); font-size: 9.5px; }
+  .log-level.warn { color: var(--yellow); }
+  .log-level.error { color: var(--red); }
+  .log-text { min-width: 0; overflow-wrap: anywhere; }
+  .empty { padding: 8px 0; color: var(--dim); text-align: center; font-size: 11px; }
+  .note { margin: 10px 0 0; color: var(--dim); font-size: 10px; line-height: 1.55; }
+  .note b { color: var(--accent); font-weight: 600; }
+  a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <div class="head">
+      <h1>Fuck 智慧树</h1>
+      <span class="pill" id="statePill" data-state="idle">未启动</span>
+    </div>
+    <div class="sub">Edge · 视频页辅助 · 真实点击</div>
+
+    <div class="row">
+      <div>
+        <div class="label">启动自动化</div>
+        <div class="hint">只在智慧树视频页生效</div>
+      </div>
+      <label class="switch"><input id="enabled" type="checkbox"><span></span></label>
+    </div>
+
+    <div class="row">
+      <div class="label">作答模式</div>
+      <div class="seg">
+        <label><input type="radio" name="mode" value="correct">正确作答</label>
+        <label><input type="radio" name="mode" value="quick">快速作答</label>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="row">
+      <div class="label">1.25× 倍速</div>
+      <label class="switch"><input id="speed" type="checkbox"><span></span></label>
+    </div>
+    <div class="row">
+      <div class="label">自动下一集</div>
+      <label class="switch"><input id="autoNext" type="checkbox"><span></span></label>
+    </div>
+    <div class="row">
+      <div class="label">流畅画质</div>
+      <label class="switch"><input id="quality" type="checkbox"><span></span></label>
+    </div>
+
+    <div class="status">
+      <div class="status-title" id="statusTitle">未启动</div>
+      <div class="status-msg" id="statusMsg">打开智慧树视频页后启动</div>
+    </div>
+
+    <div class="log-head"><span>运行日志</span><span id="logCount">0</span></div>
+    <div class="log-list" id="logList"><div class="empty">暂无日志</div></div>
+
+    <p class="note">本项目 <b>MIT 完全开源</b>。`debugger` 权限仅用于在智慧树视频页生成浏览器认可的真实鼠标点击，避免被误判为异常脚本；不读取或上传账号、题库、页面内容，停止后立即 detach。<br><a href="https://github.com/Wu-u-u/fuck-touge" target="_blank" rel="noreferrer">查看源码</a></p>
+  </div>
+  <script src="zhihuishu-popup.js"></script>
+</body>
+</html>

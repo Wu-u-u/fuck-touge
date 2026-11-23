@@ -39,6 +39,9 @@ await build({
     bridge: join(root, "src/content/bridge.ts"),
     popup: join(root, "src/popup/popup.ts"),
     options: join(root, "src/options/options.ts"),
+    background: join(root, "src/background/index.ts"),
+    zhihuishu: join(root, "src/sites/zhihuishu/content.ts"),
+    "zhihuishu-popup": join(root, "src/sites/zhihuishu/popup.ts"),
   },
   outdir: dist,
   bundle: true,
@@ -58,6 +61,7 @@ cpSync(join(root, "src/manifest.json"), join(dist, "manifest.json"));
 cpSync(join(root, "src/popup/popup.html"), join(dist, "popup.html"));
 cpSync(join(root, "src/options/options.html"), join(dist, "options.html"));
 cpSync(join(root, "src/options/options.css"), join(dist, "options.css"));
+cpSync(join(root, "src/sites/zhihuishu/popup.html"), join(dist, "popup-zhihuishu.html"));
 for (const name of ["icon16.png", "icon48.png", "icon128.png"]) {
   cpSync(join(root, "src/assets/icons", name), join(dist, name));
 }
