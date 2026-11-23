@@ -275,6 +275,10 @@ def main() -> None:
         finally:
             _release_locks(locks)
 
+    if summary:
+        _atomic_write(RUNS_DIR / run_id / "summary.json", {
+            "run_id": run_id, "results": summary,
+        })
     print(f"\nrun_id={run_id}", flush=True)
     for x in summary:
         print(f"[槽 {x['slot']}] exit={x['exit']} port={x['port']}", flush=True)
