@@ -140,6 +140,7 @@ let lastQualityAttempt = 0;
 let qualityWarned = false;
 let nextHumanPauseAt = 0;
 let humanPauseUntil = 0;
+let nextMouseMoveAt = 0;
 let videoSeen = false;
 let watch: ZhsWatch = normalizeZhsWatch(null);
 let lastWatchAt = 0;
@@ -460,6 +461,20 @@ const applyQuality = async (): Promise<void> => {
   }
 };
 
+const mouseMoveDelay = (): number => 25_000 + Math.round(Math.random() * 45_000);
+
+const nudgeMouse = (video: HTMLVideoElement): void => {
+  try {
+    const rect = video.getBoundingClientRect();
+    const x = rect.left + rect.width * (0.2 + Math.random() * 0.6);
+    const y = rect.top + rect.height * (0.2 + Math.random() * 0.6);
+    const target = video.ownerDocument || document;
+    target.dispatchEvent(new MouseEvent("mousemove", {
+      bubbles: true, cancelable: true, view: window, clientX: x, clientY: y,
+    }));
+  } catch (e) {}
+};
+
 const humanPauseDelay = (): number => 42_000 + Math.round(Math.random() * 78_000);
 
 const goNext = async (): Promise<void> => {
@@ -492,6 +507,7 @@ const goNext = async (): Promise<void> => {
       qualityWarned = false;
       lastSpeedAttempt = 0;
       lastQualityAttempt = 0;
+      nextMouseMoveAt = Date.now() + mouseMoveDelay();
       await sleep(1200);
       const video = findVideo();
       if (video) {
@@ -559,6 +575,7 @@ const tick = async (): Promise<void> => {
   if (!videoSeen) {
     videoSeen = true;
     nextHumanPauseAt = Date.now() + humanPauseDelay();
+    nextMouseMoveAt = Date.now() + mouseMoveDelay();
     pushLog("info", "已识别视频，开始播放监控");
   }
   const now = Date.now();
@@ -578,6 +595,10 @@ const tick = async (): Promise<void> => {
     try { video.pause(); } catch (e) {}
     writeStatus("paused", "模拟人工动作，暂停约 3 秒");
     return;
+  }
+  if (!video.paused && now >= nextMouseMoveAt) {
+    nudgeMouse(video);
+    nextMouseMoveAt = now + mouseMoveDelay();
   }
   await ensureSpeed(video);
   accumulateWatch(video);
@@ -611,6 +632,7 @@ const start = (): void => {
   humanPauseUntil = 0;
   videoSeen = false;
   nextHumanPauseAt = Date.now() + humanPauseDelay();
+  nextMouseMoveAt = Date.now() + mouseMoveDelay();
   writeStatus("waiting", "正在检测视频…");
   pushLog("info", "自动化已启动（首次点击时建立真实输入连接）");
   if (!timer) timer = window.setInterval(() => { void tick(); }, 1000);
@@ -626,6 +648,7 @@ const stop = (): void => {
   saveWatch(true);
   lastWatchAt = 0;
   humanPauseUntil = 0;
+  nextMouseMoveAt = 0;
   writeStatus("idle", "已停止");
   void send({ type: "zhs:detach" });
 };
