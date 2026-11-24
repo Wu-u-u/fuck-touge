@@ -168,6 +168,7 @@ let nextMouseMoveAt = 0;
 let videoSeen = false;
 let watch: ZhsWatch = normalizeZhsWatch(null);
 let lastWatchAt = 0;
+let lastVideoTime = 0;
 let lastWatchSave = 0;
 
 const chapterText = (): string => {
@@ -546,6 +547,7 @@ const goNext = async (): Promise<void> => {
       lastSpeedAttempt = 0;
       lastQualityAttempt = 0;
       nextMouseMoveAt = Date.now() + mouseMoveDelay();
+      lastVideoTime = 0;
       await sleep(1200);
       const video = findVideo();
       if (video) {
@@ -569,7 +571,14 @@ const saveWatch = (force = false): void => {
 
 const accumulateWatch = (video: HTMLVideoElement | null): void => {
   const now = Date.now();
-  const active = !!video && !video.paused && document.visibilityState === "visible";
+  const current = video?.currentTime || 0;
+  const advanced = !!video && current > lastVideoTime + 0.01 && current - lastVideoTime < 5;
+  lastVideoTime = current;
+  const active = !!video
+    && !video.paused
+    && video.readyState >= 2
+    && document.visibilityState === "visible"
+    && advanced;
   if (!active) {
     lastWatchAt = 0;
     return;
@@ -687,6 +696,7 @@ const stop = (): void => {
   lastWatchAt = 0;
   humanPauseUntil = 0;
   nextMouseMoveAt = 0;
+  lastVideoTime = 0;
   writeStatus("idle", "已停止");
   void send({ type: "zhs:detach" });
 };
