@@ -48,14 +48,30 @@ const findVideo = (): HTMLVideoElement | null => {
   return null;
 };
 
+const containsOptions = (el: HTMLElement): boolean =>
+  !!el.querySelector("input[type='radio'], input[type='checkbox'], .topic-item, .option-item, .choice-item, .answer-option");
+
 const findQuiz = (): HTMLElement | null => {
   const candidates = document.querySelectorAll<HTMLElement>(
-    "#playTopic-dialog, [class*='topic-dialog'], .el-dialog__wrapper .el-dialog",
+    "#playTopic-dialog, [class*='topic-dialog'], .el-dialog__wrapper .el-dialog, [role='dialog']",
   );
   for (const el of candidates) {
     if (!visible(el)) continue;
     const body = textOf(el);
-    if (body.length > 2 && /题|正确答案|选择|判断/.test(body)) return el;
+    if (body.length > 2 && /题|正确答案|选择|判断/.test(body) && containsOptions(el)) return el;
+  }
+  // AI 助教小智弹题经常没有 .el-dialog，只靠标题和单选/多选控件。
+  const title = [...document.querySelectorAll<HTMLElement>("div,span,h1,h2,h3")]
+    .find((el) => visible(el) && /AI助教小智给你出题|AI助教.*出题/.test(textOf(el)));
+  if (!title) return null;
+  let root: HTMLElement | null = title;
+  for (let depth = 0; depth < 7 && root && root !== document.body; depth++) {
+    const rect = root.getBoundingClientRect();
+    if (visible(root) && rect.width < 1600 && rect.height < 1200
+      && containsOptions(root) && /题|选择|判断|正确答案/.test(textOf(root))) {
+      return root;
+    }
+    root = root.parentElement;
   }
   return null;
 };
@@ -68,6 +84,10 @@ const optionsOf = (dialog: HTMLElement): HTMLElement[] => {
     const found = [...dialog.querySelectorAll<HTMLElement>(selector)].filter(visible);
     if (found.length) return found;
   }
+  const inputs = [...dialog.querySelectorAll<HTMLInputElement>("input[type='radio'], input[type='checkbox']")]
+    .filter((input) => visible(input) || visible((input as Element).closest("label")))
+    .map((input) => ((input as Element).closest("label") || input.parentElement || input) as HTMLElement);
+  if (inputs.length) return inputs;
   const fallback = [...dialog.querySelectorAll<HTMLElement>("ul > li")]
     .filter((el) => visible(el) && textOf(el) && !/^\\d+$/.test(textOf(el)));
   return fallback;
@@ -92,7 +112,11 @@ const findSubmit = (dialog: HTMLElement): HTMLElement | null => {
 
 const findClose = (dialog: HTMLElement): HTMLElement | null =>
   [...dialog.querySelectorAll<HTMLElement>(".close-btn, .topic-close, .el-dialog__close, [aria-label*='关闭']")]
-    .find(visible) || null;
+    .find(visible)
+  || [...dialog.querySelectorAll<HTMLElement>("button, .btn, .topic-btn, [role='button']")]
+    .filter(visible)
+    .find((el) => /^(关闭|知道了|继续学习|确定)$/.test(textOf(el)))
+  || null;
 
 const topPoint = (el: Element): { x: number; y: number } => {
   el.scrollIntoView({ block: "center", inline: "center" });
@@ -238,6 +262,9 @@ const handleQuiz = async (dialog: HTMLElement): Promise<void> => {
   const body = textOf(dialog);
   const options = optionsOf(dialog);
   if (!options.length) return;
+  const scope = dialog.closest(".el-dialog__wrapper, [class*='dialog'], [class*='modal']") as HTMLElement | null
+    || dialog;
+  const scopeText = () => textOf(scope);
   const title = textOf(dialog.querySelector(".topic-title, .topic-content, .question-topic"))
     || body.replace(/正确答案[\s\S]*$/, "").slice(0, 120);
   const page = textOf(dialog.querySelector(".el-pager .number.active"));
@@ -246,6 +273,7 @@ const handleQuiz = async (dialog: HTMLElement): Promise<void> => {
     quizKey = key;
     quizStage = 0;
     quizAttempts = 0;
+    pushLog("info", `识别到弹题：${title.slice(0, 40)}（${options.length} 个选项）`);
   }
   if (quizStage >= 3) return;
   if (quizAttempts >= 4) {
@@ -256,7 +284,7 @@ const handleQuiz = async (dialog: HTMLElement): Promise<void> => {
   quizAttempts++;
   try {
     writeStatus("quiz", config.mode === "correct" ? "处理弹题（正确作答）" : "处理弹题（快速作答）");
-    const answer = parseCorrectAnswer(body);
+    const answer = parseCorrectAnswer(scopeText());
     if (config.mode === "quick") {
       if (await click(options[0], "快速选项")) {
         await sleep(250);
@@ -274,27 +302,37 @@ const handleQuiz = async (dialog: HTMLElement): Promise<void> => {
     }
     if (quizStage === 0) {
       if (await click(options[0], "触发正确答案")) {
+        pushLog("info", "已选择随机选项，等待平台回显正确答案");
         quizStage = 1;
         quizAt = Date.now();
       }
       return;
     }
     if (quizStage === 1 && Date.now() - quizAt >= 700) {
+      const late = parseCorrectAnswer(scopeText());
+      if (late.length && (await applyAnswer(dialog, late, options))) {
+        await finishQuiz(dialog, `已按正确答案 ${late.join("")} 修正`);
+        return;
+      }
       const submit = findSubmit(dialog);
       if (submit && (await click(submit, "提交以显示答案"))) {
         quizAt = Date.now();
         quizStage = 2;
-      } else {
-        await finishQuiz(dialog, "没有正确答案回显，已关闭");
+        return;
       }
+      // AI 小智弹题没有提交按钮，选择后可能延迟回显答案；保留弹题继续等，不要直接关掉。
+      quizAt = Date.now();
+      quizStage = 2;
       return;
     }
-    if (quizStage === 2 && Date.now() - quizAt >= 700) {
-      const late = parseCorrectAnswer(textOf(dialog));
+    if (quizStage === 2 && Date.now() - quizAt >= 1200) {
+      const late = parseCorrectAnswer(scopeText());
       if (late.length && (await applyAnswer(dialog, late, options))) {
         await finishQuiz(dialog, `已按正确答案 ${late.join("")} 修正`);
       } else {
-        await finishQuiz(dialog, "未读到正确答案，已快速关闭");
+        writeStatus("quiz", "未读到正确答案，保留弹题等待人工处理");
+        pushLog("warn", "弹题没有回显正确答案，未自动关闭");
+        quizStage = 3;
       }
     }
   } finally {
