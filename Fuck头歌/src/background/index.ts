@@ -81,17 +81,31 @@ chrome.debugger.onDetach.addListener((source) => {
   }
 });
 
+/** 页面刷新/扩展重载后旧的 debugger 会话会失效；清掉 attached 后重连一次。 */
+const sendCommand = async (tabId: number, method: string, params: Record<string, unknown>): Promise<void> => {
+  try {
+    await attach(tabId);
+    await chrome.debugger.sendCommand({ tabId }, method, params);
+  } catch (error) {
+    const message = String((error as any)?.message || error);
+    if (!/Detached|not attached|Session closed|No tab with given id/i.test(message)) throw error;
+    attached.delete(tabId);
+    clearDetach(tabId);
+    await attach(tabId);
+    await chrome.debugger.sendCommand({ tabId }, method, params);
+  }
+};
+
 const click = async (tabId: number, x: number, y: number): Promise<void> => {
-  await attach(tabId);
   const px = Math.round(x);
   const py = Math.round(y);
-  await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
+  await sendCommand(tabId, "Input.dispatchMouseEvent", {
     type: "mouseMoved", x: px, y: py, button: "none", clickCount: 0,
   });
-  await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
+  await sendCommand(tabId, "Input.dispatchMouseEvent", {
     type: "mousePressed", x: px, y: py, button: "left", clickCount: 1,
   });
-  await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
+  await sendCommand(tabId, "Input.dispatchMouseEvent", {
     type: "mouseReleased", x: px, y: py, button: "left", clickCount: 1,
   });
   scheduleDetach(tabId);
@@ -122,11 +136,24 @@ chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
       sendResponse({ ok: false, error: "移动坐标无效" });
       return false;
     }
-    void attach(tabId)
-      .then(() => chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
-        type: "mouseMoved", x: Math.round(x), y: Math.round(y), button: "none", clickCount: 0,
-      }))
+    void sendCommand(tabId, "Input.dispatchMouseEvent", {
+      type: "mouseMoved", x: Math.round(x), y: Math.round(y), button: "none", clickCount: 0,
+    })
       .then(() => { scheduleDetach(tabId); sendResponse({ ok: true }); })
+      .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+    return true;
+  }
+  if (message?.type === "zhs:key" && message.key === "Escape") {
+    void (async () => {
+      const params = {
+        key: "Escape", code: "Escape",
+        windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27,
+      };
+      await sendCommand(tabId, "Input.dispatchKeyEvent", { type: "keyDown", ...params });
+      await sendCommand(tabId, "Input.dispatchKeyEvent", { type: "keyUp", ...params });
+      scheduleDetach(tabId);
+    })()
+      .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
     return true;
   }

@@ -22,18 +22,9 @@ import {
   type ZhsStatus,
   type ZhsWatch,
 } from "./types";
+import { findClose, findQuiz, findSubmit, normalizeQuizTitle, optionsOf, textOf, visible } from "./quiz-dom";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
-const visible = (el: Element | null): el is HTMLElement => {
-  if (!el) return false;
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 2 || rect.height < 2) return false;
-  const style = getComputedStyle(el);
-  return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || "1") > 0;
-};
-
-const textOf = (el: Element | null): string => (el?.textContent || "").replace(/\s+/g, " ").trim();
 
 const findVideo = (): HTMLVideoElement | null => {
   const direct = document.querySelector("video");
@@ -48,51 +39,6 @@ const findVideo = (): HTMLVideoElement | null => {
   return null;
 };
 
-const containsOptions = (el: HTMLElement): boolean =>
-  !!el.querySelector("input[type='radio'], input[type='checkbox'], .topic-item, .option-item, .choice-item, .answer-option");
-
-const findQuiz = (): HTMLElement | null => {
-  const candidates = document.querySelectorAll<HTMLElement>(
-    "#playTopic-dialog, [class*='topic-dialog'], .el-dialog__wrapper .el-dialog, [role='dialog']",
-  );
-  for (const el of candidates) {
-    if (!visible(el)) continue;
-    const body = textOf(el);
-    if (body.length > 2 && /题|正确答案|选择|判断/.test(body) && containsOptions(el)) return el;
-  }
-  // AI 助教小智弹题经常没有 .el-dialog，只靠标题和单选/多选控件。
-  const title = [...document.querySelectorAll<HTMLElement>("div,span,h1,h2,h3")]
-    .find((el) => visible(el) && /AI助教小智给你出题|AI助教.*出题/.test(textOf(el)));
-  if (!title) return null;
-  let root: HTMLElement | null = title;
-  for (let depth = 0; depth < 7 && root && root !== document.body; depth++) {
-    const rect = root.getBoundingClientRect();
-    if (visible(root) && rect.width < 1600 && rect.height < 1200
-      && containsOptions(root) && /题|选择|判断|正确答案/.test(textOf(root))) {
-      return root;
-    }
-    root = root.parentElement;
-  }
-  return null;
-};
-
-const optionsOf = (dialog: HTMLElement): HTMLElement[] => {
-  const selectors = [
-    ".topic-item", ".option-item", ".choice-item", ".answer-option", ".topic .radio ul > li",
-  ];
-  for (const selector of selectors) {
-    const found = [...dialog.querySelectorAll<HTMLElement>(selector)].filter(visible);
-    if (found.length) return found;
-  }
-  const inputs = [...dialog.querySelectorAll<HTMLInputElement>("input[type='radio'], input[type='checkbox']")]
-    .filter((input) => visible(input) || visible((input as Element).closest("label")))
-    .map((input) => ((input as Element).closest("label") || input.parentElement || input) as HTMLElement);
-  if (inputs.length) return inputs;
-  const fallback = [...dialog.querySelectorAll<HTMLElement>("ul > li")]
-    .filter((el) => visible(el) && textOf(el) && !/^\\d+$/.test(textOf(el)));
-  return fallback;
-};
-
 const optionTexts = (options: HTMLElement[]): string[] =>
   options.map((option) => textOf(option).replace(/^[A-Ha-h][.、．:：]\s*/, ""));
 
@@ -101,22 +47,8 @@ const selected = (option: HTMLElement): boolean => {
     const input = option.querySelector("input") as HTMLInputElement | null;
     if (input) return input.checked;
   }
-  return /(^|\\s)(active|selected|checked|is-checked|topic-item-active)(\\s|$)/.test(option.className);
+  return /(^|\s)(active|selected|checked|is-checked|topic-item-active)(\s|$)/.test(option.className);
 };
-
-const findSubmit = (dialog: HTMLElement): HTMLElement | null => {
-  const buttons = [...dialog.querySelectorAll<HTMLElement>("button, .btn, .topic-btn, .confirm, [role='button']")]
-    .filter(visible);
-  return buttons.find((button) => /提交|确定|确认|回答|知道了/.test(textOf(button))) || null;
-};
-
-const findClose = (dialog: HTMLElement): HTMLElement | null =>
-  [...dialog.querySelectorAll<HTMLElement>(".close-btn, .topic-close, .el-dialog__close, [aria-label*='关闭']")]
-    .find(visible)
-  || [...dialog.querySelectorAll<HTMLElement>("button, .btn, .topic-btn, [role='button']")]
-    .filter(visible)
-    .find((el) => /^(关闭|知道了|继续学习|确定)$/.test(textOf(el)))
-  || null;
 
 const topPoint = (el: Element): { x: number; y: number } => {
   el.scrollIntoView({ block: "center", inline: "center" });
@@ -153,6 +85,7 @@ let quizKey = "";
 let quizStage = 0;
 let quizAt = 0;
 let quizAttempts = 0;
+let closeRetries = 0;
 let lastNextAt = 0;
 let lastNextLabel = "";
 let lastChapter = "";
@@ -199,12 +132,19 @@ const pushLog = (level: string, text: string): void => {
   } catch (e) {}
 };
 
-const send = (message: unknown): Promise<any> => {
-  try {
-    return chrome.runtime.sendMessage(message).catch(() => null) as Promise<any>;
-  } catch (e) {
-    return Promise.resolve(null);
-  }
+const send = (message: unknown, timeout = 4000): Promise<any> => {
+  const request = (() => {
+    try {
+      return (chrome.runtime.sendMessage(message) as Promise<any>).catch(() => null);
+    } catch (e) {
+      return Promise.resolve(null);
+    }
+  })();
+  // debugger attach/detach 偶尔会卡住；不能让 click 永久挂起 busy。
+  return Promise.race([
+    request,
+    new Promise((resolve) => setTimeout(() => resolve(null), timeout)),
+  ]);
 };
 
 const click = async (el: HTMLElement, label: string): Promise<boolean> => {
@@ -241,19 +181,48 @@ const applyAnswer = async (dialog: HTMLElement, answer: string[], options: HTMLE
   return true;
 };
 
+/** 关闭弹题：从题目根节点向上找按钮，点击后用 Esc 兜底；AI 小智只有底部「关闭」。 */
+const closeQuiz = async (dialog: HTMLElement, attempts: number): Promise<boolean> => {
+  for (let i = 0; i < attempts; i++) {
+    const still = findQuiz();
+    if (!still) return true;
+    const close = findClose(still);
+    if (!close) {
+      if (i === 0) pushLog("warn", "未找到弹题关闭按钮");
+      break;
+    }
+    if (!(await click(close, "关闭弹题"))) break;
+    await sleep(360);
+    if (!findQuiz()) return true;
+  }
+  if (findQuiz()) {
+    const pressed = await send({ type: "zhs:key", key: "Escape" });
+    if (pressed?.ok) {
+      await sleep(320);
+      if (!findQuiz()) {
+        pushLog("info", "已用 Esc 关闭弹题");
+        return true;
+      }
+    }
+  }
+  return !findQuiz();
+};
+
 const finishQuiz = async (dialog: HTMLElement, note: string): Promise<void> => {
   const submit = findSubmit(dialog);
   if (submit && (await click(submit, "提交答案"))) {
     await sleep(350);
   }
-  const still = findQuiz();
-  if (still) {
-    const close = findClose(still);
-    if (close) await click(close, "关闭弹题");
+  const closed = await closeQuiz(dialog, 2);
+  if (closed) {
+    pushLog("info", note);
+  } else {
+    pushLog("warn", `${note}，但弹题仍未关闭，继续重试`);
+    writeStatus("quiz", "已作答，正在重试关闭弹题");
   }
-  pushLog("info", note);
   quizStage = 3;
   quizAt = Date.now();
+  closeRetries = 0;
   const video = findVideo();
   if (video) void video.play().catch(() => {});
 };
@@ -266,17 +235,34 @@ const handleQuiz = async (dialog: HTMLElement): Promise<void> => {
   const scope = dialog.closest(".el-dialog__wrapper, [class*='dialog'], [class*='modal']") as HTMLElement | null
     || dialog;
   const scopeText = () => textOf(scope);
-  const title = textOf(dialog.querySelector(".topic-title, .topic-content, .question-topic"))
-    || body.replace(/正确答案[\s\S]*$/, "").slice(0, 120);
+  const title = normalizeQuizTitle(
+    textOf(dialog.querySelector(".topic-title, .topic-content, .question-topic")) || body,
+  );
   const page = textOf(dialog.querySelector(".el-pager .number.active"));
   const key = `${page}|${title}|${optionTexts(options).join("|")}`;
   if (key !== quizKey) {
     quizKey = key;
     quizStage = 0;
     quizAttempts = 0;
+    closeRetries = 0;
     pushLog("info", `识别到弹题：${title.slice(0, 40)}（${options.length} 个选项）`);
   }
-  if (quizStage >= 3) return;
+  if (quizStage >= 3) {
+    if (quizStage > 3 || Date.now() - quizAt < 900) return;
+    if (closeRetries >= 4) return;
+    closeRetries++;
+    quizAt = Date.now();
+    if (await closeQuiz(dialog, 1)) {
+      pushLog("info", "弹题重试关闭成功");
+      quizStage = 4;
+      const video = findVideo();
+      if (video) void video.play().catch(() => {});
+    } else if (closeRetries >= 4) {
+      pushLog("error", "弹题多次关闭失败，请手动关闭");
+      writeStatus("quiz", "弹题多次关闭失败，等待人工处理");
+    }
+    return;
+  }
   if (quizAttempts >= 4) {
     await finishQuiz(dialog, "弹题超过重试次数，已关闭");
     return;
