@@ -23,6 +23,7 @@ import {
   type ZhsWatch,
 } from "./types";
 import { findClose, findQuiz, findSubmit, normalizeQuizTitle, optionsOf, textOf, visible } from "./quiz-dom";
+import { isVideoAtEnd, shouldAdvanceOnComplete, shouldRestartReview } from "./review";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -86,6 +87,7 @@ let quizStage = 0;
 let quizAt = 0;
 let quizAttempts = 0;
 let closeRetries = 0;
+let reviewLessonKey = "";
 let lastNextAt = 0;
 let lastNextLabel = "";
 let lastChapter = "";
@@ -107,6 +109,14 @@ let lastWatchSave = 0;
 const chapterText = (): string => {
   const current = document.querySelector(".current_play, [class*='current_play']");
   return textOf(current).slice(0, 120);
+};
+
+const lessonKey = (video: HTMLVideoElement): string => {
+  const chapter = chapterText()
+    .replace(/已完成|未完成|已学完|学习中|播放中/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return chapter || video.currentSrc || video.src || "";
 };
 
 const writeStatus = (state: ZhsState, message: string): void => {
@@ -638,7 +648,28 @@ const tick = async (): Promise<void> => {
   if (config.quality === "smooth" && !qualityApplied && !video.paused) {
     void applyQuality();
   }
-  if (completed(video)) {
+  const lesson = lessonKey(video);
+  const platformCompleted = completed(video);
+  if (shouldRestartReview({
+    reviewCompleted: config.reviewCompleted,
+    autoNext: config.autoNext,
+    platformCompleted,
+    lessonKey: lesson,
+    restartedKey: reviewLessonKey,
+  })) {
+    reviewLessonKey = lesson;
+    lastWatchAt = 0;
+    lastVideoTime = 0;
+    try { video.currentTime = 0; } catch (e) {}
+    void video.play().catch(() => {});
+    writeStatus("playing", "复习已完成课程 · 从头播放");
+    pushLog("info", "已完成课程从头播放");
+    return;
+  }
+  if (!platformCompleted && lesson && lesson !== reviewLessonKey) reviewLessonKey = lesson;
+  if (platformCompleted && shouldAdvanceOnComplete(
+    config.reviewCompleted, lesson, reviewLessonKey, isVideoAtEnd(video.currentTime, video.duration, video.ended),
+  )) {
     if (config.autoNext) {
       await goNext();
     } else {
@@ -713,6 +744,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
     qualityApplied = false;
     qualityWarned = false;
     lastQualityAttempt = 0;
+  }
+  if (next.reviewCompleted !== config.reviewCompleted || next.autoNext !== config.autoNext) {
+    reviewLessonKey = "";
   }
   config = next;
   if (config.enabled) start();

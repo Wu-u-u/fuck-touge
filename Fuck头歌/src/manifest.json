@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Fuck 头歌",
-  "version": "2.8.3",
+  "version": "2.8.4",
   "description": "头歌/智慧树学习辅助（MIT 开源）。头歌：粘贴/复制、自动下一关、主题与壁纸；智慧树：视频 1.25x、自动连播、课中弹题（需 debugger 真实点击）。仅本地运行，不上传数据。",
   "icons": {
     "16": "icon16.png",

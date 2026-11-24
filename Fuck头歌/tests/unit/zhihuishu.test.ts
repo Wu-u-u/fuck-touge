@@ -15,6 +15,7 @@ import {
   formatZhsWatch,
   parseCorrectAnswer,
 } from "../../src/sites/zhihuishu/types";
+import { isVideoAtEnd, shouldAdvanceOnComplete, shouldRestartReview } from "../../src/sites/zhihuishu/review";
 
 describe("zhihuishu config/status", () => {
   it("normalizes config and keeps safe speed", () => {
@@ -85,5 +86,29 @@ describe("zhihuishu page helpers", () => {
     expect(isCompletedState({ progress: 0.9 })).toBe(false);
     expect(textIndicatesCompleted("当前节：未完成")).toBe(false);
     expect(textIndicatesCompleted("当前节：已完成")).toBe(true);
+  });
+});
+
+describe("zhihuishu review completed lesson", () => {
+  it("restarts a completed lesson once, then advances only at the real end", () => {
+    const base = {
+      reviewCompleted: true,
+      autoNext: true,
+      platformCompleted: true,
+      lessonKey: "8.2 波粒二象性",
+      restartedKey: "",
+    };
+    expect(shouldRestartReview(base)).toBe(true);
+    expect(shouldRestartReview({ ...base, restartedKey: base.lessonKey })).toBe(false);
+    expect(shouldAdvanceOnComplete(true, base.lessonKey, base.lessonKey, false)).toBe(false);
+    expect(shouldAdvanceOnComplete(true, base.lessonKey, base.lessonKey, true)).toBe(true);
+    expect(shouldAdvanceOnComplete(false, base.lessonKey, base.lessonKey, false)).toBe(true);
+  });
+
+  it("detects real video end independently of the platform progress bar", () => {
+    expect(isVideoAtEnd(119.5, 120, false)).toBe(true);
+    expect(isVideoAtEnd(0, 120, false)).toBe(false);
+    expect(isVideoAtEnd(1, 0, false)).toBe(false);
+    expect(isVideoAtEnd(1, 120, true)).toBe(true);
   });
 });
